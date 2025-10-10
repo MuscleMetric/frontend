@@ -1,35 +1,77 @@
-import { Tabs } from 'expo-router';
-import React from 'react';
+// app/(tabs)/_layout.tsx
+import { Tabs } from "expo-router";
+import { View, Text, StyleSheet } from "react-native";
+import { House, LineChart, Dumbbell, User2 } from "lucide-react-native";
 
-import { HapticTab } from '@/components/haptic-tab';
-import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+function CustomHeader({ title }: { title: string }) {
+  return (
+    <View style={styles.header}>
+      <Text style={styles.headerText}>{title}</Text>
+    </View>
+  );
+}
 
-export default function TabLayout() {
-  const colorScheme = useColorScheme();
-
+export default function TabsLayout() {
   return (
     <Tabs
+      // Each screen gets this header by default
       screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
-        headerShown: false,
-        tabBarButton: HapticTab,
-      }}>
+        header: ({ options }) => (
+          <CustomHeader title={(options.title as string) ?? "MuscleMetric"} />
+        ),
+        tabBarLabelStyle: { fontSize: 12 },
+      }}
+    >
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Home',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="house.fill" color={color} />,
+          title: "Home",
+          tabBarIcon: ({ color, size }) => <House color={color} size={size} />,
         }}
       />
       <Tabs.Screen
-        name="explore"
+        name="progress"
         options={{
-          title: 'Explore',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="paperplane.fill" color={color} />,
+          title: "Progress",
+          tabBarIcon: ({ color, size }) => <LineChart color={color} size={size} />,
         }}
+      />
+      <Tabs.Screen
+        name="workout"
+        options={{
+          title: "Workouts",
+          tabBarIcon: ({ color, size }) => <Dumbbell color={color} size={size} />,
+        }}
+      />
+      <Tabs.Screen
+        name="user"
+        options={{
+          title: "Profile",
+          tabBarIcon: ({ color, size }) => <User2 color={color} size={size} />,
+        }}
+      />
+
+      {/* Detail/hidden pages: header OFF here */}
+      <Tabs.Screen
+        name="achievements"
+        options={{ href: null, headerShown: false }}
       />
     </Tabs>
   );
 }
+
+const styles = StyleSheet.create({
+  header: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "#E5E7EB",
+    backgroundColor: "#fff",
+  },
+  headerText: {
+    fontSize: 20,
+    fontWeight: "800",
+    color: "#111827",
+  },
+});

@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "musclemetrics-frontend",
-    "slug": "musclemetrics-frontend",
+    "name": "musclemetric",
+    "slug": "musclemetric",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "musclemetricsfrontend",
+    "scheme": "musclemetric",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
