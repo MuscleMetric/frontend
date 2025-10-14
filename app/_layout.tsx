@@ -56,6 +56,15 @@ export default function RootLayout() {
               gestureEnabled: true, // ✅ enables swipe-back on iOS
             }}
           />
+
+          <Stack.Screen
+            name="_features/goals"
+            options={{
+              title: "Goals",
+              headerBackTitle: "",
+              gestureEnabled: true,
+            }}
+          />
         </Stack>
       </SafeAreaView>
     </SafeAreaProvider>

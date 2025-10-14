@@ -5,16 +5,17 @@ export default function FeaturesLayout() {
   return (
     <Stack
       screenOptions={{
-        headerBackTitle: "", 
-        headerBackVisible: true, 
+        headerBackTitle: "",
+        headerBackVisible: true,
         headerTintColor: "#111827",
         headerStyle: { backgroundColor: "#FFFFFF" },
         headerShadowVisible: false,
-        gestureEnabled: true, // enables iOS swipe back
+        gestureEnabled: true,
       }}
     >
+      <Stack.Screen name="goals" options={{ title: "Goals" }} />
       <Stack.Screen name="achievements" options={{ title: "Achievements" }} />
-      {/* Add future pages here (Goals, Plan Details, etc.) */}
+      {/* Add more feature screens here as you build them */}
     </Stack>
   );
 }

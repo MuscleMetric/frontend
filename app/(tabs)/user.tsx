@@ -205,7 +205,7 @@ export default function UserScreen() {
             visible={showHeightModal}
             onClose={() => {
               setShowHeightModal(false);
-              fetchProfile(); 
+              fetchProfile();
             }}
             userId={userId}
             field="height"
@@ -215,8 +215,8 @@ export default function UserScreen() {
           <QuickUpdateModal
             visible={showWeightModal}
             onClose={() => {
-              setShowHeightModal(false);
-              fetchProfile(); 
+              setShowWeightModal(false);
+              fetchProfile();
             }}
             userId={userId}
             field="weight"
@@ -249,7 +249,9 @@ export default function UserScreen() {
             </View>
             <Pressable
               style={styles.button}
-              onPress={() => router.push("/_features/achievements/achievements")}
+              onPress={() =>
+                router.push("/_features/achievements/achievements")
+              }
             >
               <Text style={styles.buttonText}>View Achievements</Text>
             </Pressable>
@@ -266,7 +268,7 @@ export default function UserScreen() {
             <View style={styles.rowBetween}>
               <Pressable
                 style={[styles.button, { backgroundColor: "#e6f0ff" }]}
-                onPress={() => Alert.alert("Goals", "Goals screen coming soon")}
+                onPress={() => router.push("/_features/goals/goals")}
               >
                 <Text style={[styles.buttonText, { color: "#0b6aa9" }]}>
                   Manage Goals
