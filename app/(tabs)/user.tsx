@@ -13,7 +13,7 @@ import {
 import { supabase } from "../../lib/supabase";
 import { router } from "expo-router";
 import { useAuth } from "../../lib/useAuth";
-import QuickUpdateModal from "../_features/profile/QuickUpdateModal";
+import QuickUpdateModal from "../features/profile/QuickUpdateModal";
 
 import {
   Header,
@@ -165,7 +165,7 @@ export default function UserScreen() {
             name={name}
             email={email}
             joined={joinedText}
-            onEdit={() => router.push("/_features/profile/EditProfile")}
+            onEdit={() => router.push("/features/profile/EditProfile")}
           />
 
           {/* Stats */}
@@ -250,7 +250,7 @@ export default function UserScreen() {
             <Pressable
               style={styles.button}
               onPress={() =>
-                router.push("/_features/achievements/achievements")
+                router.push("/features/achievements/achievements")
               }
             >
               <Text style={styles.buttonText}>View Achievements</Text>
@@ -268,7 +268,7 @@ export default function UserScreen() {
             <View style={styles.rowBetween}>
               <Pressable
                 style={[styles.button, { backgroundColor: "#e6f0ff" }]}
-                onPress={() => router.push("/_features/goals/goals")}
+                onPress={() => router.push("/features/goals/goals")}
               >
                 <Text style={[styles.buttonText, { color: "#0b6aa9" }]}>
                   Manage Goals
