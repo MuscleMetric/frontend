@@ -5,19 +5,13 @@ export default function FeaturesLayout() {
   return (
     <Stack
       screenOptions={{
-        headerShown: true,
-        headerTitleAlign: "center",
-        headerBackTitle: "",      // hide the back label text
-        headerBackVisible: true,  // show the chevron
-        headerTintColor: "#111827",
-        headerStyle: { backgroundColor: "#FFFFFF" },
-        headerShadowVisible: false,
-        gestureEnabled: true,
+        headerShown: false, // 🔥 hide all headers
+        gestureEnabled: true, // still allow iOS swipe back
       }}
     >
-      <Stack.Screen name="goals/goals" options={{ title: "Plan Goals" }} />
-      <Stack.Screen name="achievements/achievements" options={{ title: "Achievements" }} />
-      {/* add more feature screens here */}
+      <Stack.Screen name="goals/goals" />
+      <Stack.Screen name="achievements/achievements" />
+      <Stack.Screen name="plans/create" />
     </Stack>
   );
 }

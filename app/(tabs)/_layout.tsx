@@ -1,12 +1,19 @@
 // app/(tabs)/_layout.tsx
 import { Tabs } from "expo-router";
 import { View, Text, StyleSheet } from "react-native";
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 import { House, LineChart, Dumbbell, User2 } from "lucide-react-native";
 
 function CustomHeader({ title }: { title: string }) {
+  const insets = useSafeAreaInsets();
   return (
-    <View style={styles.header}>
-      <Text style={styles.headerText}>{title}</Text>
+    <View style={[styles.headerContainer, { paddingTop: insets.top }]}>
+      <View style={styles.header}>
+        <Text style={styles.headerText}>{title}</Text>
+      </View>
     </View>
   );
 }
@@ -14,10 +21,16 @@ function CustomHeader({ title }: { title: string }) {
 export default function TabsLayout() {
   return (
     <Tabs
-      // Each screen gets this header by default
       screenOptions={{
         header: ({ options }) => (
-          <CustomHeader title={(options.title as string) ?? "MuscleMetric"} />
+          <CustomHeader
+            // Prefer headerTitle if available, fall back to title
+            title={
+              (options.headerTitle as string) ??
+              (options.title as string) ??
+              "MuscleMetric"
+            }
+          />
         ),
         tabBarLabelStyle: { fontSize: 12 },
       }}
@@ -25,42 +38,58 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: "Home",
+          headerTitle: "Muscle Metrics", // 👈 Header title
+          tabBarLabel: "Home", // 👈 Bottom tab label
           tabBarIcon: ({ color, size }) => <House color={color} size={size} />,
         }}
       />
       <Tabs.Screen
         name="progress"
         options={{
-          title: "Progress",
-          tabBarIcon: ({ color, size }) => <LineChart color={color} size={size} />,
+          headerTitle: "Progress Overview",
+          tabBarLabel: "Progress",
+          tabBarIcon: ({ color, size }) => (
+            <LineChart color={color} size={size} />
+          ),
         }}
       />
       <Tabs.Screen
         name="workout"
         options={{
-          title: "Workouts",
-          tabBarIcon: ({ color, size }) => <Dumbbell color={color} size={size} />,
+          headerTitle: "Workout Planner",
+          tabBarLabel: "Workouts",
+          tabBarIcon: ({ color, size }) => (
+            <Dumbbell color={color} size={size} />
+          ),
         }}
       />
       <Tabs.Screen
         name="user"
         options={{
-          title: "Profile",
+          headerTitle: "Your Profile",
+          tabBarLabel: "Profile",
           tabBarIcon: ({ color, size }) => <User2 color={color} size={size} />,
         }}
       />
 
-      {/* Detail/hidden pages: header OFF here */}
+      {/* Hidden tab (no header or tab bar item) */}
       <Tabs.Screen
         name="achievements"
-        options={{ href: null, headerShown: false }}
+        options={{
+          href: null,
+          headerShown: false,
+        }}
       />
     </Tabs>
   );
 }
 
 const styles = StyleSheet.create({
+  headerContainer: {
+    backgroundColor: "#fff", // important so the notch area isn’t transparent
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "#E5E7EB",
+  },
   header: {
     alignItems: "center",
     justifyContent: "center",

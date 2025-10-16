@@ -176,11 +176,7 @@ export default function WorkoutScreen() {
           title="Create your first plan"
           subtitle="Build a routine with targeted workouts, then track your progress."
           primary="Create Plan"
-          onPrimary={() => {
-            // Replace with your route when the builder exists
-            // router.push("/features/plans/create");
-            Alert.alert("Create Plan", "Plan builder coming soon.");
-          }}
+          onPrimary={() => router.push("/features/plans/create/planInfo")}
           secondary="Or add a single workout"
           onSecondary={() => {
             // router.push("/features/workouts/create");
