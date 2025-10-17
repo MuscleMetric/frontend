@@ -59,6 +59,20 @@ export default function WorkoutPage() {
 
   const { items: all } = useExercisesCache();
 
+  const [selectedToAdd, setSelectedToAdd] = useState<Set<string>>(new Set());
+
+  function togglePick(id: string) {
+    setSelectedToAdd((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+  function clearPickerSelections() {
+    setSelectedToAdd(new Set());
+  }
+
   // Superset selection
   const [selecting, setSelecting] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -169,6 +183,25 @@ export default function WorkoutPage() {
     }
   }
 
+  // Five rotating superset colors (repeat after 5)
+  const SUPERSET_COLORS = [
+    "#2563eb",
+    "#22c55e",
+    "#f59e0b",
+    "#ef4444",
+    "#8b5cf6",
+  ];
+
+  // Stable list of superset groups in the order they appear
+  const supersetGroups = useMemo(
+    () => [
+      ...new Set(
+        draft.exercises.map((x) => x.supersetGroup).filter(Boolean) as string[]
+      ),
+    ],
+    [draft.exercises]
+  );
+
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: "#F7F8FA" }}
@@ -214,24 +247,24 @@ export default function WorkoutPage() {
         const isSelected = selectedIds.includes(key);
         const group = e.supersetGroup ?? null;
 
-        // label supersets A, B, C… by groupId order
-        const groups = [
-          ...new Set(
-            draft.exercises
-              .map((x) => x.supersetGroup)
-              .filter(Boolean) as string[]
-          ),
-        ];
-        const groupOrder = group ? groups.indexOf(group) : -1;
+        // Which group letter/color?
+        const groupIndex = group ? supersetGroups.indexOf(group) : -1;
         const groupLabel =
-          groupOrder >= 0 ? String.fromCharCode(65 + groupOrder) : null;
+          groupIndex >= 0 ? String.fromCharCode(65 + groupIndex) : null;
+        const groupColor =
+          groupIndex >= 0
+            ? SUPERSET_COLORS[groupIndex % SUPERSET_COLORS.length]
+            : null;
 
         return (
           <View
             key={key}
             style={[
               s.item,
-              isSelected && { borderColor: "#2563eb", borderWidth: 2 },
+              // show a colored border if in a superset
+              groupColor && { borderColor: groupColor, borderWidth: 2 },
+              // selection highlight on top if selecting
+              isSelected && { borderColor: "#2563eb", borderWidth: 3 },
             ]}
           >
             <Pressable
@@ -254,7 +287,16 @@ export default function WorkoutPage() {
                 <View style={{ flex: 1 }}>
                   <Text style={{ fontWeight: "700" }}>
                     {i + 1}. {e.exercise.name}
-                    {groupLabel ? `  •  Superset ${groupLabel}` : ""}
+                    {groupLabel ? (
+                      <Text
+                        style={[
+                          { fontWeight: "800" },
+                          groupColor ? { color: groupColor } : undefined,
+                        ]}
+                      >
+                        {`  •  Superset ${groupLabel}`}
+                      </Text>
+                    ) : null}
                   </Text>
 
                   <View
@@ -277,14 +319,12 @@ export default function WorkoutPage() {
                     )}
                   </View>
 
-                  {/* Simple target summary */}
+                  {/* Simple target summary (you aren't collecting sets/reps now, so keep minimal) */}
                   <Text style={{ color: "#6b7280", marginTop: 4 }}>
-                    {e.target_sets ?? 3} sets
-                    {e.target_reps ? ` × ${e.target_reps} reps` : ""}
+                    Exercise selected
                   </Text>
                 </View>
 
-                {/* Row actions */}
                 <View style={{ gap: 6, alignItems: "flex-end" }}>
                   <Pressable
                     onPress={() => {
@@ -333,7 +373,11 @@ export default function WorkoutPage() {
           </Pressable>
         )}
         {!selecting ? (
-          <Pressable style={s.btn} onPress={() => setSelecting(true)}>
+          <Pressable
+            style={[s.btn, draft.exercises.length < 2 && { opacity: 0.5 }]}
+            disabled={draft.exercises.length < 2}
+            onPress={() => setSelecting(true)}
+          >
             <Text style={s.btnText}>Select for Superset</Text>
           </Pressable>
         ) : null}
@@ -416,30 +460,35 @@ export default function WorkoutPage() {
             </View>
           ) : (
             <View style={{ gap: 8, marginTop: 8 }}>
-              {results.map((r) => (
-                <Pressable
-                  key={r.id}
-                  style={s.row}
-                  onPress={() =>
-                    addExercise({
-                      id: r.id,
-                      name: r.name,
-                      type: r.type,
-                    } as ExerciseRow)
-                  }
-                >
-                  <View>
-                    <Text style={{ fontWeight: "700" }}>{r.name}</Text>
-                    <Text style={{ color: "#6b7280", marginTop: 2 }}>
-                      {(r.type ?? "—") +
-                        (r.primary_muscle ? ` • ${r.primary_muscle}` : "")}
+              {results.map((r) => {
+                const picked = selectedToAdd.has(r.id);
+                return (
+                  <Pressable
+                    key={r.id}
+                    style={[
+                      s.row,
+                      picked && { borderColor: "#2563eb", borderWidth: 2 },
+                    ]}
+                    onPress={() => togglePick(r.id)}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontWeight: "700" }}>{r.name}</Text>
+                      <Text style={{ color: "#6b7280", marginTop: 2 }}>
+                        {(r.type ?? "—") +
+                          (r.primary_muscle ? ` • ${r.primary_muscle}` : "")}
+                      </Text>
+                    </View>
+                    <Text
+                      style={{
+                        color: picked ? "#2563eb" : "#6b7280",
+                        fontWeight: "700",
+                      }}
+                    >
+                      {picked ? "Selected" : "Select"}
                     </Text>
-                  </View>
-                  <Text style={{ color: "#2563eb", fontWeight: "700" }}>
-                    Add
-                  </Text>
-                </Pressable>
-              ))}
+                  </Pressable>
+                );
+              })}
 
               {results.length === 0 && (
                 <View style={s.empty}>
@@ -458,10 +507,52 @@ export default function WorkoutPage() {
                 setTypeFilter("all");
                 setMuscleFilter(null);
                 setSearch("");
+                clearPickerSelections();
                 setShowPicker(false);
               }}
             >
-              <Text style={s.btnText}>Done</Text>
+              <Text style={s.btnText}>Cancel</Text>
+            </Pressable>
+
+            <Pressable
+              style={[
+                s.btn,
+                s.primary,
+                { flex: 1, opacity: selectedToAdd.size ? 1 : 0.6 },
+              ]}
+              disabled={selectedToAdd.size === 0}
+              onPress={() => {
+                // Build new entries from the selected ids
+                const toAdd = results
+                  .filter((r) => selectedToAdd.has(r.id))
+                  .map((r) => ({
+                    exercise: {
+                      id: r.id,
+                      name: r.name,
+                      type: r.type,
+                    } as ExerciseRow,
+                    order_index: draft.exercises.length, // will reindex below
+                    // no sets/reps/time for now per your request
+                  }));
+
+                const merged = [...draft.exercises, ...toAdd].map((e, i) => ({
+                  ...e,
+                  order_index: i,
+                }));
+
+                setWorkout(index, { ...draft, exercises: merged });
+                // reset picker state
+                clearPickerSelections();
+                setTypeFilter("all");
+                setMuscleFilter(null);
+                setSearch("");
+                setShowPicker(false);
+              }}
+            >
+              <Text style={s.primaryText}>
+                Add {selectedToAdd.size || ""}{" "}
+                {selectedToAdd.size === 1 ? "Exercise" : "Exercises"}
+              </Text>
             </Pressable>
           </View>
         </View>
@@ -502,7 +593,10 @@ const s = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
     marginTop: 6,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "#E5E7EB",
   },
+
   row: {
     backgroundColor: "#fff",
     borderRadius: 10,
