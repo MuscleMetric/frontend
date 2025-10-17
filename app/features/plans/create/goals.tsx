@@ -19,28 +19,43 @@ const MODES = [
   { key: "time", label: "Time" },
 ] as const;
 
+type DedupExercise = {
+  exercise: ExerciseRow;
+  workoutTitles: string[]; // all the workouts this exercise is in
+};
+
 export default function Goals() {
   const { workouts, goals, setGoals } = usePlanDraft();
 
-  // Flatten all exercises across workouts with the workout title for context
-  const allExercises = useMemo(
-    () =>
-      workouts.flatMap((w) =>
-        w.exercises.map((e) => ({
-          workoutTitle: w.title,
-          exercise: e.exercise as ExerciseRow,
-        }))
-      ),
-    [workouts]
-  );
+  // Build a map: exerciseId -> { exercise, workoutTitles[] }
+  const deduped: DedupExercise[] = useMemo(() => {
+    const map = new Map<string, DedupExercise>();
+    for (const w of workouts) {
+      for (const ex of w.exercises) {
+        const id = ex.exercise.id;
+        if (!map.has(id)) {
+          map.set(id, { exercise: ex.exercise, workoutTitles: [w.title] });
+        } else {
+          const entry = map.get(id)!;
+          // only add the workout title once if duplicates within the same workout somehow exist
+          if (!entry.workoutTitles.includes(w.title)) {
+            entry.workoutTitles.push(w.title);
+          }
+        }
+      }
+    }
+    // optional: sort by name for stable UI
+    return Array.from(map.values()).sort((a, b) =>
+      a.exercise.name.localeCompare(b.exercise.name)
+    );
+  }, [workouts]);
 
   const findGoal = (exerciseId: string) =>
     goals.find((g) => g.exercise.id === exerciseId);
 
-  function toggleExercise(ex: ExerciseRow, workoutTitle: string) {
+  function toggleExercise(ex: ExerciseRow) {
     const exists = findGoal(ex.id);
     if (exists) {
-      // remove the goal
       setGoals(goals.filter((g) => g.exercise.id !== ex.id));
       return;
     }
@@ -48,11 +63,10 @@ export default function Goals() {
       Alert.alert("Limit reached", "You can select up to 3 goals.");
       return;
     }
-    // add a new goal with sensible defaults
     const newGoal: GoalDraft = {
       exercise: ex,
       mode: "exercise_weight",
-      unit: guessUnitForExercise(ex), // heuristic
+      unit: guessUnitForExercise(ex),
       start: null,
       target: 0,
     };
@@ -80,21 +94,24 @@ export default function Goals() {
 
       <View style={{ height: 12 }} />
 
-      {allExercises.map(({ exercise, workoutTitle }) => {
+      {deduped.map(({ exercise, workoutTitles }) => {
         const selected = !!findGoal(exercise.id);
         const g = findGoal(exercise.id);
+        const contextText =
+          workoutTitles.length > 0 ? workoutTitles.join(", ") : "—";
+
         return (
           <View
             key={exercise.id}
             style={[s.card, selected && { borderColor: "#2563eb" }]}
           >
             <Pressable
-              onPress={() => toggleExercise(exercise, workoutTitle)}
+              onPress={() => toggleExercise(exercise)}
               style={{ flexDirection: "row", justifyContent: "space-between" }}
             >
-              <View>
+              <View style={{ flex: 1, paddingRight: 10 }}>
                 <Text style={s.h4}>{exercise.name}</Text>
-                <Text style={s.muted}>{workoutTitle}</Text>
+                <Text style={s.muted}>{contextText}</Text>
               </View>
               <Text style={[s.badge, selected ? s.badgeOn : s.badgeOff]}>
                 {selected ? "Selected" : "Select"}
@@ -120,7 +137,12 @@ export default function Goals() {
                         }}
                         style={[s.chip, active && s.chipActive]}
                       >
-                        <Text style={{ color: active ? "#fff" : "#111827", fontWeight: "700" }}>
+                        <Text
+                          style={{
+                            color: active ? "#fff" : "#111827",
+                            fontWeight: "700",
+                          }}
+                        >
                           {m.label}
                         </Text>
                       </Pressable>
@@ -180,7 +202,6 @@ export default function Goals() {
 /* ------------- helpers ------------- */
 
 function guessUnitForExercise(ex: ExerciseRow): string | undefined {
-  // Simple heuristic; tailor this to your exercise catalog if you want.
   if (ex.type === "cardio") return "min";
   if (ex.type === "mobility") return "reps";
   return "kg"; // default for strength

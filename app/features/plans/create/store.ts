@@ -10,6 +10,8 @@ export type ExerciseRow = {
 export type WorkoutExercise = {
   exercise: ExerciseRow;
   order_index: number;
+  supersetGroup?: string | null;
+  isDropset?: boolean;
   target_sets?: number | null;
   target_reps?: number | null;
   target_weight?: number | null;
@@ -39,7 +41,9 @@ type PlanDraftState = {
   goals: GoalDraft[];
 
   reset: () => void;
-  setMeta: (p: Partial<Pick<PlanDraftState, "title" | "endDate" | "workoutsPerWeek">>) => void;
+  setMeta: (
+    p: Partial<Pick<PlanDraftState, "title" | "endDate" | "workoutsPerWeek">>
+  ) => void;
   initWorkouts: (n: number) => void;
   setWorkout: (index: number, w: WorkoutDraft) => void;
   setGoals: (g: GoalDraft[]) => void;

@@ -18,7 +18,11 @@ function humanDate(iso?: string | null) {
   if (!iso) return "—";
   try {
     const d = new Date(iso);
-    return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+    return d.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
   } catch {
     return iso;
   }
@@ -28,14 +32,13 @@ export default function Review() {
   const { session, loading } = useAuth();
   const userId = session?.user?.id;
 
-  const {
-    title,
-    endDate,
-    workoutsPerWeek,
-    workouts,
-    goals,
-    reset,
-  } = usePlanDraft();
+  const { title, endDate, workoutsPerWeek, workouts, goals, reset } =
+    usePlanDraft();
+
+  const goalExerciseIds = useMemo(
+    () => new Set(goals.map((g) => g.exercise.id)),
+    [goals]
+  );
 
   const [saving, setSaving] = useState(false);
 
@@ -44,7 +47,8 @@ export default function Review() {
     if (!title?.trim()) return false;
     if (!endDate) return false;
     if (!workouts || workouts.length !== workoutsPerWeek) return false;
-    if (workouts.some(w => !w.title?.trim() || w.exercises.length === 0)) return false;
+    if (workouts.some((w) => !w.title?.trim() || w.exercises.length === 0))
+      return false;
     return true;
   }, [title, endDate, workoutsPerWeek, workouts]);
 
@@ -59,7 +63,10 @@ export default function Review() {
   async function handleCreate() {
     if (!userId) return;
     if (!canSave) {
-      Alert.alert("Incomplete", "Please complete all required fields before creating the plan.");
+      Alert.alert(
+        "Incomplete",
+        "Please complete all required fields before creating the plan."
+      );
       return;
     }
 
@@ -103,9 +110,14 @@ export default function Review() {
         title: w.title,
         weekly_complete: false,
         order_index: idx,
-        highlights: w.exercises.slice(0, 4).map((e) => e.exercise.name).join(", "),
+        highlights: w.exercises
+          .slice(0, 4)
+          .map((e) => e.exercise.name)
+          .join(", "),
       }));
-      const { error: pwErr } = await supabase.from("plan_workouts").insert(planWorkoutInsert);
+      const { error: pwErr } = await supabase
+        .from("plan_workouts")
+        .insert(planWorkoutInsert);
       if (pwErr) throw pwErr;
 
       // 4) workout_exercises (targets)
@@ -123,7 +135,9 @@ export default function Review() {
         }))
       );
       if (wexInsert.length) {
-        const { error: wexErr } = await supabase.from("workout_exercises").insert(wexInsert);
+        const { error: wexErr } = await supabase
+          .from("workout_exercises")
+          .insert(wexInsert);
         if (wexErr) throw wexErr;
       }
 
@@ -190,15 +204,26 @@ export default function Review() {
             <Text style={styles.h4}>
               {i + 1}. {w.title || "Untitled Workout"}
             </Text>
+
             {w.exercises.length === 0 ? (
               <Text style={styles.muted}>No exercises yet.</Text>
             ) : (
               <View style={{ marginTop: 4, gap: 2 }}>
-                {w.exercises.map((e, j) => (
-                  <Text key={`${i}-${j}`} style={styles.muted}>
-                    • {e.exercise.name}
-                  </Text>
-                ))}
+                {w.exercises.map((e, j) => {
+                  const isGoal = goalExerciseIds.has(e.exercise.id);
+                  return (
+                    <Text
+                      key={`${i}-${j}`}
+                      style={[
+                        styles.muted,
+                        isGoal && { color: "#1e40af", fontWeight: "700" }, // blue + bold
+                      ]}
+                    >
+                      • {e.exercise.name}
+                      {isGoal ? "  🎯" : ""}
+                    </Text>
+                  );
+                })}
               </View>
             )}
           </View>
@@ -213,9 +238,13 @@ export default function Review() {
         ) : (
           <View style={{ gap: 6 }}>
             {goals.map((g, i) => (
-              <Text key={i} style={styles.muted}>
+              <Text
+                key={i}
+                style={[styles.muted, { color: "#1e40af", fontWeight: "700" }]}
+              >
                 • {g.exercise.name} — {g.mode.replace("_", " ")} → {g.target}
-                {g.unit ? ` ${g.unit}` : ""}{g.start != null ? `  (start ${g.start}${g.unit ?? ""})` : ""}
+                {g.unit ? ` ${g.unit}` : ""}
+                {g.start != null ? `  (start ${g.start}${g.unit ?? ""})` : ""}
               </Text>
             ))}
           </View>
@@ -234,7 +263,9 @@ export default function Review() {
           {saving ? (
             <ActivityIndicator color="#fff" />
           ) : (
-            <Text style={[styles.btnText, { color: "white", fontWeight: "800" }]}>
+            <Text
+              style={[styles.btnText, { color: "white", fontWeight: "800" }]}
+            >
               Create Plan
             </Text>
           )}
