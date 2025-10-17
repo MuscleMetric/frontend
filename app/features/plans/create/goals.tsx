@@ -12,22 +12,27 @@ import {
 import { router } from "expo-router";
 import { usePlanDraft, type ExerciseRow, type GoalDraft } from "./store";
 
-const MODES = [
-  { key: "exercise_weight", label: "Weight" },
-  { key: "exercise_reps", label: "Reps" },
-  { key: "distance", label: "Distance" },
-  { key: "time", label: "Time" },
-] as const;
+/** Helpers for mode <-> unit */
+const MODE_UNIT: Record<GoalDraft["mode"], string> = {
+  exercise_weight: "kg",
+  exercise_reps: "reps",
+  distance: "km",
+  time: "min",
+};
 
 type DedupExercise = {
   exercise: ExerciseRow;
-  workoutTitles: string[]; // all the workouts this exercise is in
+  workoutTitles: string[];
 };
 
 export default function Goals() {
-  const { workouts, goals, setGoals } = usePlanDraft();
+  const { workouts, goals, setGoals, endDate } = usePlanDraft();
 
-  // Build a map: exerciseId -> { exercise, workoutTitles[] }
+  // Plan length (weeks)
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const planWeeks = endDate ? getWeeksBetween(todayIso, endDate) : 0;
+
+  // Build a map: exerciseId -> { exercise, workoutTitles[] } (dedup across workouts)
   const deduped: DedupExercise[] = useMemo(() => {
     const map = new Map<string, DedupExercise>();
     for (const w of workouts) {
@@ -37,14 +42,11 @@ export default function Goals() {
           map.set(id, { exercise: ex.exercise, workoutTitles: [w.title] });
         } else {
           const entry = map.get(id)!;
-          // only add the workout title once if duplicates within the same workout somehow exist
-          if (!entry.workoutTitles.includes(w.title)) {
+          if (!entry.workoutTitles.includes(w.title))
             entry.workoutTitles.push(w.title);
-          }
         }
       }
     }
-    // optional: sort by name for stable UI
     return Array.from(map.values()).sort((a, b) =>
       a.exercise.name.localeCompare(b.exercise.name)
     );
@@ -52,6 +54,13 @@ export default function Goals() {
 
   const findGoal = (exerciseId: string) =>
     goals.find((g) => g.exercise.id === exerciseId);
+
+  // Which modes to show for a given exercise
+  function modeOptionsForExercise(ex: ExerciseRow): GoalDraft["mode"][] {
+    return ex.type === "cardio"
+      ? ["distance", "time"]
+      : ["exercise_weight", "exercise_reps"];
+  }
 
   function toggleExercise(ex: ExerciseRow) {
     const exists = findGoal(ex.id);
@@ -63,10 +72,11 @@ export default function Goals() {
       Alert.alert("Limit reached", "You can select up to 3 goals.");
       return;
     }
+    const firstMode = modeOptionsForExercise(ex)[0];
     const newGoal: GoalDraft = {
       exercise: ex,
-      mode: "exercise_weight",
-      unit: guessUnitForExercise(ex),
+      mode: firstMode,
+      unit: MODE_UNIT[firstMode],
       start: null,
       target: 0,
     };
@@ -78,10 +88,77 @@ export default function Goals() {
     patch: Partial<Pick<GoalDraft, "mode" | "unit" | "start" | "target">>
   ) {
     setGoals(
-      goals.map((g) =>
-        g.exercise.id === exerciseId ? { ...g, ...patch } : g
-      )
+      goals.map((g) => (g.exercise.id === exerciseId ? { ...g, ...patch } : g))
     );
+  }
+
+  function onChangeMode(
+    ex: ExerciseRow,
+    goal: GoalDraft,
+    nextMode: GoalDraft["mode"]
+  ) {
+    // Switch mode and force the correct unit; keep numeric values but they can be adjusted after
+    updateGoal(ex.id, { mode: nextMode, unit: MODE_UNIT[nextMode] });
+  }
+
+  // Progression helpers
+  function getWeeksBetween(startIso: string, endIso: string): number {
+    const start = new Date(startIso);
+    const end = new Date(endIso);
+    const diffMs = end.getTime() - start.getTime();
+    const weeks = diffMs / (1000 * 60 * 60 * 24 * 7);
+    return Math.max(1, Math.round(weeks));
+  }
+
+  function increaseRange(
+    start: number,
+    weeks: number,
+    mode: GoalDraft["mode"]
+  ) {
+    const min = start * (1 + 0.01 * weeks);
+    const max = start * (1 + 0.05 * weeks);
+    const suggested = (min + max) / 2;
+    return {
+      min: roundForMode(mode, min),
+      max: roundForMode(mode, max),
+      suggested: roundForMode(mode, suggested),
+    };
+  }
+
+  function decreaseRange(
+    start: number,
+    weeks: number,
+    mode: GoalDraft["mode"]
+  ) {
+    const max = Math.max(0, start * (1 - 0.01 * weeks)); // smaller improvement
+    const min = Math.max(0, start * (1 - 0.05 * weeks)); // larger improvement
+    const suggested = (min + max) / 2;
+    return {
+      min: roundForMode(mode, min),
+      max: roundForMode(mode, max),
+      suggested: roundForMode(mode, suggested),
+    };
+  }
+
+  function calcRangeForMode(
+    mode: GoalDraft["mode"],
+    start: number,
+    weeks: number
+  ) {
+    return mode === "time"
+      ? decreaseRange(start, weeks, mode)
+      : increaseRange(start, weeks, mode);
+  }
+
+  /** Round numbers by mode: ints for weight/reps/distance, 1 decimal for time */
+  function roundForMode(mode: GoalDraft["mode"], n: number) {
+    if (!isFinite(n)) return 0;
+    return mode === "time" ? Number(n.toFixed(1)) : Math.round(n);
+  }
+
+  /** String formatting for showing ranges */
+  function fmtForMode(mode: GoalDraft["mode"], n: number) {
+    return mode === "time" ? n.toFixed(1) : String(Math.round(n));
   }
 
   return (
@@ -99,6 +176,7 @@ export default function Goals() {
         const g = findGoal(exercise.id);
         const contextText =
           workoutTitles.length > 0 ? workoutTitles.join(", ") : "—";
+        const modes = modeOptionsForExercise(exercise);
 
         return (
           <View
@@ -120,21 +198,16 @@ export default function Goals() {
 
             {selected && g && (
               <View style={{ marginTop: 10, gap: 10 }}>
-                {/* Mode selector */}
-                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-                  {MODES.map((m) => {
-                    const active = g.mode === m.key;
+                {/* Mode selector (filtered by exercise type) */}
+                <View
+                  style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}
+                >
+                  {modes.map((m) => {
+                    const active = g.mode === m;
                     return (
                       <Pressable
-                        key={m.key}
-                        onPress={() => {
-                          const nextUnit =
-                            g.unit ?? defaultUnitForMode(m.key as GoalDraft["mode"]);
-                          updateGoal(exercise.id, {
-                            mode: m.key as GoalDraft["mode"],
-                            unit: nextUnit,
-                          });
-                        }}
+                        key={m}
+                        onPress={() => onChangeMode(exercise, g, m)}
                         style={[s.chip, active && s.chipActive]}
                       >
                         <Text
@@ -143,44 +216,83 @@ export default function Goals() {
                             fontWeight: "700",
                           }}
                         >
-                          {m.label}
+                          {labelForMode(m)}
                         </Text>
                       </Pressable>
                     );
                   })}
                 </View>
 
-                {/* Values */}
-                <View style={{ flexDirection: "row", gap: 8 }}>
-                  <TextInput
-                    style={[s.input, { flex: 1 }]}
-                    placeholder="Start"
-                    keyboardType="numeric"
-                    value={g.start != null ? String(g.start) : ""}
-                    onChangeText={(v) =>
-                      updateGoal(exercise.id, {
-                        start: v === "" ? null : Number(v),
-                      })
-                    }
-                  />
-                  <TextInput
-                    style={[s.input, { flex: 1 }]}
-                    placeholder="Target"
-                    keyboardType="numeric"
-                    value={g.target != null ? String(g.target) : ""}
-                    onChangeText={(v) =>
-                      updateGoal(exercise.id, {
-                        target: v === "" ? 0 : Number(v),
-                      })
-                    }
-                  />
-                  <TextInput
-                    style={[s.input, { width: 90 }]}
-                    placeholder="Unit"
-                    value={g.unit ?? ""}
-                    onChangeText={(v) => updateGoal(exercise.id, { unit: v })}
-                  />
+                {/* Values (unit is fixed per mode and not editable) */}
+                <View
+                  style={{ flexDirection: "row", gap: 8, alignItems: "center" }}
+                >
+                  <View style={{ flex: 1 }}>
+                    <TextInput
+                      style={[s.input]}
+                      placeholder="Start"
+                      keyboardType="numeric"
+                      value={g.start != null ? String(g.start) : ""}
+                      onChangeText={(v) => {
+                        const raw = v === "" ? null : Number(v);
+                        const val =
+                          raw == null ? null : roundForMode(g.mode, raw);
+
+                        if (val != null && planWeeks > 0) {
+                          const { suggested } = calcRangeForMode(
+                            g.mode,
+                            val,
+                            planWeeks
+                          );
+                          updateGoal(exercise.id, {
+                            start: val,
+                            target: suggested,
+                            unit: MODE_UNIT[g.mode],
+                          });
+                        } else {
+                          updateGoal(exercise.id, {
+                            start: val,
+                            unit: MODE_UNIT[g.mode],
+                          });
+                        }
+                      }}
+                    />
+                  </View>
+                  <Text style={s.unitPill}>{MODE_UNIT[g.mode]}</Text>
+                  <View style={{ flex: 1 }}>
+                    <TextInput
+                      style={[s.input]}
+                      placeholder="Target"
+                      keyboardType="numeric"
+                      value={g.target != null ? String(g.target) : ""}
+                      onChangeText={(v) => {
+                        const raw = v === "" ? 0 : Number(v);
+                        const val = roundForMode(g.mode, raw);
+                        updateGoal(exercise.id, {
+                          target: val,
+                          unit: MODE_UNIT[g.mode],
+                        });
+                      }}
+                    />
+                  </View>
                 </View>
+
+                {/* Recommended range */}
+                {g.start != null && planWeeks > 0 && (
+                  <Text style={{ color: "#2563eb", marginTop: 4 }}>
+                    {(() => {
+                      const { min, max } = calcRangeForMode(
+                        g.mode,
+                        g.start!,
+                        planWeeks
+                      );
+                      return `Recommended target range: ${fmtForMode(
+                        g.mode,
+                        min
+                      )}–${fmtForMode(g.mode, max)} ${MODE_UNIT[g.mode]}`;
+                    })()}
+                  </Text>
+                )}
               </View>
             )}
           </View>
@@ -199,28 +311,22 @@ export default function Goals() {
   );
 }
 
-/* ------------- helpers ------------- */
+/* -------- helpers -------- */
 
-function guessUnitForExercise(ex: ExerciseRow): string | undefined {
-  if (ex.type === "cardio") return "min";
-  if (ex.type === "mobility") return "reps";
-  return "kg"; // default for strength
-}
-
-function defaultUnitForMode(mode: GoalDraft["mode"]) {
-  switch (mode) {
+function labelForMode(m: GoalDraft["mode"]) {
+  switch (m) {
     case "exercise_weight":
-      return "kg";
+      return "Weight";
     case "exercise_reps":
-      return "reps";
+      return "Reps";
     case "distance":
-      return "km";
+      return "Distance";
     case "time":
-      return "min";
+      return "Time";
   }
 }
 
-/* ------------- styles ------------- */
+/* -------- styles -------- */
 
 const s = StyleSheet.create({
   h2: { fontSize: 18, fontWeight: "800" },
@@ -261,6 +367,15 @@ const s = StyleSheet.create({
     borderRadius: 10,
     paddingHorizontal: 10,
     paddingVertical: 8,
+  },
+
+  unitPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: "#F1F5F9",
+    color: "#111827",
+    fontWeight: "700",
   },
 
   btn: {
