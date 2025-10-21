@@ -9,10 +9,11 @@ import {
   ActivityIndicator,
   Alert,
 } from "react-native";
-import { router } from "expo-router";
+import { useRootNavigationState, useRouter } from "expo-router";
 import { usePlanDraft } from "./store";
 import { supabase } from "../../../../lib/supabase";
 import { useAuth } from "../../../../lib/useAuth";
+import { InteractionManager } from "react-native";
 
 function humanDate(iso?: string | null) {
   if (!iso) return "—";
@@ -41,6 +42,16 @@ export default function Review() {
   );
 
   const [saving, setSaving] = useState(false);
+  const [pendingNav, setPendingNav] = useState(false);
+  const navState = useRootNavigationState();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (pendingNav && navState?.key) {
+      setPendingNav(false);
+      router.replace("/(tabs)");
+    }
+  }, [pendingNav, navState?.key]);
 
   // Basic validation before allowing save
   const canSave = useMemo(() => {
@@ -73,97 +84,59 @@ export default function Review() {
     try {
       setSaving(true);
 
-      // 1) Create plan
-      const startIso = new Date().toISOString().slice(0, 10);
-      const { data: planRow, error: planErr } = await supabase
-        .from("plans")
-        .insert({
-          user_id: userId,
-          title,
-          start_date: startIso,
-          end_date: endDate,
-          is_completed: false,
-        })
-        .select("id")
-        .single();
-      if (planErr) throw planErr;
-      const planId: string = planRow!.id;
-
-      // 2) Create workouts (in same order as drafts)
-      const workoutInsert = workouts.map((w) => ({
-        user_id: userId,
+      // Build payloads
+      const p_workouts = workouts.map((w) => ({
         title: w.title,
-        notes: null,
-      }));
-      const { data: createdWorkouts, error: wErr } = await supabase
-        .from("workouts")
-        .insert(workoutInsert)
-        .select("id, title, created_at");
-      if (wErr) throw wErr;
-
-      const workoutIds = createdWorkouts!.map((w) => w.id as string);
-
-      // 3) plan_workouts (order + highlights)
-      const planWorkoutInsert = workouts.map((w, idx) => ({
-        plan_id: planId,
-        workout_id: workoutIds[idx],
-        title: w.title,
-        weekly_complete: false,
-        order_index: idx,
-        highlights: w.exercises
-          .slice(0, 4)
-          .map((e) => e.exercise.name)
-          .join(", "),
-      }));
-      const { error: pwErr } = await supabase
-        .from("plan_workouts")
-        .insert(planWorkoutInsert);
-      if (pwErr) throw pwErr;
-
-      // 4) workout_exercises (targets)
-      const wexInsert = workouts.flatMap((w, idx) =>
-        w.exercises.map((e) => ({
-          workout_id: workoutIds[idx],
-          exercise_id: e.exercise.id,
+        exercises: w.exercises.map((e) => ({
+          exerciseId: e.exercise.id,
           order_index: e.order_index,
+          supersetGroup: e.supersetGroup ?? null,
+          isDropset: !!e.isDropset,
+          // targets (ok to be null/omitted)
           target_sets: e.target_sets ?? null,
           target_reps: e.target_reps ?? null,
           target_weight: e.target_weight ?? null,
           target_time_seconds: e.target_time_seconds ?? null,
           target_distance: e.target_distance ?? null,
           notes: e.notes ?? null,
-        }))
-      );
-      if (wexInsert.length) {
-        const { error: wexErr } = await supabase
-          .from("workout_exercises")
-          .insert(wexInsert);
-        if (wexErr) throw wexErr;
+        })),
+      }));
+
+      const p_goals = goals.map((g) => ({
+        exerciseId: g.exercise.id,
+        mode: g.mode, // must match your goal_type enum
+        target: g.target,
+        unit: g.unit ?? null,
+        start: g.start ?? null,
+      }));
+
+      const { data, error } = await supabase.rpc("create_full_plan", {
+        p_user_id: userId,
+        p_title: title,
+        p_end_date: endDate, // yyyy-mm-dd
+        p_workouts,
+        p_goals,
+      });
+
+      if (error) {
+        // Detailed error in the console for debugging
+        console.error("create_full_plan RPC failed:", {
+          message: error.message,
+          details: (error as any).details,
+          hint: (error as any).hint,
+          code: (error as any).code,
+        });
+        Alert.alert("Could not create plan", error.message ?? "Unknown error");
+        return;
       }
 
-      // 5) goals (optional). Store starting value in notes JSON.
-      if (goals.length) {
-        const gInsert = goals.map((g) => ({
-          user_id: userId,
-          plan_id: planId,
-          exercise_id: g.exercise.id,
-          type: g.mode, // enum goal_type
-          target_number: g.target,
-          unit: g.unit ?? null,
-          deadline: endDate,
-          is_active: true,
-          notes: g.start != null ? JSON.stringify({ start: g.start }) : null,
-        }));
-        const { error: gErr } = await supabase.from("goals").insert(gInsert);
-        if (gErr) throw gErr;
-      }
-
+      // Success
       Alert.alert("Plan created", "Your plan has been saved.");
-      reset(); // clear draft
-      router.replace("/(tabs)/workout");
+      reset();
+      setPendingNav(true);
     } catch (e: any) {
-      console.error(e);
-      Alert.alert("Could not create plan", e.message ?? String(e));
+      console.error("Unexpected error creating plan:", e);
+      Alert.alert("Could not create plan", e?.message ?? String(e));
     } finally {
       setSaving(false);
     }
@@ -175,6 +148,20 @@ export default function Review() {
         <ActivityIndicator />
       </View>
     );
+  }
+
+  const SUPERSET_COLORS = [
+    "#2563eb",
+    "#16a34a",
+    "#f59e0b",
+    "#ef4444",
+    "#8b5cf6",
+  ]; // 5 colors loop
+  function colorForGroupId(id: string, order: number) {
+    return SUPERSET_COLORS[order % SUPERSET_COLORS.length];
+  }
+  function groupLabel(order: number) {
+    return String.fromCharCode(65 + order); // A, B, C...
   }
 
   return (
@@ -199,35 +186,105 @@ export default function Review() {
       <View style={styles.card}>
         <Text style={styles.h3}>Workouts</Text>
         <View style={{ height: 8 }} />
-        {workouts.map((w, i) => (
-          <View key={i} style={styles.subCard}>
-            <Text style={styles.h4}>
-              {i + 1}. {w.title || "Untitled Workout"}
-            </Text>
+        {workouts.map((w, i) => {
+          // Build group metadata in order of first appearance
+          const groupsOrder: string[] = [];
+          const seen = new Set<string>();
+          w.exercises.forEach((ex) => {
+            if (ex.supersetGroup && !seen.has(ex.supersetGroup)) {
+              groupsOrder.push(ex.supersetGroup);
+              seen.add(ex.supersetGroup);
+            }
+          });
 
-            {w.exercises.length === 0 ? (
-              <Text style={styles.muted}>No exercises yet.</Text>
-            ) : (
-              <View style={{ marginTop: 4, gap: 2 }}>
-                {w.exercises.map((e, j) => {
-                  const isGoal = goalExerciseIds.has(e.exercise.id);
-                  return (
-                    <Text
-                      key={`${i}-${j}`}
-                      style={[
-                        styles.muted,
-                        isGoal && { color: "#1e40af", fontWeight: "700" }, // blue + bold
-                      ]}
-                    >
-                      • {e.exercise.name}
-                      {isGoal ? "  🎯" : ""}
-                    </Text>
-                  );
-                })}
-              </View>
-            )}
-          </View>
-        ))}
+          // Render pass: if an exercise has a supersetGroup, render that entire group once
+          const rendered = new Set<string>(); // exercise ids with index keys we’ve rendered
+          const rows: React.ReactNode[] = [];
+
+          w.exercises.forEach((e, j) => {
+            const key = `${e.exercise.id}-${j}`;
+            if (e.supersetGroup) {
+              const gid = e.supersetGroup;
+              if (rendered.has(gid)) return; // group already printed
+
+              // collect group members in original order
+              const members = w.exercises
+                .map((x, idx) => ({ x, idx }))
+                .filter(({ x }) => x.supersetGroup === gid);
+
+              members.forEach(({ idx }) => rendered.add(`${gid}-${idx}`));
+              rendered.add(gid);
+
+              const order = groupsOrder.indexOf(gid);
+              const color = colorForGroupId(gid, order);
+
+              rows.push(
+                <View
+                  key={`group-${gid}`}
+                  style={{
+                    borderWidth: 2,
+                    borderColor: color,
+                    borderRadius: 12,
+                    padding: 10,
+                    marginTop: 6,
+                    backgroundColor: "#ffffff",
+                  }}
+                >
+                  <Text style={{ fontWeight: "800", color, marginBottom: 4 }}>
+                    Superset {groupLabel(order)}
+                  </Text>
+
+                  {members.map(({ x, idx: memberIdx }) => {
+                    const isGoal = goalExerciseIds.has(x.exercise.id);
+                    return (
+                      <Text
+                        key={`m-${gid}-${memberIdx}`}
+                        style={[
+                          styles.muted,
+                          isGoal && { color: "#1e40af", fontWeight: "700" },
+                        ]}
+                      >
+                        • {x.exercise.name}
+                        {x.isDropset ? "  • Dropset" : ""}
+                        {isGoal ? "  🎯" : ""}
+                      </Text>
+                    );
+                  })}
+                </View>
+              );
+            } else {
+              // single (non-superset) row
+              const isGoal = goalExerciseIds.has(e.exercise.id);
+              rows.push(
+                <Text
+                  key={key}
+                  style={[
+                    styles.muted,
+                    { marginTop: 6 },
+                    isGoal && { color: "#1e40af", fontWeight: "700" },
+                  ]}
+                >
+                  • {e.exercise.name}
+                  {e.isDropset ? "  • Dropset" : ""}
+                  {isGoal ? "  🎯" : ""}
+                </Text>
+              );
+            }
+          });
+
+          return (
+            <View key={i} style={styles.subCard}>
+              <Text style={styles.h4}>
+                {i + 1}. {w.title || "Untitled Workout"}
+              </Text>
+              {w.exercises.length === 0 ? (
+                <Text style={styles.muted}>No exercises yet.</Text>
+              ) : (
+                <View style={{ marginTop: 4 }}>{rows}</View>
+              )}
+            </View>
+          );
+        })}
       </View>
 
       <View style={styles.card}>

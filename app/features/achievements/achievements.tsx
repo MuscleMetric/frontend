@@ -11,6 +11,7 @@ import {
 import { supabase } from "../../../lib/supabase";
 import { useAuth } from "../../../lib/useAuth";
 import { router } from "expo-router";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 type Achievement = {
   id: string;
@@ -85,7 +86,14 @@ export default function AchievementsScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: "#F7F8FA" }}>
-      <View style={{ padding: 16, paddingBottom: 8 }}>
+      <SafeAreaView
+        edges={["top", "left", "right"]}
+        style={{
+          paddingHorizontal: 16,
+          paddingBottom: 8,
+          backgroundColor: "#F7F8FA",
+        }}
+      >
         <View style={s.headerRow}>
           <Pressable onPress={() => router.back()}>
             <Text style={s.link}>← Back</Text>
@@ -96,7 +104,7 @@ export default function AchievementsScreen() {
         <Text style={s.subtle}>
           Unlocked {counts.unlocked} of {counts.total} ({counts.pct}%)
         </Text>
-      </View>
+      </SafeAreaView>
 
       <FlatList
         contentContainerStyle={{ padding: 16 }}

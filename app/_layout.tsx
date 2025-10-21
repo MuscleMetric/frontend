@@ -1,16 +1,23 @@
 // app/_layout.tsx
-import { Stack, useSegments, useRouter } from "expo-router";
-import { useEffect } from "react";
+import { Slot, useRouter, useSegments, useRootNavigationState } from "expo-router";
+import { useEffect, useRef } from "react";
 import * as Linking from "expo-linking";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../lib/useAuth";
 
 export default function RootLayout() {
-  const segments = useSegments();
   const router = useRouter();
+  const segments = useSegments();
   const { session, loading } = useAuth();
 
-  // Handle Supabase deep links (e.g., reset password / magic link)
+  // This becomes defined once the NavigationContainer is mounted
+  const navState = useRootNavigationState();
+  const navReady = !!navState?.key;
+
+  // Avoid firing redirects multiple times
+  const didRoute = useRef(false);
+
+  // Handle Supabase deep links (magic link / reset)
   useEffect(() => {
     const handleUrl = async (url: string | null) => {
       if (!url) return;
@@ -22,24 +29,31 @@ export default function RootLayout() {
     };
 
     const sub = Linking.addEventListener("url", ({ url }) => handleUrl(url));
+    // Process the initial URL too
     Linking.getInitialURL().then(handleUrl);
     return () => sub.remove();
   }, []);
 
-  // Auth redirect logic
+  // Auth redirects – only after nav is ready and auth finished loading
   useEffect(() => {
-    if (loading) return;
-    const inAuth = segments[0] === "(auth)";
-    if (!session && !inAuth) router.replace("/(auth)/login");
-    if (session && inAuth) router.replace("/(tabs)");
-  }, [segments, session, loading]);
+    if (!navReady) return;          // wait for navigator to mount
+    if (loading) return;            // wait for auth
+    if (didRoute.current) return;   // prevent double routing in dev Fast Refresh
 
-  return (
-    <Stack screenOptions={{ headerShown: false }}>
-      {/* Route groups only. Child stacks render their own headers */}
-      <Stack.Screen name="(auth)" />
-      <Stack.Screen name="(tabs)" />
-      <Stack.Screen name="features" />
-    </Stack>
-  );
+    const inAuth = segments[0] === "(auth)";
+    if (!session && !inAuth) {
+      didRoute.current = true;
+      // next tick so it runs after this render commit
+      setTimeout(() => router.replace("/(auth)/login"), 0);
+      return;
+    }
+    if (session && inAuth) {
+      didRoute.current = true;
+      setTimeout(() => router.replace("/(tabs)"), 0);
+    }
+  }, [navReady, loading, session, segments, router]);
+
+  // IMPORTANT: Always render a navigator on the first paint.
+  // Slot renders child stacks/grids; never return null here.
+  return <Slot />;
 }

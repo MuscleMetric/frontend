@@ -73,6 +73,7 @@ const creator: StateCreator<PlanDraftState> = (set) => ({
 
   initWorkouts: (n: number) =>
     set(() => ({
+      workoutsPerWeek: n,
       workouts: Array.from({ length: n }, (_, i) => ({
         title: `Workout ${i + 1}`,
         exercises: [],

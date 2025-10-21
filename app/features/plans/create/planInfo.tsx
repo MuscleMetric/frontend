@@ -45,6 +45,8 @@ export default function PlanInfo() {
   const { items, loadedAt, setItems } = useExercisesCache();
   const [loadingExercises, setLoadingExercises] = useState(false);
 
+  console.log("Render PlanInfo");
+
   useEffect(() => {
     if (items.length > 0) return; // already cached
     (async () => {

@@ -24,7 +24,6 @@ export default function TabsLayout() {
       screenOptions={{
         header: ({ options }) => (
           <CustomHeader
-            // Prefer headerTitle if available, fall back to title
             title={
               (options.headerTitle as string) ??
               (options.title as string) ??
@@ -69,15 +68,6 @@ export default function TabsLayout() {
           headerTitle: "Your Profile",
           tabBarLabel: "Profile",
           tabBarIcon: ({ color, size }) => <User2 color={color} size={size} />,
-        }}
-      />
-
-      {/* Hidden tab (no header or tab bar item) */}
-      <Tabs.Screen
-        name="achievements"
-        options={{
-          href: null,
-          headerShown: false,
         }}
       />
     </Tabs>

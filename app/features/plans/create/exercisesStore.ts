@@ -1,4 +1,3 @@
-// app/features/plans/create/exercisesStore.ts
 import { create } from "zustand";
 
 export type CachedExercise = {

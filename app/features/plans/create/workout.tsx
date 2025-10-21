@@ -1,6 +1,6 @@
 // app/features/plans/create/Workout.tsx
 import { useLocalSearchParams, router } from "expo-router";
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -14,6 +14,7 @@ import {
 import { usePlanDraft, ExerciseRow } from "./store";
 import { useExercisesCache } from "./exercisesStore";
 import { nanoid } from "nanoid/non-secure";
+import { useEffect } from "react";
 
 const TYPE_CHIPS: Array<"all" | "strength" | "cardio" | "mobility"> = [
   "all",
@@ -48,7 +49,18 @@ export default function WorkoutPage() {
   const index = Number(idxParam ?? 0);
 
   const { workoutsPerWeek, workouts, setWorkout } = usePlanDraft();
-  const draft = workouts[index];
+  const draft = workouts?.[index];
+
+  if (!Number.isFinite(index) || !draft) {
+    return (
+      <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
+        <ActivityIndicator />
+      </View>
+    );
+  }
+
+  // always-safe alias so we never deref draft.exercises before guarding
+  const exercises = draft?.exercises ?? [];
 
   const [showPicker, setShowPicker] = useState(false);
   const [typeFilter, setTypeFilter] = useState<
@@ -76,7 +88,7 @@ export default function WorkoutPage() {
   // Superset selection
   const [selecting, setSelecting] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const rowKey = (i: number) => `${draft.exercises[i].exercise.id}-${i}`;
+  const rowKey = (i: number) => `${exercises[i]?.exercise.id ?? "NA"}-${i}`;
 
   function toggleSelect(key: string) {
     setSelectedIds((prev) =>
@@ -85,9 +97,11 @@ export default function WorkoutPage() {
   }
 
   // Prevent duplicates within THIS workout
-  function hasExercise(exerciseId: string) {
-    return draft.exercises.some((e) => e.exercise.id === exerciseId);
-  }
+  const hasExercise = useCallback(
+    (exerciseId: string) =>
+      draft.exercises.some((e) => e.exercise.id === exerciseId),
+    [exercises]
+  );
 
   function makeSuperset() {
     if (selectedIds.length < 2) {
@@ -113,9 +127,18 @@ export default function WorkoutPage() {
     setSelectedIds([]);
   }
 
+  useEffect(() => {
+    if (!Number.isFinite(index) || !workouts?.[index]) {
+      router.replace("/features/plans/create/planInfo");
+    }
+  }, [index, workouts]);
+
   if (!draft) {
-    router.replace("/features/plans/create/planInfo");
-    return null;
+    return (
+      <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
+        <ActivityIndicator />
+      </View>
+    );
   }
 
   // Filter from cache
@@ -145,29 +168,10 @@ export default function WorkoutPage() {
       pool = pool.filter((e) => e.name.toLowerCase().includes(q));
     }
 
-    // ⛔️ Remove exercises already in this workout
     pool = pool.filter((e) => !hasExercise(e.id));
 
     return pool.slice(0, 10);
-  }, [all, typeFilter, muscleFilter, search, draft.exercises]);
-
-  function addExercise(ex: ExerciseRow) {
-    if (hasExercise(ex.id)) {
-      Alert.alert("Already added", `${ex.name} is already in this workout.`);
-      return;
-    }
-    const exDraft = {
-      exercise: ex,
-      order_index: draft.exercises.length,
-      ...(ex.type === "strength" ? { target_sets: 3, target_reps: 8 } : {}),
-      ...(ex.type === "cardio" ? { target_time_seconds: 20 * 60 } : {}),
-    };
-    setWorkout(index, { ...draft, exercises: [...draft.exercises, exDraft] });
-    setShowPicker(false);
-    setTypeFilter("all");
-    setMuscleFilter(null);
-    setSearch("");
-  }
+  }, [all, typeFilter, muscleFilter, search, hasExercise]);
 
   function next() {
     if (!draft.title.trim()) return Alert.alert("Add a workout title");
@@ -196,10 +200,10 @@ export default function WorkoutPage() {
   const supersetGroups = useMemo(
     () => [
       ...new Set(
-        draft.exercises.map((x) => x.supersetGroup).filter(Boolean) as string[]
+        exercises.map((x) => x.supersetGroup).filter(Boolean) as string[]
       ),
     ],
-    [draft.exercises]
+    [exercises]
   );
 
   return (
@@ -522,26 +526,23 @@ export default function WorkoutPage() {
               ]}
               disabled={selectedToAdd.size === 0}
               onPress={() => {
-                // Build new entries from the selected ids
-                const toAdd = results
-                  .filter((r) => selectedToAdd.has(r.id))
+                const idSet = selectedToAdd;
+                const toAddFromCache = all
+                  .filter((e) => idSet.has(e.id) && !hasExercise(e.id))
                   .map((r) => ({
                     exercise: {
                       id: r.id,
                       name: r.name,
                       type: r.type,
                     } as ExerciseRow,
-                    order_index: draft.exercises.length, // will reindex below
-                    // no sets/reps/time for now per your request
+                    order_index: 0, // re-index below
                   }));
 
-                const merged = [...draft.exercises, ...toAdd].map((e, i) => ({
-                  ...e,
-                  order_index: i,
-                }));
-
+                const merged = [...draft.exercises, ...toAddFromCache].map(
+                  (e, i) => ({ ...e, order_index: i })
+                );
                 setWorkout(index, { ...draft, exercises: merged });
-                // reset picker state
+
                 clearPickerSelections();
                 setTypeFilter("all");
                 setMuscleFilter(null);

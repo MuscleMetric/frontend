@@ -5,8 +5,8 @@ export default function FeaturesLayout() {
   return (
     <Stack
       screenOptions={{
-        headerShown: false, // 🔥 hide all headers
-        gestureEnabled: true, // still allow iOS swipe back
+        headerShown: false, 
+        gestureEnabled: true,
       }}
     >
       <Stack.Screen name="goals/goals" />
