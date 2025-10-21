@@ -13,7 +13,7 @@ import { useRootNavigationState, useRouter } from "expo-router";
 import { usePlanDraft } from "./store";
 import { supabase } from "../../../../lib/supabase";
 import { useAuth } from "../../../../lib/useAuth";
-import { InteractionManager } from "react-native";
+import { useAppTheme } from "../../../../lib/useAppTheme";
 
 function humanDate(iso?: string | null) {
   if (!iso) return "—";
@@ -25,13 +25,16 @@ function humanDate(iso?: string | null) {
       year: "numeric",
     });
   } catch {
-    return iso;
+    return iso as string;
   }
 }
 
 export default function Review() {
   const { session, loading } = useAuth();
   const userId = session?.user?.id;
+
+  const { colors } = useAppTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
 
   const { title, endDate, workoutsPerWeek, workouts, goals, reset } =
     usePlanDraft();
@@ -53,7 +56,6 @@ export default function Review() {
     }
   }, [pendingNav, navState?.key]);
 
-  // Basic validation before allowing save
   const canSave = useMemo(() => {
     if (!title?.trim()) return false;
     if (!endDate) return false;
@@ -84,7 +86,6 @@ export default function Review() {
     try {
       setSaving(true);
 
-      // Build payloads
       const p_workouts = workouts.map((w) => ({
         title: w.title,
         exercises: w.exercises.map((e) => ({
@@ -92,7 +93,6 @@ export default function Review() {
           order_index: e.order_index,
           supersetGroup: e.supersetGroup ?? null,
           isDropset: !!e.isDropset,
-          // targets (ok to be null/omitted)
           target_sets: e.target_sets ?? null,
           target_reps: e.target_reps ?? null,
           target_weight: e.target_weight ?? null,
@@ -104,33 +104,26 @@ export default function Review() {
 
       const p_goals = goals.map((g) => ({
         exerciseId: g.exercise.id,
-        mode: g.mode, // must match your goal_type enum
+        mode: g.mode,
         target: g.target,
         unit: g.unit ?? null,
         start: g.start ?? null,
       }));
 
-      const { data, error } = await supabase.rpc("create_full_plan", {
+      const { error } = await supabase.rpc("create_full_plan", {
         p_user_id: userId,
         p_title: title,
-        p_end_date: endDate, // yyyy-mm-dd
+        p_end_date: endDate,
         p_workouts,
         p_goals,
       });
 
       if (error) {
-        // Detailed error in the console for debugging
-        console.error("create_full_plan RPC failed:", {
-          message: error.message,
-          details: (error as any).details,
-          hint: (error as any).hint,
-          code: (error as any).code,
-        });
+        console.error("create_full_plan RPC failed:", error);
         Alert.alert("Could not create plan", error.message ?? "Unknown error");
         return;
       }
 
-      // Success
       Alert.alert("Plan created", "Your plan has been saved.");
       reset();
       setPendingNav(true);
@@ -150,23 +143,18 @@ export default function Review() {
     );
   }
 
-  const SUPERSET_COLORS = [
-    "#2563eb",
-    "#16a34a",
-    "#f59e0b",
-    "#ef4444",
-    "#8b5cf6",
-  ]; // 5 colors loop
+  // keep your fun superset colors (they read well on both themes)
+  const SUPERSET_COLORS = ["#2563eb", "#16a34a", "#f59e0b", "#ef4444", "#8b5cf6"];
   function colorForGroupId(id: string, order: number) {
     return SUPERSET_COLORS[order % SUPERSET_COLORS.length];
   }
   function groupLabel(order: number) {
-    return String.fromCharCode(65 + order); // A, B, C...
+    return String.fromCharCode(65 + order);
   }
 
   return (
     <ScrollView
-      style={{ flex: 1, backgroundColor: "#F7F8FA" }}
+      style={{ flex: 1, backgroundColor: colors.background }}
       contentContainerStyle={{ padding: 16, gap: 12 }}
     >
       <View style={styles.card}>
@@ -187,7 +175,6 @@ export default function Review() {
         <Text style={styles.h3}>Workouts</Text>
         <View style={{ height: 8 }} />
         {workouts.map((w, i) => {
-          // Build group metadata in order of first appearance
           const groupsOrder: string[] = [];
           const seen = new Set<string>();
           w.exercises.forEach((ex) => {
@@ -197,17 +184,15 @@ export default function Review() {
             }
           });
 
-          // Render pass: if an exercise has a supersetGroup, render that entire group once
-          const rendered = new Set<string>(); // exercise ids with index keys we’ve rendered
+          const rendered = new Set<string>();
           const rows: React.ReactNode[] = [];
 
           w.exercises.forEach((e, j) => {
             const key = `${e.exercise.id}-${j}`;
             if (e.supersetGroup) {
               const gid = e.supersetGroup;
-              if (rendered.has(gid)) return; // group already printed
+              if (rendered.has(gid)) return;
 
-              // collect group members in original order
               const members = w.exercises
                 .map((x, idx) => ({ x, idx }))
                 .filter(({ x }) => x.supersetGroup === gid);
@@ -221,14 +206,10 @@ export default function Review() {
               rows.push(
                 <View
                   key={`group-${gid}`}
-                  style={{
-                    borderWidth: 2,
-                    borderColor: color,
-                    borderRadius: 12,
-                    padding: 10,
-                    marginTop: 6,
-                    backgroundColor: "#ffffff",
-                  }}
+                  style={[
+                    styles.superset,
+                    { borderColor: color, backgroundColor: colors.card },
+                  ]}
                 >
                   <Text style={{ fontWeight: "800", color, marginBottom: 4 }}>
                     Superset {groupLabel(order)}
@@ -241,7 +222,7 @@ export default function Review() {
                         key={`m-${gid}-${memberIdx}`}
                         style={[
                           styles.muted,
-                          isGoal && { color: "#1e40af", fontWeight: "700" },
+                          isGoal && { color: colors.primaryText, fontWeight: "700" },
                         ]}
                       >
                         • {x.exercise.name}
@@ -253,7 +234,6 @@ export default function Review() {
                 </View>
               );
             } else {
-              // single (non-superset) row
               const isGoal = goalExerciseIds.has(e.exercise.id);
               rows.push(
                 <Text
@@ -261,7 +241,7 @@ export default function Review() {
                   style={[
                     styles.muted,
                     { marginTop: 6 },
-                    isGoal && { color: "#1e40af", fontWeight: "700" },
+                    isGoal && { color: colors.primaryText, fontWeight: "700" },
                   ]}
                 >
                   • {e.exercise.name}
@@ -297,7 +277,7 @@ export default function Review() {
             {goals.map((g, i) => (
               <Text
                 key={i}
-                style={[styles.muted, { color: "#1e40af", fontWeight: "700" }]}
+                style={[styles.muted, { color: colors.primaryText, fontWeight: "700" }]}
               >
                 • {g.exercise.name} — {g.mode.replace("_", " ")} → {g.target}
                 {g.unit ? ` ${g.unit}` : ""}
@@ -309,7 +289,7 @@ export default function Review() {
       </View>
 
       <View style={{ flexDirection: "row", gap: 12 }}>
-        <Pressable style={[styles.btn]} onPress={() => router.back()}>
+        <Pressable style={styles.btn} onPress={() => router.back()}>
           <Text style={styles.btnText}>← Back</Text>
         </Pressable>
         <Pressable
@@ -318,11 +298,9 @@ export default function Review() {
           disabled={!canSave || saving}
         >
           {saving ? (
-            <ActivityIndicator color="#fff" />
+            <ActivityIndicator color={colors.primary ?? "#fff"} />
           ) : (
-            <Text
-              style={[styles.btnText, { color: "white", fontWeight: "800" }]}
-            >
+            <Text style={[styles.btnText, { color: colors.primary ?? "#fff", fontWeight: "800" }]}>
               Create Plan
             </Text>
           )}
@@ -332,38 +310,49 @@ export default function Review() {
   );
 }
 
-const styles = StyleSheet.create({
-  center: { flex: 1, alignItems: "center", justifyContent: "center" },
+/* ---- themed styles ---- */
+const makeStyles = (colors: any) =>
+  StyleSheet.create({
+    center: { flex: 1, alignItems: "center", justifyContent: "center" },
 
-  card: {
-    backgroundColor: "white",
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "#E5E7EB",
-  },
-  subCard: {
-    backgroundColor: "#F9FAFB",
-    borderRadius: 12,
-    padding: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "#E5E7EB",
-  },
+    card: {
+      backgroundColor: colors.card,
+      borderRadius: 16,
+      padding: 16,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+    },
+    subCard: {
+      backgroundColor: colors.surface,
+      borderRadius: 12,
+      padding: 12,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+    },
 
-  divider: { height: 1, backgroundColor: "#E5E7EB", marginVertical: 12 },
+    divider: { height: 1, backgroundColor: colors.border, marginVertical: 12 },
 
-  h2: { fontSize: 18, fontWeight: "800" },
-  h3: { fontSize: 16, fontWeight: "800" },
-  h4: { fontSize: 14, fontWeight: "700" },
-  muted: { color: "#6b7280" },
+    h2: { fontSize: 18, fontWeight: "800", color: colors.text },
+    h3: { fontSize: 16, fontWeight: "800", color: colors.text },
+    h4: { fontSize: 14, fontWeight: "700", color: colors.text },
+    muted: { color: colors.subtle },
 
-  btn: {
-    backgroundColor: "#EEF2F6",
-    paddingVertical: 10,
-    borderRadius: 10,
-    alignItems: "center",
-    flex: 1,
-  },
-  btnText: { fontWeight: "700", color: "#111827" },
-  primary: { backgroundColor: "#2563eb" },
-});
+    superset: {
+      borderWidth: 2,
+      borderRadius: 12,
+      padding: 10,
+      marginTop: 6,
+    },
+
+    btn: {
+      backgroundColor: colors.surface,
+      paddingVertical: 10,
+      borderRadius: 10,
+      alignItems: "center",
+      flex: 1,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+    },
+    btnText: { fontWeight: "700", color: colors.text },
+    primary: { backgroundColor: colors.primary, borderColor: colors.primary },
+  });

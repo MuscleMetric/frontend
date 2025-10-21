@@ -9,10 +9,11 @@ import {
   Pressable,
   Alert,
 } from "react-native";
+import Svg, { Circle } from "react-native-svg";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../lib/useAuth";
 import { router } from "expo-router";
-import Svg, { Circle } from "react-native-svg";
+import { useAppTheme } from "../../lib/useAppTheme"; // <-- use the helper
 
 type Plan = {
   id: string;
@@ -28,7 +29,6 @@ type PlanWorkoutRow = {
   order_index: number | null;
   weekly_complete: boolean | null;
   workout_id: string;
-  // nested workout with exercises (names) for highlights
   workouts: {
     id: string;
     workout_exercises: Array<{
@@ -53,10 +53,11 @@ function weeksBetween(startIso?: string | null, endIso?: string | null) {
   return Math.max(1, Math.round(weeks));
 }
 
-function progressColor(pct: number) {
-  if (pct < 40) return "#ef4444"; 
-  if (pct < 80) return "#f59e0b"; 
-  return "#22c55e"; 
+/** Progress color sourced from theme */
+function progressColor(pct: number, colors: any) {
+  if (pct < 40) return colors.danger;          // red for low
+  if (pct < 80) return colors.warnText;        // amber-ish
+  return colors.successText;                   // green-ish
 }
 
 /** Simple ring progress with a % label */
@@ -64,10 +65,12 @@ function ProgressRing({
   size = 64,
   stroke = 8,
   pct = 0,
+  colors,
 }: {
   size?: number;
   stroke?: number;
   pct: number; // 0..100
+  colors: any;
 }) {
   const radius = (size - stroke) / 2;
   const cx = size / 2;
@@ -75,27 +78,13 @@ function ProgressRing({
   const circumference = 2 * Math.PI * radius;
   const clamped = Math.max(0, Math.min(100, pct));
   const dashOffset = circumference * (1 - clamped / 100);
-  const color = progressColor(clamped);
+  const color = progressColor(clamped, colors);
 
   return (
-    <View
-      style={{
-        width: size,
-        height: size,
-        alignItems: "center",
-        justifyContent: "center",
-      }}
-    >
+    <View style={{ width: size, height: size, alignItems: "center", justifyContent: "center" }}>
       <Svg width={size} height={size}>
         {/* track */}
-        <Circle
-          cx={cx}
-          cy={cy}
-          r={radius}
-          stroke="#E5E7EB"
-          strokeWidth={stroke}
-          fill="none"
-        />
+        <Circle cx={cx} cy={cy} r={radius} stroke={colors.border} strokeWidth={stroke} fill="none" />
         {/* progress */}
         <Circle
           cx={cx}
@@ -107,13 +96,10 @@ function ProgressRing({
           fill="none"
           strokeDasharray={`${circumference} ${circumference}`}
           strokeDashoffset={dashOffset}
-          // rotate so 0% starts at 12 o'clock
           transform={`rotate(-90 ${cx} ${cy})`}
         />
       </Svg>
-      <Text
-        style={{ position: "absolute", fontWeight: "800", color: "#111827" }}
-      >
+      <Text style={{ position: "absolute", fontWeight: "800", color: colors.text }}>
         {Math.round(clamped)}%
       </Text>
     </View>
@@ -123,6 +109,9 @@ function ProgressRing({
 export default function WorkoutScreen() {
   const { session } = useAuth();
   const userId = session?.user?.id;
+
+  const { colors } = useAppTheme();           // <-- themed colors
+  const styles = useMemo(() => makeStyles(colors), [colors]);
 
   const [loading, setLoading] = useState(true);
   const [plan, setPlan] = useState<Plan | null>(null);
@@ -134,11 +123,7 @@ export default function WorkoutScreen() {
     if (!plan?.end_date) return null;
     try {
       const d = new Date(plan.end_date);
-      return d.toLocaleDateString("en-US", {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-      });
+      return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
     } catch {
       return plan.end_date;
     }
@@ -146,13 +131,11 @@ export default function WorkoutScreen() {
 
   useEffect(() => {
     if (!userId) return;
-
     (async () => {
       try {
         setLoading(true);
-
         // 1) Active plan (else most recent)
-        let { data: activePlan, error: pErr } = await supabase
+        let { data: activePlan } = await supabase
           .from("plans")
           .select("id, title, start_date, end_date, is_completed")
           .eq("user_id", userId)
@@ -160,70 +143,34 @@ export default function WorkoutScreen() {
           .order("start_date", { ascending: false })
           .limit(1)
           .maybeSingle();
-        if (pErr) console.warn("plans fetch error:", pErr);
 
         if (!activePlan) {
-          const { data, error } = await supabase
+          const { data } = await supabase
             .from("plans")
             .select("id, title, start_date, end_date, is_completed")
             .eq("user_id", userId)
             .order("created_at", { ascending: false })
             .limit(1)
             .maybeSingle();
-          if (error) console.warn("recent plan fetch error:", error);
           activePlan = data ?? null;
         }
 
         setPlan(activePlan ?? null);
 
-        // 2) Load plan_workouts (with nested workout + exercise names)
+        // 2) plan_workouts
         let planWorkoutIds: string[] = [];
         if (activePlan?.id) {
-          const { data: pws, error: pwErr } = await supabase
+          const { data: pws } = await supabase
             .from("plan_workouts")
-            .select(
-              `
-    id,
-    title,
-    order_index,
-    weekly_complete,
-    workout_id,
-    workouts!inner (
-      id,
-      workout_exercises (
-        order_index,
-        exercises ( name )
-      )
-    )
-  `
-            )
+            .select(`
+              id, title, order_index, weekly_complete, workout_id,
+              workouts!inner ( id, workout_exercises ( order_index, exercises ( name ) ) )
+            `)
             .eq("plan_id", activePlan.id)
             .order("order_index", { ascending: true });
 
-          if (pwErr) {
-            console.warn("plan_workouts fetch error:", pwErr);
-          }
-
-          // Normalize to your PlanWorkoutRow shape
-          type PlanWorkoutRow = {
-            id: string;
-            title: string | null;
-            order_index: number | null;
-            weekly_complete: boolean | null;
-            workout_id: string;
-            workouts: {
-              id: string;
-              workout_exercises: Array<{
-                order_index: number | null;
-                exercises: { name: string | null } | null;
-              }>;
-            } | null;
-          };
-
           const rows: PlanWorkoutRow[] = (pws ?? []).map((r: any) => {
-            // Supabase may return workouts as an array; normalize to a single object or null
             const w = Array.isArray(r.workouts) ? r.workouts[0] : r.workouts;
-
             return {
               id: String(r.id),
               title: r.title ?? null,
@@ -233,14 +180,10 @@ export default function WorkoutScreen() {
               workouts: w
                 ? {
                     id: String(w.id),
-                    workout_exercises: (w.workout_exercises ?? []).map(
-                      (we: any) => ({
-                        order_index: we?.order_index ?? null,
-                        exercises: we?.exercises
-                          ? { name: we.exercises.name ?? null }
-                          : null,
-                      })
-                    ),
+                    workout_exercises: (w.workout_exercises ?? []).map((we: any) => ({
+                      order_index: we?.order_index ?? null,
+                      exercises: we?.exercises ? { name: we.exercises.name ?? null } : null,
+                    })),
                   }
                 : null,
             };
@@ -248,14 +191,13 @@ export default function WorkoutScreen() {
           setPlanWorkouts(rows);
           planWorkoutIds = rows.map((r) => r.workout_id);
 
-          // 3) Completed count (any history for these workouts)
+          // 3) Completed count
           if (planWorkoutIds.length) {
-            const { count, error: whErr } = await supabase
+            const { count } = await supabase
               .from("workout_history")
               .select("*", { count: "exact", head: true })
               .eq("user_id", userId)
               .in("workout_id", planWorkoutIds);
-            if (whErr) console.warn("workout_history count error:", whErr);
             setCompletedCount(count ?? 0);
           } else {
             setCompletedCount(0);
@@ -265,29 +207,23 @@ export default function WorkoutScreen() {
           setCompletedCount(0);
         }
 
-        // 4) Loose workouts (exclude ones used in this plan)
+        // 4) Loose workouts
         if (planWorkoutIds.length) {
-          const { data: loose, error: lwErr } = await supabase
+          const { data: loose } = await supabase
             .from("workouts")
             .select("id, title, notes")
             .eq("user_id", userId)
-            .not(
-              "id",
-              "in",
-              `(${planWorkoutIds.map((id) => `'${id}'`).join(",")})`
-            )
+            .not("id", "in", `(${planWorkoutIds.map((id) => `'${id}'`).join(",")})`)
             .order("updated_at", { ascending: false })
             .limit(20);
-          if (lwErr) console.warn("loose workouts fetch error:", lwErr);
           setLooseWorkouts(loose ?? []);
         } else {
-          const { data: loose, error: lwErr } = await supabase
+          const { data: loose } = await supabase
             .from("workouts")
             .select("id, title, notes")
             .eq("user_id", userId)
             .order("updated_at", { ascending: false })
             .limit(20);
-          if (lwErr) console.warn("loose workouts fetch error:", lwErr);
           setLooseWorkouts(loose ?? []);
         }
       } catch (e) {
@@ -302,7 +238,6 @@ export default function WorkoutScreen() {
     })();
   }, [userId]);
 
-  // Build a readable “highlights” string from nested exercises
   function buildHighlights(row: PlanWorkoutRow): string {
     const exs =
       row.workouts?.workout_exercises
@@ -315,15 +250,15 @@ export default function WorkoutScreen() {
 
   if (!userId) {
     return (
-      <View style={styles.center}>
-        <Text>Please log in to view your workouts.</Text>
+      <View style={[styles.center, { backgroundColor: colors.background }]}>
+        <Text style={{ color: colors.text }}>Please log in to view your workouts.</Text>
       </View>
     );
   }
 
   if (loading) {
     return (
-      <View style={styles.center}>
+      <View style={[styles.center, { backgroundColor: colors.background }]}>
         <ActivityIndicator />
       </View>
     );
@@ -333,7 +268,7 @@ export default function WorkoutScreen() {
   if (!plan && looseWorkouts.length === 0) {
     return (
       <ScrollView
-        style={{ flex: 1, backgroundColor: "#F7F8FA" }}
+        style={{ flex: 1, backgroundColor: colors.background }}
         contentContainerStyle={{ padding: 16, gap: 16 }}
       >
         <CalloutCard
@@ -353,13 +288,11 @@ export default function WorkoutScreen() {
   const workoutsPerWeekPlanned = planWorkouts.length;
   const planWeeks = weeksBetween(plan?.start_date, plan?.end_date);
   const totalExpected = workoutsPerWeekPlanned * planWeeks;
-  const pctComplete = totalExpected
-    ? Math.min(100, (completedCount / totalExpected) * 100)
-    : 0;
+  const pctComplete = totalExpected ? Math.min(100, (completedCount / totalExpected) * 100) : 0;
 
   return (
     <ScrollView
-      style={{ flex: 1, backgroundColor: "#F7F8FA" }}
+      style={{ flex: 1, backgroundColor: colors.background }}
       contentContainerStyle={{ padding: 16, gap: 16 }}
     >
       {/* Plan summary */}
@@ -369,9 +302,7 @@ export default function WorkoutScreen() {
             {/* Left: text */}
             <View style={{ flex: 1, paddingRight: 12 }}>
               <Text style={styles.planTitle}>{plan.title ?? "My Plan"}</Text>
-              <Text style={styles.muted}>
-                {endText ? `Ends: ${endText}` : "No end date set"}
-              </Text>
+              <Text style={styles.muted}>{endText ? `Ends: ${endText}` : "No end date set"}</Text>
               <Text style={[styles.muted, { marginTop: 2 }]}>
                 {completedCount} of {totalExpected} workouts completed
               </Text>
@@ -381,7 +312,7 @@ export default function WorkoutScreen() {
             </View>
 
             {/* Right: progress ring */}
-            <ProgressRing size={72} stroke={8} pct={pctComplete} />
+            <ProgressRing size={72} stroke={8} pct={pctComplete} colors={colors} />
           </View>
         </View>
       )}
@@ -395,16 +326,12 @@ export default function WorkoutScreen() {
               <View style={{ flexDirection: "row", gap: 8 }}>
                 <PillButton
                   label="View"
-                  onPress={() =>
-                    Alert.alert("View Plan", "Plan details coming soon.")
-                  }
+                  onPress={() => Alert.alert("View Plan", "Plan details coming soon.")}
                 />
                 <PillButton
                   label="Edit"
                   tone="warning"
-                  onPress={() =>
-                    Alert.alert("Edit Plan", "Plan editor coming soon.")
-                  }
+                  onPress={() => Alert.alert("Edit Plan", "Plan editor coming soon.")}
                 />
               </View>
             }
@@ -416,9 +343,7 @@ export default function WorkoutScreen() {
                 title={pw.title ?? "Workout"}
                 highlights={buildHighlights(pw)}
                 completed={false}
-                onPress={() =>
-                  Alert.alert("Open Workout", pw.title ?? "Workout")
-                }
+                onPress={() => Alert.alert("Open Workout", pw.title ?? "Workout")}
               />
             ))}
 
@@ -439,9 +364,7 @@ export default function WorkoutScreen() {
             <PillButton
               label="Create Workout"
               tone="primary"
-              onPress={() =>
-                Alert.alert("Create Workout", "Workout creator coming soon.")
-              }
+              onPress={() => Alert.alert("Create Workout", "Workout creator coming soon.")}
             />
           }
         />
@@ -467,13 +390,9 @@ export default function WorkoutScreen() {
 
 /* ---------- presentational ---------- */
 
-function SectionHeader({
-  title,
-  right,
-}: {
-  title: string;
-  right?: React.ReactNode;
-}) {
+function SectionHeader({ title, right }: { title: string; right?: React.ReactNode }) {
+  const { colors } = useAppTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   return (
     <View style={styles.sectionHeader}>
       <Text style={styles.h2}>{title}</Text>
@@ -491,17 +410,18 @@ function PillButton({
   onPress: () => void;
   tone?: "default" | "primary" | "warning";
 }) {
+  const { colors } = useAppTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
+
   const styleByTone =
     tone === "primary"
-      ? { bg: "#e6f0ff", fg: "#0b6aa9" }
+      ? { bg: colors.primaryBg, fg: colors.primaryText }
       : tone === "warning"
-      ? { bg: "#fff3e0", fg: "#b45309" }
-      : { bg: "#EEF2F6", fg: "#111827" };
+      ? { bg: colors.warnBg, fg: colors.warnText }
+      : { bg: colors.surface, fg: colors.text };
+
   return (
-    <Pressable
-      onPress={onPress}
-      style={[styles.pill, { backgroundColor: styleByTone.bg }]}
-    >
+    <Pressable onPress={onPress} style={[styles.pill, { backgroundColor: styleByTone.bg }]}>
       <Text style={{ fontWeight: "700", color: styleByTone.fg }}>{label}</Text>
     </Pressable>
   );
@@ -518,12 +438,12 @@ function PlanWorkoutItem({
   completed: boolean;
   onPress: () => void;
 }) {
+  const { colors } = useAppTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
+
   return (
-    <Pressable
-      onPress={onPress}
-      style={[styles.card, completed && styles.completedCard]}
-    >
-      <Text style={[styles.h3, completed && { color: "#22c55e" }]}>
+    <Pressable onPress={onPress} style={[styles.card, completed && styles.completedCard]}>
+      <Text style={[styles.h3, completed && { color: colors.successText }]}>
         {title}
         {completed ? "  ✓ Completed" : ""}
       </Text>
@@ -541,15 +461,11 @@ function WorkoutCard({
   notes: string | null;
   onPress: () => void;
 }) {
+  const { colors } = useAppTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   return (
     <Pressable onPress={onPress} style={styles.card}>
-      <View
-        style={{
-          flexDirection: "row",
-          justifyContent: "space-between",
-          alignItems: "center",
-        }}
-      >
+      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
         <Text style={styles.h3}>{title}</Text>
       </View>
       <Text style={styles.muted}>
@@ -574,56 +490,55 @@ function CalloutCard({
   onPrimary: () => void;
   onSecondary?: () => void;
 }) {
+  const { colors } = useAppTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   return (
     <View style={styles.card}>
       <Text style={styles.h2}>{title}</Text>
-      {subtitle ? (
-        <Text style={[styles.muted, { marginTop: 4 }]}>{subtitle}</Text>
-      ) : null}
+      {subtitle ? <Text style={[styles.muted, { marginTop: 4 }]}>{subtitle}</Text> : null}
       <View style={{ flexDirection: "row", gap: 10, marginTop: 12 }}>
         <PillButton label={primary} onPress={onPrimary} tone="primary" />
-        {secondary ? (
-          <PillButton label={secondary} onPress={onSecondary!} />
-        ) : null}
+        {secondary ? <PillButton label={secondary} onPress={onSecondary!} /> : null}
       </View>
     </View>
   );
 }
 
-/* ---------- styles ---------- */
+/* ---------- themed styles ---------- */
 
-const styles = StyleSheet.create({
-  center: { flex: 1, alignItems: "center", justifyContent: "center" },
+const makeStyles = (colors: any) =>
+  StyleSheet.create({
+    center: { flex: 1, alignItems: "center", justifyContent: "center" },
 
-  section: { gap: 10 },
-  sectionHeader: {
-    paddingHorizontal: 2,
-    paddingVertical: 4,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
+    section: { gap: 10 },
+    sectionHeader: {
+      paddingHorizontal: 2,
+      paddingVertical: 4,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+    },
 
-  card: {
-    backgroundColor: "white",
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "#E5E7EB",
-  },
-  completedCard: {
-    backgroundColor: "#ecfdf5",
-    borderColor: "#A7F3D0",
-  },
+    card: {
+      backgroundColor: colors.card,
+      borderRadius: 16,
+      padding: 16,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+    },
+    completedCard: {
+      backgroundColor: colors.successBg,
+      borderColor: colors.successText,
+    },
 
-  planTitle: { fontSize: 18, fontWeight: "800", textAlign: "center" },
-  muted: { color: "#6b7280" },
-  h2: { fontSize: 16, fontWeight: "800" },
-  h3: { fontSize: 15, fontWeight: "700" },
+    planTitle: { fontSize: 18, fontWeight: "800", textAlign: "center", color: colors.text },
+    muted: { color: colors.subtle },
+    h2: { fontSize: 16, fontWeight: "800", color: colors.text },
+    h3: { fontSize: 15, fontWeight: "700", color: colors.text },
 
-  pill: {
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 999,
-  },
-});
+    pill: {
+      paddingVertical: 6,
+      paddingHorizontal: 12,
+      borderRadius: 999,
+    },
+  });

@@ -8,10 +8,11 @@ import {
   ActivityIndicator,
   Pressable,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { supabase } from "../../../lib/supabase";
 import { useAuth } from "../../../lib/useAuth";
 import { router } from "expo-router";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { useAppTheme } from "../../../lib/useAppTheme";
 
 type Achievement = {
   id: string;
@@ -26,6 +27,9 @@ export default function AchievementsScreen() {
   const { session } = useAuth();
   const userId = session?.user?.id;
 
+  const { colors } = useAppTheme();
+  const s = useMemo(() => makeStyles(colors), [colors]);
+
   const [loading, setLoading] = useState(true);
   const [list, setList] = useState<Achievement[]>([]);
   const [unlockedIds, setUnlockedIds] = useState<Set<string>>(new Set());
@@ -37,22 +41,20 @@ export default function AchievementsScreen() {
       try {
         setLoading(true);
 
-        const [{ data: all, error: e1 }, { data: mine, error: e2 }] =
-          await Promise.all([
-            supabase
-              .from("achievements")
-              .select("id, code, title, description, category, difficulty")
-              .order("difficulty")
-              .order("category"),
-            supabase
-              .from("user_achievements")
-              .select("achievement_id")
-              .eq("user_id", userId),
-          ]);
+        const [{ data: all }, { data: mine }] = await Promise.all([
+          supabase
+            .from("achievements")
+            .select("id, code, title, description, category, difficulty")
+            .order("difficulty")
+            .order("category"),
+          supabase
+            .from("user_achievements")
+            .select("achievement_id")
+            .eq("user_id", userId),
+        ]);
 
-        if (!e1 && all) setList(all as Achievement[]);
-        if (!e2 && mine)
-          setUnlockedIds(new Set(mine.map((m: any) => m.achievement_id)));
+        if (all) setList(all as Achievement[]);
+        if (mine) setUnlockedIds(new Set(mine.map((m: any) => m.achievement_id)));
       } finally {
         setLoading(false);
       }
@@ -71,28 +73,24 @@ export default function AchievementsScreen() {
 
   if (!userId) {
     return (
-      <View style={s.center}>
-        <Text>Please sign in.</Text>
+      <View style={[s.center, { backgroundColor: colors.background }]}>
+        <Text style={{ color: colors.text }}>Please sign in.</Text>
       </View>
     );
   }
   if (loading) {
     return (
-      <View style={s.center}>
+      <View style={[s.center, { backgroundColor: colors.background }]}>
         <ActivityIndicator />
       </View>
     );
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: "#F7F8FA" }}>
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
       <SafeAreaView
         edges={["top", "left", "right"]}
-        style={{
-          paddingHorizontal: 16,
-          paddingBottom: 8,
-          backgroundColor: "#F7F8FA",
-        }}
+        style={{ paddingHorizontal: 16, paddingBottom: 8, backgroundColor: colors.background }}
       >
         <View style={s.headerRow}>
           <Pressable onPress={() => router.back()}>
@@ -120,14 +118,11 @@ export default function AchievementsScreen() {
   );
 }
 
-function AchievementCard({
-  a,
-  unlocked,
-}: {
-  a: Achievement;
-  unlocked: boolean;
-}) {
-  const badge = diffBadge(a.difficulty);
+function AchievementCard({ a, unlocked }: { a: Achievement; unlocked: boolean }) {
+  const { colors } = useAppTheme();
+  const s = useMemo(() => makeStyles(colors), [colors]);
+  const badge = diffBadge(a.difficulty, colors);
+
   return (
     <View style={[s.card, !unlocked && { opacity: 0.55 }]}>
       <View style={s.badgeRow}>
@@ -139,12 +134,7 @@ function AchievementCard({
       <Text style={s.title}>{a.title}</Text>
       <Text style={s.desc}>{a.description}</Text>
       <View style={s.lockRow}>
-        <Text
-          style={[
-            s.lock,
-            unlocked ? { color: "#22c55e" } : { color: "#9ca3af" },
-          ]}
-        >
+        <Text style={[s.lock, { color: unlocked ? colors.successText : colors.muted }]}>
           {unlocked ? "Unlocked ✓" : "Locked"}
         </Text>
       </View>
@@ -152,64 +142,71 @@ function AchievementCard({
   );
 }
 
-/* ---------- styles & utils ---------- */
-const s = StyleSheet.create({
-  center: { flex: 1, alignItems: "center", justifyContent: "center" },
-  headerRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  header: { fontSize: 20, fontWeight: "800" },
-  subtle: { color: "#6b7280", marginTop: 6 },
-  link: { color: "#2563eb", fontWeight: "700", width: 52 },
+/* ---------- themed styles & utils ---------- */
+const makeStyles = (colors: any) =>
+  StyleSheet.create({
+    center: { flex: 1, alignItems: "center", justifyContent: "center" },
 
-  card: {
-    flex: 1,
-    minHeight: 140,
-    backgroundColor: "white",
-    borderRadius: 16,
-    padding: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "#E5E7EB",
-  },
-  badgeRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 6,
-  },
-  badge: {
-    paddingVertical: 3,
-    paddingHorizontal: 8,
-    borderRadius: 999,
-    overflow: "hidden",
-    fontWeight: "800",
-    fontSize: 11,
-  },
-  cat: { color: "#6b7280", fontSize: 12 },
-  title: { fontWeight: "800", marginBottom: 4 },
-  desc: { color: "#4b5563", fontSize: 12 },
-  lockRow: { marginTop: 10, flexDirection: "row", justifyContent: "flex-end" },
-  lock: { fontWeight: "700" },
-});
+    headerRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+    },
+    header: { fontSize: 20, fontWeight: "800", color: colors.text },
+    subtle: { color: colors.subtle, marginTop: 6 },
+    link: { color: colors.primaryText, fontWeight: "700", width: 52 },
 
-function diffBadge(d: Achievement["difficulty"]) {
+    card: {
+      flex: 1,
+      minHeight: 140,
+      backgroundColor: colors.card,
+      borderRadius: 16,
+      padding: 12,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+    },
+    badgeRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      marginBottom: 6,
+    },
+    badge: {
+      paddingVertical: 3,
+      paddingHorizontal: 8,
+      borderRadius: 999,
+      overflow: "hidden",
+      fontWeight: "800",
+      fontSize: 11,
+    },
+    cat: { color: colors.subtle, fontSize: 12 },
+    title: { fontWeight: "800", marginBottom: 4, color: colors.text },
+    desc: { color: colors.text, opacity: 0.9, fontSize: 12 },
+    lockRow: { marginTop: 10, flexDirection: "row", justifyContent: "flex-end" },
+    lock: { fontWeight: "700" },
+  });
+
+function diffBadge(
+  d: Achievement["difficulty"],
+  colors: any
+): { bg: string; fg: string; label: string } {
   switch (d) {
     case "easy":
-      return { bg: "#e6f6ea", fg: "#16a34a", label: "EASY" };
+      return { bg: colors.successBg, fg: colors.successText, label: "EASY" };
     case "medium":
-      return { bg: "#e6f0ff", fg: "#2563eb", label: "MEDIUM" };
+      return { bg: colors.primaryBg, fg: colors.primaryText, label: "MEDIUM" };
     case "hard":
-      return { bg: "#fff4e6", fg: "#f59e0b", label: "HARD" };
+      return { bg: colors.warnBg, fg: colors.warnText, label: "HARD" };
     case "elite":
-      return { bg: "#fee2e2", fg: "#ef4444", label: "ELITE" };
+      return { bg: `${colors.danger}22`, fg: colors.danger, label: "ELITE" };
     case "legendary":
-      return { bg: "#f3e8ff", fg: "#7c3aed", label: "LEGEND" };
+      // purple-ish using primary as base; tweak if you add a dedicated "purple" to theme
+      return { bg: `${colors.notification}22`, fg: colors.notification, label: "LEGEND" };
     default:
-      return { bg: "#e5e7eb", fg: "#111827", label: "—" };
+      return { bg: colors.surface, fg: colors.text, label: "—" };
   }
 }
+
 function capitalize(s: string) {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }

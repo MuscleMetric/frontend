@@ -12,6 +12,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { supabase } from "../../../lib/supabase";
 import { useAuth } from "../../../lib/useAuth";
+import { useAppTheme } from "../../../lib/useAppTheme";
 
 type Plan = {
   id: string;
@@ -35,6 +36,9 @@ type GoalRow = {
 export default function GoalsScreen() {
   const { session } = useAuth();
   const userId = session?.user?.id;
+
+  const { colors } = useAppTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
 
   const [loading, setLoading] = useState(true);
   const [plan, setPlan] = useState<Plan | null>(null);
@@ -74,28 +78,26 @@ export default function GoalsScreen() {
         setPlan(activePlan ?? null);
 
         // 2) Goals for that plan (if any)
-        // 2) Goals for that plan (if any)
         if (activePlan?.id) {
           const { data: g } = await supabase
             .from("goals")
             .select(
               `
-        id,
-        type,
-        target_number,
-        unit,
-        deadline,
-        is_active,
-        notes,
-        exercises ( name )
-      `
+              id,
+              type,
+              target_number,
+              unit,
+              deadline,
+              is_active,
+              notes,
+              exercises ( name )
+            `
             )
             .eq("plan_id", activePlan.id)
             .eq("user_id", userId)
             .order("created_at", { ascending: true });
 
           const rows: GoalRow[] = (g ?? []).map((r: any) => {
-            // normalize exercises -> single object or null
             let ex: { name: string | null } | null = null;
             if (Array.isArray(r.exercises)) {
               const first = r.exercises[0];
@@ -201,7 +203,7 @@ export default function GoalsScreen() {
           </View>
         ) : goals.length === 0 ? (
           <View style={styles.card}>
-            <Text style={{ color: "#6b7280" }}>
+            <Text style={styles.subtle}>
               No plan goals yet. Once you create a plan with goals, they will
               appear here.
             </Text>
@@ -209,9 +211,7 @@ export default function GoalsScreen() {
               style={[styles.btn, styles.primary, { marginTop: 12 }]}
               onPress={() => router.push("/features/plans/create/planInfo")}
             >
-              <Text style={[styles.btnText, { color: "#fff" }]}>
-                Create Plan
-              </Text>
+              <Text style={styles.btnPrimaryText}>Create Plan</Text>
             </Pressable>
           </View>
         ) : (
@@ -221,14 +221,14 @@ export default function GoalsScreen() {
               const exerciseName = g.exercises?.name ?? "Exercise";
               return (
                 <View key={g.id} style={styles.card}>
-                  <Text style={{ fontWeight: "800" }}>{exerciseName}</Text>
-                  <Text style={{ color: "#6b7280", marginTop: 2 }}>
+                  <Text style={styles.title}>{exerciseName}</Text>
+                  <Text style={styles.subtle}>
                     {fmtMode(g.type)} → {g.target_number}
                     {g.unit ? ` ${g.unit}` : ""}
                     {start != null ? `  (start ${start}${g.unit ?? ""})` : ""}
                   </Text>
                   {!!g.deadline && (
-                    <Text style={{ color: "#9ca3af", marginTop: 4 }}>
+                    <Text style={styles.deadline}>
                       Due{" "}
                       {new Date(g.deadline).toLocaleDateString("en-US", {
                         month: "short",
@@ -247,38 +247,48 @@ export default function GoalsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  safe: {
-    flex: 1,
-    backgroundColor: "#F7F8FA",
-    paddingHorizontal: 16,
-    paddingBottom: 8,
-  },
-  link: { color: "#2563eb", fontWeight: "700", width: 52 },
-  headerRow: {
-    paddingBottom: 8,
-    paddingTop: 12,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    gap: 12,
-  },
-  body: { flex: 1, paddingVertical: 16 },
-  h1: { fontSize: 18, fontWeight: "800" },
-  h2: { color: "#6b7280" },
-  card: {
-    backgroundColor: "white",
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "#E5E7EB",
-  },
-  btn: {
-    backgroundColor: "#EEF2F6",
-    paddingVertical: 10,
-    borderRadius: 10,
-    alignItems: "center",
-  },
-  btnText: { fontWeight: "800", color: "#111827" },
-  primary: { backgroundColor: "#2563eb" },
-});
+/* ---- themed styles ---- */
+const makeStyles = (colors: any) =>
+  StyleSheet.create({
+    safe: {
+      flex: 1,
+      backgroundColor: colors.background,
+      paddingHorizontal: 16,
+      paddingBottom: 8,
+    },
+    link: { color: colors.primaryText, fontWeight: "700", width: 52 },
+    headerRow: {
+      paddingBottom: 8,
+      paddingTop: 12,
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "flex-start",
+      gap: 12,
+    },
+    body: { flex: 1, paddingVertical: 16 },
+    h1: { fontSize: 18, fontWeight: "800", color: colors.text },
+    h2: { color: colors.subtle },
+    subtle: { color: colors.subtle },
+    title: { fontWeight: "800", color: colors.text },
+    deadline: { color: colors.muted, marginTop: 4 },
+
+    card: {
+      backgroundColor: colors.card,
+      borderRadius: 16,
+      padding: 16,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+    },
+
+    btn: {
+      backgroundColor: colors.surface,
+      paddingVertical: 10,
+      borderRadius: 10,
+      alignItems: "center",
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+    },
+    btnText: { fontWeight: "800", color: colors.text },
+    primary: { backgroundColor: colors.primary, borderColor: colors.primary },
+    btnPrimaryText: { fontWeight: "800", color: colors.onPrimary ?? "#fff" },
+  });

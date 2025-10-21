@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import { router } from "expo-router";
 import { usePlanDraft, type ExerciseRow, type GoalDraft } from "./store";
+import { useAppTheme } from "../../../../lib/useAppTheme";
 
 /** Helpers for mode <-> unit */
 const MODE_UNIT: Record<GoalDraft["mode"], string> = {
@@ -26,6 +27,9 @@ type DedupExercise = {
 };
 
 export default function Goals() {
+  const { colors } = useAppTheme();
+  const s = useMemo(() => makeStyles(colors), [colors]);
+
   const { workouts, goals, setGoals, endDate } = usePlanDraft();
 
   // Plan length (weeks)
@@ -55,7 +59,6 @@ export default function Goals() {
   const findGoal = (exerciseId: string) =>
     goals.find((g) => g.exercise.id === exerciseId);
 
-  // Which modes to show for a given exercise
   function modeOptionsForExercise(ex: ExerciseRow): GoalDraft["mode"][] {
     return ex.type === "cardio"
       ? ["distance", "time"]
@@ -97,11 +100,10 @@ export default function Goals() {
     goal: GoalDraft,
     nextMode: GoalDraft["mode"]
   ) {
-    // Switch mode and force the correct unit; keep numeric values but they can be adjusted after
     updateGoal(ex.id, { mode: nextMode, unit: MODE_UNIT[nextMode] });
   }
 
-  // Progression helpers
+  // -------- progression helpers --------
   function getWeeksBetween(startIso: string, endIso: string): number {
     const start = new Date(startIso);
     const end = new Date(endIso);
@@ -109,61 +111,32 @@ export default function Goals() {
     const weeks = diffMs / (1000 * 60 * 60 * 24 * 7);
     return Math.max(1, Math.round(weeks));
   }
-
-  function increaseRange(
-    start: number,
-    weeks: number,
-    mode: GoalDraft["mode"]
-  ) {
+  function increaseRange(start: number, weeks: number, mode: GoalDraft["mode"]) {
     const min = start * (1 + 0.01 * weeks);
     const max = start * (1 + 0.05 * weeks);
     const suggested = (min + max) / 2;
-    return {
-      min: roundForMode(mode, min),
-      max: roundForMode(mode, max),
-      suggested: roundForMode(mode, suggested),
-    };
+    return { min: roundForMode(mode, min), max: roundForMode(mode, max), suggested: roundForMode(mode, suggested) };
   }
-
-  function decreaseRange(
-    start: number,
-    weeks: number,
-    mode: GoalDraft["mode"]
-  ) {
-    const max = Math.max(0, start * (1 - 0.01 * weeks)); // smaller improvement
-    const min = Math.max(0, start * (1 - 0.05 * weeks)); // larger improvement
+  function decreaseRange(start: number, weeks: number, mode: GoalDraft["mode"]) {
+    const max = Math.max(0, start * (1 - 0.01 * weeks));
+    const min = Math.max(0, start * (1 - 0.05 * weeks));
     const suggested = (min + max) / 2;
-    return {
-      min: roundForMode(mode, min),
-      max: roundForMode(mode, max),
-      suggested: roundForMode(mode, suggested),
-    };
+    return { min: roundForMode(mode, min), max: roundForMode(mode, max), suggested: roundForMode(mode, suggested) };
   }
-
-  function calcRangeForMode(
-    mode: GoalDraft["mode"],
-    start: number,
-    weeks: number
-  ) {
-    return mode === "time"
-      ? decreaseRange(start, weeks, mode)
-      : increaseRange(start, weeks, mode);
+  function calcRangeForMode(mode: GoalDraft["mode"], start: number, weeks: number) {
+    return mode === "time" ? decreaseRange(start, weeks, mode) : increaseRange(start, weeks, mode);
   }
-
-  /** Round numbers by mode: ints for weight/reps/distance, 1 decimal for time */
   function roundForMode(mode: GoalDraft["mode"], n: number) {
     if (!isFinite(n)) return 0;
     return mode === "time" ? Number(n.toFixed(1)) : Math.round(n);
   }
-
-  /** String formatting for showing ranges */
   function fmtForMode(mode: GoalDraft["mode"], n: number) {
     return mode === "time" ? n.toFixed(1) : String(Math.round(n));
   }
 
   return (
     <ScrollView
-      style={{ flex: 1, backgroundColor: "#F7F8FA" }}
+      style={{ flex: 1, backgroundColor: colors.background }}
       contentContainerStyle={{ padding: 16 }}
     >
       <Text style={s.h2}>Set Your Plan Goals</Text>
@@ -174,15 +147,11 @@ export default function Goals() {
       {deduped.map(({ exercise, workoutTitles }) => {
         const selected = !!findGoal(exercise.id);
         const g = findGoal(exercise.id);
-        const contextText =
-          workoutTitles.length > 0 ? workoutTitles.join(", ") : "—";
+        const contextText = workoutTitles.length > 0 ? workoutTitles.join(", ") : "—";
         const modes = modeOptionsForExercise(exercise);
 
         return (
-          <View
-            key={exercise.id}
-            style={[s.card, selected && { borderColor: "#2563eb" }]}
-          >
+          <View key={exercise.id} style={[s.card, selected && { borderColor: colors.primary }]}>
             <Pressable
               onPress={() => toggleExercise(exercise)}
               style={{ flexDirection: "row", justifyContent: "space-between" }}
@@ -198,10 +167,8 @@ export default function Goals() {
 
             {selected && g && (
               <View style={{ marginTop: 10, gap: 10 }}>
-                {/* Mode selector (filtered by exercise type) */}
-                <View
-                  style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}
-                >
+                {/* Mode selector */}
+                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
                   {modes.map((m) => {
                     const active = g.mode === m;
                     return (
@@ -210,12 +177,7 @@ export default function Goals() {
                         onPress={() => onChangeMode(exercise, g, m)}
                         style={[s.chip, active && s.chipActive]}
                       >
-                        <Text
-                          style={{
-                            color: active ? "#fff" : "#111827",
-                            fontWeight: "700",
-                          }}
-                        >
+                        <Text style={{ color: active ? (colors.primary ?? "#fff") : colors.text, fontWeight: "700" }}>
                           {labelForMode(m)}
                         </Text>
                       </Pressable>
@@ -223,37 +185,23 @@ export default function Goals() {
                   })}
                 </View>
 
-                {/* Values (unit is fixed per mode and not editable) */}
-                <View
-                  style={{ flexDirection: "row", gap: 8, alignItems: "center" }}
-                >
+                {/* Values */}
+                <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
                   <View style={{ flex: 1 }}>
                     <TextInput
-                      style={[s.input]}
+                      style={s.input}
                       placeholder="Start"
+                      placeholderTextColor={colors.subtle}
                       keyboardType="numeric"
                       value={g.start != null ? String(g.start) : ""}
                       onChangeText={(v) => {
                         const raw = v === "" ? null : Number(v);
-                        const val =
-                          raw == null ? null : roundForMode(g.mode, raw);
-
+                        const val = raw == null ? null : roundForMode(g.mode, raw);
                         if (val != null && planWeeks > 0) {
-                          const { suggested } = calcRangeForMode(
-                            g.mode,
-                            val,
-                            planWeeks
-                          );
-                          updateGoal(exercise.id, {
-                            start: val,
-                            target: suggested,
-                            unit: MODE_UNIT[g.mode],
-                          });
+                          const { suggested } = calcRangeForMode(g.mode, val, planWeeks);
+                          updateGoal(exercise.id, { start: val, target: suggested, unit: MODE_UNIT[g.mode] });
                         } else {
-                          updateGoal(exercise.id, {
-                            start: val,
-                            unit: MODE_UNIT[g.mode],
-                          });
+                          updateGoal(exercise.id, { start: val, unit: MODE_UNIT[g.mode] });
                         }
                       }}
                     />
@@ -261,17 +209,15 @@ export default function Goals() {
                   <Text style={s.unitPill}>{MODE_UNIT[g.mode]}</Text>
                   <View style={{ flex: 1 }}>
                     <TextInput
-                      style={[s.input]}
+                      style={s.input}
                       placeholder="Target"
+                      placeholderTextColor={colors.subtle}
                       keyboardType="numeric"
                       value={g.target != null ? String(g.target) : ""}
                       onChangeText={(v) => {
                         const raw = v === "" ? 0 : Number(v);
                         const val = roundForMode(g.mode, raw);
-                        updateGoal(exercise.id, {
-                          target: val,
-                          unit: MODE_UNIT[g.mode],
-                        });
+                        updateGoal(exercise.id, { target: val, unit: MODE_UNIT[g.mode] });
                       }}
                     />
                   </View>
@@ -279,17 +225,13 @@ export default function Goals() {
 
                 {/* Recommended range */}
                 {g.start != null && planWeeks > 0 && (
-                  <Text style={{ color: "#2563eb", marginTop: 4 }}>
+                  <Text style={{ color: colors.primaryText, marginTop: 4 }}>
                     {(() => {
-                      const { min, max } = calcRangeForMode(
+                      const { min, max } = calcRangeForMode(g.mode, g.start!, planWeeks);
+                      return `Recommended target range: ${fmtForMode(g.mode, min)}–${fmtForMode(
                         g.mode,
-                        g.start!,
-                        planWeeks
-                      );
-                      return `Recommended target range: ${fmtForMode(
-                        g.mode,
-                        min
-                      )}–${fmtForMode(g.mode, max)} ${MODE_UNIT[g.mode]}`;
+                        max
+                      )} ${MODE_UNIT[g.mode]}`;
                     })()}
                   </Text>
                 )}
@@ -305,7 +247,7 @@ export default function Goals() {
         style={[s.btn, s.primary]}
         onPress={() => router.push("/features/plans/create/review")}
       >
-        <Text style={[s.btnText, { color: "#fff" }]}>Next → Review Plan</Text>
+        <Text style={s.btnPrimaryText}>Next → Review Plan</Text>
       </Pressable>
     </ScrollView>
   );
@@ -326,65 +268,77 @@ function labelForMode(m: GoalDraft["mode"]) {
   }
 }
 
-/* -------- styles -------- */
+/* -------- themed styles -------- */
 
-const s = StyleSheet.create({
-  h2: { fontSize: 18, fontWeight: "800" },
-  h4: { fontSize: 15, fontWeight: "700" },
-  muted: { color: "#6b7280" },
+const makeStyles = (colors: any) =>
+  StyleSheet.create({
+    h2: { fontSize: 18, fontWeight: "800", color: colors.text },
+    h4: { fontSize: 15, fontWeight: "700", color: colors.text },
+    muted: { color: colors.subtle },
 
-  card: {
-    backgroundColor: "white",
-    borderRadius: 12,
-    padding: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "#E5E7EB",
-    marginBottom: 10,
-  },
+    card: {
+      backgroundColor: colors.card,
+      borderRadius: 12,
+      padding: 12,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      marginBottom: 10,
+    },
 
-  badge: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    fontWeight: "800",
-    overflow: "hidden",
-  },
-  badgeOn: { backgroundColor: "#dbeafe", color: "#1e40af" },
-  badgeOff: { backgroundColor: "#f3f4f6", color: "#111827" },
+    badge: {
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      borderRadius: 999,
+      fontWeight: "800",
+      overflow: "hidden",
+    },
+    badgeOn: { backgroundColor: colors.primaryBg, color: colors.primaryText },
+    badgeOff: { backgroundColor: colors.surface, color: colors.text },
 
-  chip: {
-    backgroundColor: "#EEF2F6",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 999,
-  },
-  chipActive: { backgroundColor: "#2563eb" },
+    chip: {
+      backgroundColor: colors.surface,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      borderRadius: 999,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+    },
+    chipActive: {
+      backgroundColor: colors.primary,
+      borderColor: colors.primary,
+    },
 
-  input: {
-    backgroundColor: "white",
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "#D1D5DB",
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-  },
+    input: {
+      backgroundColor: colors.card,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      borderRadius: 10,
+      paddingHorizontal: 10,
+      paddingVertical: 8,
+      color: colors.text,
+    },
 
-  unitPill: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    backgroundColor: "#F1F5F9",
-    color: "#111827",
-    fontWeight: "700",
-  },
+    unitPill: {
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      borderRadius: 999,
+      backgroundColor: colors.surface,
+      color: colors.text,
+      fontWeight: "700",
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+    },
 
-  btn: {
-    backgroundColor: "#EEF2F6",
-    paddingVertical: 12,
-    borderRadius: 10,
-    alignItems: "center",
-    marginTop: 12,
-  },
-  primary: { backgroundColor: "#2563eb" },
-  btnText: { fontWeight: "800", color: "#111827" },
-});
+    btn: {
+      backgroundColor: colors.surface,
+      paddingVertical: 12,
+      borderRadius: 10,
+      alignItems: "center",
+      marginTop: 12,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+    },
+    primary: { backgroundColor: colors.primary, borderColor: colors.primary },
+    btnText: { fontWeight: "800", color: colors.text },
+    btnPrimaryText: { fontWeight: "800", color: colors.onPrimary ?? "#fff" },
+  });

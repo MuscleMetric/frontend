@@ -1,5 +1,5 @@
 // app/.../EditProfile.tsx
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -10,12 +10,14 @@ import {
   ScrollView,
   Platform,
   Modal,
+  ActivityIndicator,
 } from "react-native";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { supabase } from "../../../lib/supabase";
 import { useAuth } from "../../../lib/useAuth";
 import { router } from "expo-router";
+import { useAppTheme } from "../../../lib/useAppTheme";
 
 /* ---------- helpers ---------- */
 function toISODate(d: Date) {
@@ -25,7 +27,6 @@ function toISODate(d: Date) {
 }
 function parseISODate(s?: string | null) {
   if (!s) return null;
-  // Treat as YYYY-MM-DD without time zone
   const [y, m, d] = s.split("-").map((n) => parseInt(n, 10));
   if (!y || !m || !d) return null;
   return new Date(y, m - 1, d);
@@ -35,6 +36,9 @@ export default function EditProfile() {
   const { session } = useAuth();
   const userId = session?.user?.id;
 
+  const { colors } = useAppTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
+
   const [loading, setLoading] = useState(true);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -42,20 +46,20 @@ export default function EditProfile() {
   const [weight, setWeight] = useState("");
 
   // DOB state
-  const [dobIso, setDobIso] = useState<string>(""); // YYYY-MM-DD for saving
+  const [dobIso, setDobIso] = useState<string>("");
   const [showDobPicker, setShowDobPicker] = useState(false);
   const [tempDobDate, setTempDobDate] = useState<Date>(new Date(2000, 0, 1));
 
   useEffect(() => {
     if (!userId) return;
     (async () => {
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from("profiles")
         .select("name, email, height, weight, date_of_birth")
         .eq("id", userId)
         .single();
 
-      if (!error && data) {
+      if (data) {
         setName(data.name ?? "");
         setEmail(data.email ?? "");
         setHeight(data.height != null ? String(data.height) : "");
@@ -76,7 +80,6 @@ export default function EditProfile() {
 
   async function handleSave() {
     if (!userId) return;
-
     try {
       setLoading(true);
       const { error } = await supabase
@@ -86,7 +89,7 @@ export default function EditProfile() {
           email,
           height: height ? Number(height) : null,
           weight: weight ? Number(weight) : null,
-          date_of_birth: dobIso || null, // <- ISO string or null
+          date_of_birth: dobIso || null,
         })
         .eq("id", userId);
 
@@ -104,14 +107,14 @@ export default function EditProfile() {
     return (
       <SafeAreaView edges={["top", "left", "right"]} style={styles.safe}>
         <View style={styles.centered}>
-          <Text>Loading...</Text>
+          <ActivityIndicator />
         </View>
       </SafeAreaView>
     );
 
   return (
     <SafeAreaView edges={["top", "left", "right"]} style={styles.safe}>
-      <ScrollView contentContainerStyle={styles.container}>
+      <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
         <Text style={styles.title}>Edit Profile</Text>
 
         <View style={styles.inputGroup}>
@@ -121,6 +124,7 @@ export default function EditProfile() {
             onChangeText={setName}
             style={styles.input}
             placeholder="Your name"
+            placeholderTextColor={colors.subtle}
           />
         </View>
 
@@ -133,6 +137,7 @@ export default function EditProfile() {
             placeholder="you@example.com"
             autoCapitalize="none"
             keyboardType="email-address"
+            placeholderTextColor={colors.subtle}
           />
         </View>
 
@@ -145,6 +150,7 @@ export default function EditProfile() {
               style={styles.input}
               keyboardType="numeric"
               placeholder="e.g. 175"
+              placeholderTextColor={colors.subtle}
             />
           </View>
 
@@ -156,6 +162,7 @@ export default function EditProfile() {
               style={styles.input}
               keyboardType="numeric"
               placeholder="e.g. 70"
+              placeholderTextColor={colors.subtle}
             />
           </View>
         </View>
@@ -167,7 +174,7 @@ export default function EditProfile() {
             style={[styles.input, { justifyContent: "center" }]}
             onPress={() => setShowDobPicker(true)}
           >
-            <Text style={{ color: dobIso ? "#111827" : "#9CA3AF" }}>
+            <Text style={{ color: dobIso ? colors.text : colors.subtle }}>
               {dobIso || "Select date"}
             </Text>
           </Pressable>
@@ -192,7 +199,7 @@ export default function EditProfile() {
               value={tempDobDate}
               mode="date"
               display={Platform.OS === "ios" ? "spinner" : "default"}
-              maximumDate={new Date()} // can't be in the future
+              maximumDate={new Date()}
               onChange={(_, d) => d && setTempDobDate(d)}
             />
             <View style={{ flexDirection: "row", gap: 8, marginTop: 12 }}>
@@ -219,67 +226,79 @@ export default function EditProfile() {
   );
 }
 
-/* ---------- styles ---------- */
+/* ---------- themed styles ---------- */
+const makeStyles = (colors: any) =>
+  StyleSheet.create({
+    safe: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
+    container: {
+      padding: 20,
+      paddingBottom: 32,
+    },
+    centered: { flex: 1, alignItems: "center", justifyContent: "center" },
 
-const styles = StyleSheet.create({
-  safe: {
-    flex: 1,
-    backgroundColor: "#F7F8FA",
-  },
-  container: {
-    padding: 20,
-    paddingBottom: 32,
-  },
-  centered: { flex: 1, alignItems: "center", justifyContent: "center" },
-  title: {
-    fontSize: 22,
-    fontWeight: "800",
-    marginBottom: 20,
-    textAlign: "center",
-  },
-  inputGroup: { marginBottom: 16 },
-  row2: {
-    flexDirection: "row",
-    gap: 12,
-  },
-  flexItem: { flex: 1 },
-  label: { fontWeight: "700", marginBottom: 6, color: "#374151" },
-  input: {
-    backgroundColor: "white",
-    borderRadius: 12,
-    padding: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "#E5E7EB",
-  },
-  saveBtn: {
-    backgroundColor: "#0b6aa9",
-    paddingVertical: 14,
-    borderRadius: 12,
-    alignItems: "center",
-    marginTop: 10,
-  },
-  saveText: { color: "white", fontWeight: "700", fontSize: 16 },
+    title: {
+      fontSize: 22,
+      fontWeight: "800",
+      marginBottom: 20,
+      textAlign: "center",
+      color: colors.text,
+    },
 
-  // modal
-  modalScrim: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.3)",
-    justifyContent: "flex-end",
-  },
-  modalCard: {
-    backgroundColor: "#fff",
-    padding: 16,
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-  },
-  h3: { fontSize: 16, fontWeight: "800", marginBottom: 8 },
-  btn: {
-    backgroundColor: "#EEF2F6",
-    paddingVertical: 10,
-    borderRadius: 10,
-    alignItems: "center",
-  },
-  btnText: { fontWeight: "700", color: "#111827" },
-  primary: { backgroundColor: "#2563eb" },
-  primaryText: { color: "#fff", fontWeight: "800" },
-});
+    inputGroup: { marginBottom: 16 },
+    row2: {
+      flexDirection: "row",
+      gap: 12,
+    },
+    flexItem: { flex: 1 },
+
+    label: { fontWeight: "700", marginBottom: 6, color: colors.text },
+
+    input: {
+      backgroundColor: colors.card,
+      borderRadius: 12,
+      padding: 12,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      color: colors.text,
+    },
+
+    saveBtn: {
+      backgroundColor: colors.primary,
+      paddingVertical: 14,
+      borderRadius: 12,
+      alignItems: "center",
+      marginTop: 10,
+    },
+    saveText: { color: colors.onPrimary ?? "#fff", fontWeight: "700", fontSize: 16 },
+
+    // modal
+    modalScrim: {
+      flex: 1,
+      backgroundColor: "rgba(0,0,0,0.35)",
+      justifyContent: "flex-end",
+    },
+    modalCard: {
+      backgroundColor: colors.card,
+      padding: 16,
+      borderTopLeftRadius: 16,
+      borderTopRightRadius: 16,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+    },
+    h3: { fontSize: 16, fontWeight: "800", marginBottom: 8, color: colors.text },
+
+    btn: {
+      backgroundColor: colors.surface,
+      paddingVertical: 10,
+      borderRadius: 10,
+      alignItems: "center",
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+    },
+    btnText: { fontWeight: "700", color: colors.text },
+    primary: { backgroundColor: colors.primary, borderColor: colors.primary },
+    primaryText: { color: colors.onPrimary ?? "#fff", fontWeight: "800" },
+  });

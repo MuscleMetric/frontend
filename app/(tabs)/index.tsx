@@ -11,17 +11,21 @@ import {
 } from "react-native";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../lib/useAuth";
+import { useAppTheme } from "../../lib/useAppTheme";
 
 type LiftProgress = {
   exercise: string;
-  from: number; // previous peak
-  to: number; // latest peak
-  deltaPct: number; // (to - from) / from
+  from: number;
+  to: number;
+  deltaPct: number;
 };
 
 export default function Home() {
   const { session } = useAuth();
   const userId = session?.user?.id ?? null;
+
+  const { colors } = useAppTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
 
   const [loading, setLoading] = useState(true);
 
@@ -32,7 +36,7 @@ export default function Home() {
   const [workoutsCompleted, setWorkoutsCompleted] = useState<number>(0);
   const [totalVolumeKg, setTotalVolumeKg] = useState<number>(0);
 
-  // steps (hidden by default; see note below)
+  // steps (hidden by default)
   const [stepsToday, setStepsToday] = useState<number | null>(null);
   const stepsGoal = 10000;
 
@@ -72,7 +76,7 @@ export default function Home() {
           if (!error && data?.name) setFullName(data.name);
         }
 
-        // 2) Workouts completed — prefer view, fallback to counting history
+        // 2) Workouts completed
         {
           let wc = 0;
           const { data, error } = await supabase
@@ -84,7 +88,6 @@ export default function Home() {
           if (!error && data?.workouts_completed != null) {
             wc = Number(data.workouts_completed);
           } else {
-            // fallback
             const { count } = await supabase
               .from("workout_history")
               .select("*", { count: "exact", head: true })
@@ -95,16 +98,13 @@ export default function Home() {
         }
 
         // 3) Total volume lifted (kg)
-        //    Expects table: workout_sets(user_id, weight_kg or weight, reps, completed_at)
         {
-          let vol = 0;
-          // Try weight_kg first, fallback to weight
           const tryWeightCol = async (col: "weight_kg" | "weight") => {
             const { data, error } = await supabase
               .from("workout_sets")
               .select(`${col}, reps`)
               .eq("user_id", userId)
-              .limit(20000); // cap for safety
+              .limit(20000);
             if (error || !Array.isArray(data)) return null;
             return data.reduce((sum: number, s: any) => {
               const w = Number(s[col]) || 0;
@@ -115,23 +115,14 @@ export default function Home() {
 
           let sum = await tryWeightCol("weight_kg");
           if (sum == null) sum = await tryWeightCol("weight");
-          vol = sum ?? 0;
-          setTotalVolumeKg(Math.round(vol));
+          setTotalVolumeKg(Math.round(sum ?? 0));
         }
 
-        // 4) Steps (hidden by default — needs native integration)
-        // If you later integrate Apple Health / Google Fit, set stepsToday here.
-        if (Platform.OS === "ios") {
-          // Example: setStepsToday(await getAppleHealthStepsToday());
-          setStepsToday(null); // keep hidden for now
-        } else {
-          setStepsToday(null);
-        }
+        // 4) Steps placeholder
+        if (Platform.OS === "ios") setStepsToday(null);
+        else setStepsToday(null);
 
-        // 5) Recent lift progress:
-        //    Get recent sets per exercise and compare earlier vs latest peaks.
-        //    We compute per exercise: latest max weight vs previous max weight
-        //    (graceful fallback if table or data missing).
+        // 5) Recent lift progress
         {
           const { data, error } = await supabase
             .from("workout_sets")
@@ -141,7 +132,6 @@ export default function Home() {
             .limit(2000);
 
           if (!error && Array.isArray(data) && data.length > 0) {
-            // normalize weight column
             const rows = data.map((s: any) => ({
               exercise: s.exercise_name ?? "Exercise",
               w: s.weight_kg ?? s.weight ?? 0,
@@ -149,32 +139,26 @@ export default function Home() {
               t: s.completed_at ? new Date(s.completed_at).getTime() : 0,
             }));
 
-            // group by exercise
             const byEx = new Map<string, { t: number; pr: number }[]>();
             for (const r of rows) {
-              const est = Number(r.w) || 0; // simple peak metric (you can swap to 1RM calc if you like)
+              const pr = Number(r.w) || 0;
               const arr = byEx.get(r.exercise) ?? [];
-              arr.push({ t: r.t, pr: est });
+              arr.push({ t: r.t, pr });
               byEx.set(r.exercise, arr);
             }
 
             const progress: LiftProgress[] = [];
             byEx.forEach((arr, ex) => {
-              // sort by time desc
               arr.sort((a, b) => b.t - a.t);
-              const latestPeak = Math.max(...arr.slice(0, 50).map((x) => x.pr)); // last ~50 sets’ peak
-              const previousPeak = Math.max(
-                ...arr.slice(50, 150).map((x) => x.pr),
-                0
-              ); // earlier window
+              const latestPeak = Math.max(...arr.slice(0, 50).map((x) => x.pr));
+              const previousPeak = Math.max(...arr.slice(50, 150).map((x) => x.pr), 0);
               if (!isFinite(latestPeak) || latestPeak <= 0) return;
-              const from = previousPeak > 0 ? previousPeak : latestPeak; // avoid huge % if first data
+              const from = previousPeak > 0 ? previousPeak : latestPeak;
               const to = latestPeak;
               const deltaPct = from > 0 ? (to - from) / from : 0;
               progress.push({ exercise: ex, from, to, deltaPct });
             });
 
-            // pick top 3 improvements
             progress.sort((a, b) => b.deltaPct - a.deltaPct);
             setLiftProgress(progress.slice(0, 3));
           } else {
@@ -188,9 +172,9 @@ export default function Home() {
   }, [userId]);
 
   return (
-    <SafeAreaView style={{ flex: 1 }}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
       <ScrollView
-        style={{ flex: 1 }}
+        style={{ flex: 1, backgroundColor: colors.background }}
         contentContainerStyle={{ padding: 16, gap: 16 }}
       >
         {/* Greeting */}
@@ -207,24 +191,18 @@ export default function Home() {
             <ActivityIndicator style={{ marginTop: 8 }} />
           ) : (
             <View style={{ flexDirection: "row", gap: 12 }}>
-              <CardStat
-                value={String(workoutsCompleted)}
-                label="Workouts Completed"
-              />
-              <CardStat
-                value={formatNumber(totalVolumeKg)}
-                label="Total Volume Lifted (kg)"
-              />
+              <CardStat value={String(workoutsCompleted)} label="Workouts Completed" />
+              <CardStat value={formatNumber(totalVolumeKg)} label="Total Volume Lifted (kg)" />
             </View>
           )}
         </View>
 
-        {/* Steps (hidden unless you wire Apple Health / Google Fit) */}
+        {/* Steps (hidden unless wired) */}
         {stepsToday != null && (
           <View style={styles.card}>
             <Text style={styles.h3}>Total Steps</Text>
             <Text style={styles.big}>{formatNumber(stepsToday)}</Text>
-            <Text>/{formatNumber(stepsGoal)} steps</Text>
+            <Text style={styles.subtle}>/{formatNumber(stepsGoal)} steps</Text>
           </View>
         )}
 
@@ -241,20 +219,14 @@ export default function Home() {
                   name={lp.exercise}
                   from={`${Math.round(lp.from)}kg`}
                   to={`${Math.round(lp.to)}kg`}
-                  delta={`${lp.deltaPct > 0 ? "+" : ""}${(
-                    lp.deltaPct * 100
-                  ).toFixed(1)}%`}
+                  delta={`${lp.deltaPct > 0 ? "+" : ""}${(lp.deltaPct * 100).toFixed(1)}%`}
                 />
               ))}
             </>
           ) : workoutsCompleted > 0 ? (
-            <Text style={{ color: "#6b7280" }}>
-              Keep logging sets to see progress trends here.
-            </Text>
+            <Text style={styles.subtle}>Keep logging sets to see progress trends here.</Text>
           ) : (
-            <Text style={{ color: "#6b7280" }}>
-              Complete some workouts and your progress will appear here.
-            </Text>
+            <Text style={styles.subtle}>Complete some workouts and your progress will appear here.</Text>
           )}
         </View>
       </ScrollView>
@@ -263,57 +235,59 @@ export default function Home() {
 }
 
 function CardStat({ value, label }: { value: string; label: string }) {
+  const { colors } = useAppTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   return (
     <View style={styles.stat}>
       <Text style={styles.statValue}>{value}</Text>
-      <Text style={{ opacity: 0.8 }}>{label}</Text>
+      <Text style={styles.subtle}>{label}</Text>
     </View>
   );
 }
 
-function LiftRow({
-  name,
-  from,
-  to,
-  delta,
-}: {
-  name: string;
-  from: string;
-  to: string;
-  delta: string;
-}) {
+function LiftRow({ name, from, to, delta }: { name: string; from: string; to: string; delta: string }) {
+  const { colors } = useAppTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   return (
     <View style={{ paddingVertical: 8 }}>
-      <Text style={{ fontWeight: "700" }}>{name}</Text>
+      <Text style={styles.h3}>{name}</Text>
       <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-        <Text>
+        <Text style={styles.text}>
           {from} → {to}
         </Text>
-        <Text style={{ fontWeight: "700" }}>{delta}</Text>
+        <Text style={styles.h3}>{delta}</Text>
       </View>
     </View>
   );
 }
 
-/* -------- styles & utils -------- */
-const styles = StyleSheet.create({
-  card: {
-    backgroundColor: "white",
-    padding: 16,
-    borderRadius: 16,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "#E5E7EB",
-  },
-  hi: { fontSize: 22, fontWeight: "800" },
-  h2: { fontSize: 18, fontWeight: "700", marginBottom: 12 },
-  h3: { fontSize: 16, fontWeight: "700", marginBottom: 8 },
-  stat: { flex: 1, backgroundColor: "#F4F6FA", padding: 16, borderRadius: 16 },
-  statValue: { fontSize: 28, fontWeight: "900", marginBottom: 6 },
-  big: {
-    fontSize: 24,
-    fontWeight: "800",
-  },
-});
+/* -------- themed styles & utils -------- */
+
+const makeStyles = (colors: any) =>
+  StyleSheet.create({
+    card: {
+      backgroundColor: colors.card,
+      padding: 16,
+      borderRadius: 16,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+    },
+    hi: { fontSize: 22, fontWeight: "800", color: colors.text },
+    h2: { fontSize: 18, fontWeight: "700", marginBottom: 12, color: colors.text },
+    h3: { fontSize: 16, fontWeight: "700", marginBottom: 8, color: colors.text },
+    text: { color: colors.text },
+    subtle: { color: colors.subtle },
+    stat: {
+      flex: 1,
+      backgroundColor: colors.surface,
+      padding: 16,
+      borderRadius: 16,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+    },
+    statValue: { fontSize: 28, fontWeight: "900", marginBottom: 6, color: colors.text },
+    big: { fontSize: 24, fontWeight: "800", color: colors.text },
+  });
 
 function formatNumber(n: number) {
   try {

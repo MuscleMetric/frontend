@@ -15,8 +15,10 @@
     "app",
     "lib",
     "scripts",
+    "types",
     "global.d.ts",
     "**/*.ts",
-    "**/*.tsx"
+    "**/*.tsx",
+    "**/*.d.ts"
   ]
 }

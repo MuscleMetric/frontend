@@ -1,6 +1,6 @@
 // app/features/plans/create/Workout.tsx
 import { useLocalSearchParams, router } from "expo-router";
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useMemo, useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -14,7 +14,7 @@ import {
 import { usePlanDraft, ExerciseRow } from "./store";
 import { useExercisesCache } from "./exercisesStore";
 import { nanoid } from "nanoid/non-secure";
-import { useEffect } from "react";
+import { useAppTheme } from "../../../../lib/useAppTheme";
 
 const TYPE_CHIPS: Array<"all" | "strength" | "cardio" | "mobility"> = [
   "all",
@@ -45,6 +45,9 @@ const MUSCLE_CHIPS = [
 ];
 
 export default function WorkoutPage() {
+  const { colors } = useAppTheme();
+  const s = useMemo(() => makeStyles(colors), [colors]);
+
   const { index: idxParam } = useLocalSearchParams<{ index: string }>();
   const index = Number(idxParam ?? 0);
 
@@ -53,13 +56,12 @@ export default function WorkoutPage() {
 
   if (!Number.isFinite(index) || !draft) {
     return (
-      <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
+      <View style={s.center}>
         <ActivityIndicator />
       </View>
     );
   }
 
-  // always-safe alias so we never deref draft.exercises before guarding
   const exercises = draft?.exercises ?? [];
 
   const [showPicker, setShowPicker] = useState(false);
@@ -72,12 +74,10 @@ export default function WorkoutPage() {
   const { items: all } = useExercisesCache();
 
   const [selectedToAdd, setSelectedToAdd] = useState<Set<string>>(new Set());
-
   function togglePick(id: string) {
     setSelectedToAdd((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+      next.has(id) ? next.delete(id) : next.add(id);
       return next;
     });
   }
@@ -89,7 +89,6 @@ export default function WorkoutPage() {
   const [selecting, setSelecting] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const rowKey = (i: number) => `${exercises[i]?.exercise.id ?? "NA"}-${i}`;
-
   function toggleSelect(key: string) {
     setSelectedIds((prev) =>
       prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
@@ -135,7 +134,7 @@ export default function WorkoutPage() {
 
   if (!draft) {
     return (
-      <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
+      <View style={s.center}>
         <ActivityIndicator />
       </View>
     );
@@ -187,16 +186,7 @@ export default function WorkoutPage() {
     }
   }
 
-  // Five rotating superset colors (repeat after 5)
-  const SUPERSET_COLORS = [
-    "#2563eb",
-    "#22c55e",
-    "#f59e0b",
-    "#ef4444",
-    "#8b5cf6",
-  ];
-
-  // Stable list of superset groups in the order they appear
+  const SUPERSET_COLORS = ["#2563eb", "#22c55e", "#f59e0b", "#ef4444", "#8b5cf6"];
   const supersetGroups = useMemo(
     () => [
       ...new Set(
@@ -208,7 +198,7 @@ export default function WorkoutPage() {
 
   return (
     <ScrollView
-      style={{ flex: 1, backgroundColor: "#F7F8FA" }}
+      style={{ flex: 1, backgroundColor: colors.background }}
       contentContainerStyle={{ padding: 16 }}
     >
       <Text style={s.h2}>
@@ -221,6 +211,7 @@ export default function WorkoutPage() {
         value={draft.title}
         onChangeText={(t) => setWorkout(index, { ...draft, title: t })}
         placeholder="e.g. Push, Pull, Legs…"
+        placeholderTextColor={colors.subtle}
       />
 
       <Text style={s.label}>Exercises</Text>
@@ -229,7 +220,7 @@ export default function WorkoutPage() {
       {selecting && (
         <View style={{ flexDirection: "row", gap: 8, marginBottom: 8 }}>
           <Pressable style={[s.btn, s.primary]} onPress={makeSuperset}>
-            <Text style={s.primaryText}>Create Superset</Text>
+            <Text style={s.btnPrimaryText}>Create Superset</Text>
           </Pressable>
           <Pressable style={s.btn} onPress={clearSupersetForSelected}>
             <Text style={s.btnText}>Ungroup</Text>
@@ -251,24 +242,18 @@ export default function WorkoutPage() {
         const isSelected = selectedIds.includes(key);
         const group = e.supersetGroup ?? null;
 
-        // Which group letter/color?
         const groupIndex = group ? supersetGroups.indexOf(group) : -1;
-        const groupLabel =
-          groupIndex >= 0 ? String.fromCharCode(65 + groupIndex) : null;
+        const groupLabel = groupIndex >= 0 ? String.fromCharCode(65 + groupIndex) : null;
         const groupColor =
-          groupIndex >= 0
-            ? SUPERSET_COLORS[groupIndex % SUPERSET_COLORS.length]
-            : null;
+          groupIndex >= 0 ? SUPERSET_COLORS[groupIndex % SUPERSET_COLORS.length] : null;
 
         return (
           <View
             key={key}
             style={[
               s.item,
-              // show a colored border if in a superset
               groupColor && { borderColor: groupColor, borderWidth: 2 },
-              // selection highlight on top if selecting
-              isSelected && { borderColor: "#2563eb", borderWidth: 3 },
+              isSelected && { borderColor: colors.primary, borderWidth: 3 },
             ]}
           >
             <Pressable
@@ -281,52 +266,25 @@ export default function WorkoutPage() {
               }}
               style={{ flex: 1 }}
             >
-              <View
-                style={{
-                  flexDirection: "row",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                }}
-              >
+              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontWeight: "700" }}>
+                  <Text style={{ fontWeight: "700", color: colors.text }}>
                     {i + 1}. {e.exercise.name}
                     {groupLabel ? (
-                      <Text
-                        style={[
-                          { fontWeight: "800" },
-                          groupColor ? { color: groupColor } : undefined,
-                        ]}
-                      >
+                      <Text style={{ fontWeight: "800", color: groupColor ?? colors.text }}>
                         {`  •  Superset ${groupLabel}`}
                       </Text>
                     ) : null}
                   </Text>
 
-                  <View
-                    style={{
-                      flexDirection: "row",
-                      gap: 8,
-                      marginTop: 4,
-                      flexWrap: "wrap",
-                    }}
-                  >
-                    {!!e.exercise.type && (
-                      <Text style={{ color: "#6b7280" }}>
-                        {e.exercise.type}
-                      </Text>
-                    )}
+                  <View style={{ flexDirection: "row", gap: 8, marginTop: 4, flexWrap: "wrap" }}>
+                    {!!e.exercise.type && <Text style={{ color: colors.subtle }}>{e.exercise.type}</Text>}
                     {e.isDropset && (
-                      <Text style={{ color: "#0b6aa9", fontWeight: "700" }}>
-                        • Dropset
-                      </Text>
+                      <Text style={{ color: colors.primaryText, fontWeight: "700" }}>• Dropset</Text>
                     )}
                   </View>
 
-                  {/* Simple target summary (you aren't collecting sets/reps now, so keep minimal) */}
-                  <Text style={{ color: "#6b7280", marginTop: 4 }}>
-                    Exercise selected
-                  </Text>
+                  <Text style={{ color: colors.subtle, marginTop: 4 }}>Exercise selected</Text>
                 </View>
 
                 <View style={{ gap: 6, alignItems: "flex-end" }}>
@@ -337,7 +295,7 @@ export default function WorkoutPage() {
                       setWorkout(index, { ...draft, exercises: copy });
                     }}
                   >
-                    <Text style={{ color: "#2563eb", fontWeight: "700" }}>
+                    <Text style={{ color: colors.primary, fontWeight: "700" }}>
                       {e.isDropset ? "Remove Dropset" : "Mark as Dropset"}
                     </Text>
                   </Pressable>
@@ -348,16 +306,11 @@ export default function WorkoutPage() {
                       copy.splice(i, 1);
                       setWorkout(index, {
                         ...draft,
-                        exercises: copy.map((x, j) => ({
-                          ...x,
-                          order_index: j,
-                        })),
+                        exercises: copy.map((x, j) => ({ ...x, order_index: j })),
                       });
                     }}
                   >
-                    <Text style={{ color: "#ef4444", fontWeight: "700" }}>
-                      Remove
-                    </Text>
+                    <Text style={{ color: colors.danger, fontWeight: "700" }}>Remove</Text>
                   </Pressable>
                 </View>
               </View>
@@ -369,11 +322,8 @@ export default function WorkoutPage() {
       {/* Controls */}
       <View style={{ flexDirection: "row", gap: 12, marginTop: 12 }}>
         {!showPicker && (
-          <Pressable
-            style={[s.btn, s.primary]}
-            onPress={() => setShowPicker(true)}
-          >
-            <Text style={s.primaryText}>＋ Add Exercise</Text>
+          <Pressable style={[s.btn, s.primary]} onPress={() => setShowPicker(true)}>
+            <Text style={s.btnPrimaryText}>＋ Add Exercise</Text>
           </Pressable>
         )}
         {!selecting ? (
@@ -393,26 +343,12 @@ export default function WorkoutPage() {
           <Text style={s.h3}>Add Exercise</Text>
 
           {/* Type filter */}
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ gap: 8, paddingVertical: 8 }}
-          >
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingVertical: 8 }}>
             {TYPE_CHIPS.map((t) => {
               const active = typeFilter === t;
               return (
-                <Pressable
-                  key={t}
-                  style={[s.chip, active && s.chipActive]}
-                  onPress={() => setTypeFilter(t)}
-                >
-                  <Text
-                    style={{
-                      fontWeight: "700",
-                      color: active ? "#fff" : "#111",
-                      textTransform: "capitalize",
-                    }}
-                  >
+                <Pressable key={t} style={[s.chip, active && s.chipActive]} onPress={() => setTypeFilter(t)}>
+                  <Text style={{ fontWeight: "700", color: active ? (colors.primary ?? "#fff") : colors.text, textTransform: "capitalize" }}>
                     {t}
                   </Text>
                 </Pressable>
@@ -421,16 +357,12 @@ export default function WorkoutPage() {
           </ScrollView>
 
           {/* Muscle filter */}
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ gap: 8, paddingVertical: 4 }}
-          >
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingVertical: 4 }}>
             <Pressable
               style={[s.chipOutline, !muscleFilter && s.chipOutlineActive]}
               onPress={() => setMuscleFilter(null)}
             >
-              <Text style={{ fontWeight: "700" }}>All muscles</Text>
+              <Text style={{ fontWeight: "700", color: colors.text }}>All muscles</Text>
             </Pressable>
             {MUSCLE_CHIPS.map((m) => {
               const active = muscleFilter === m;
@@ -440,7 +372,7 @@ export default function WorkoutPage() {
                   style={[s.chipOutline, active && s.chipOutlineActive]}
                   onPress={() => setMuscleFilter(m)}
                 >
-                  <Text style={{ fontWeight: "700" }}>{m}</Text>
+                  <Text style={{ fontWeight: "700", color: colors.text }}>{m}</Text>
                 </Pressable>
               );
             })}
@@ -450,6 +382,7 @@ export default function WorkoutPage() {
           <TextInput
             style={[s.input, { marginTop: 8 }]}
             placeholder="Search within filters…"
+            placeholderTextColor={colors.subtle}
             value={search}
             onChangeText={setSearch}
           />
@@ -458,7 +391,7 @@ export default function WorkoutPage() {
           {all.length === 0 ? (
             <View style={{ marginTop: 12, alignItems: "center" }}>
               <ActivityIndicator />
-              <Text style={{ color: "#6b7280", marginTop: 6 }}>
+              <Text style={{ color: colors.subtle, marginTop: 6 }}>
                 Loading exercises…
               </Text>
             </View>
@@ -469,25 +402,16 @@ export default function WorkoutPage() {
                 return (
                   <Pressable
                     key={r.id}
-                    style={[
-                      s.row,
-                      picked && { borderColor: "#2563eb", borderWidth: 2 },
-                    ]}
+                    style={[s.row, picked && { borderColor: colors.primary, borderWidth: 2 }]}
                     onPress={() => togglePick(r.id)}
                   >
                     <View style={{ flex: 1 }}>
-                      <Text style={{ fontWeight: "700" }}>{r.name}</Text>
-                      <Text style={{ color: "#6b7280", marginTop: 2 }}>
-                        {(r.type ?? "—") +
-                          (r.primary_muscle ? ` • ${r.primary_muscle}` : "")}
+                      <Text style={{ fontWeight: "700", color: colors.text }}>{r.name}</Text>
+                      <Text style={{ color: colors.subtle, marginTop: 2 }}>
+                        {(r.type ?? "—") + (r.primary_muscle ? ` • ${r.primary_muscle}` : "")}
                       </Text>
                     </View>
-                    <Text
-                      style={{
-                        color: picked ? "#2563eb" : "#6b7280",
-                        fontWeight: "700",
-                      }}
-                    >
+                    <Text style={{ color: picked ? colors.primary : colors.subtle, fontWeight: "700" }}>
                       {picked ? "Selected" : "Select"}
                     </Text>
                   </Pressable>
@@ -496,7 +420,7 @@ export default function WorkoutPage() {
 
               {results.length === 0 && (
                 <View style={s.empty}>
-                  <Text style={{ color: "#6b7280" }}>
+                  <Text style={{ color: colors.subtle }}>
                     No matches. Try a different type or muscle.
                   </Text>
                 </View>
@@ -519,28 +443,18 @@ export default function WorkoutPage() {
             </Pressable>
 
             <Pressable
-              style={[
-                s.btn,
-                s.primary,
-                { flex: 1, opacity: selectedToAdd.size ? 1 : 0.6 },
-              ]}
+              style={[s.btn, s.primary, { flex: 1, opacity: selectedToAdd.size ? 1 : 0.6 }]}
               disabled={selectedToAdd.size === 0}
               onPress={() => {
                 const idSet = selectedToAdd;
                 const toAddFromCache = all
                   .filter((e) => idSet.has(e.id) && !hasExercise(e.id))
                   .map((r) => ({
-                    exercise: {
-                      id: r.id,
-                      name: r.name,
-                      type: r.type,
-                    } as ExerciseRow,
-                    order_index: 0, // re-index below
+                    exercise: { id: r.id, name: r.name, type: r.type } as ExerciseRow,
+                    order_index: 0,
                   }));
 
-                const merged = [...draft.exercises, ...toAddFromCache].map(
-                  (e, i) => ({ ...e, order_index: i })
-                );
+                const merged = [...draft.exercises, ...toAddFromCache].map((e, i) => ({ ...e, order_index: i }));
                 setWorkout(index, { ...draft, exercises: merged });
 
                 clearPickerSelections();
@@ -550,9 +464,8 @@ export default function WorkoutPage() {
                 setShowPicker(false);
               }}
             >
-              <Text style={s.primaryText}>
-                Add {selectedToAdd.size || ""}{" "}
-                {selectedToAdd.size === 1 ? "Exercise" : "Exercises"}
+              <Text style={s.btnPrimaryText}>
+                Add {selectedToAdd.size || ""} {selectedToAdd.size === 1 ? "Exercise" : "Exercises"}
               </Text>
             </Pressable>
           </View>
@@ -566,7 +479,7 @@ export default function WorkoutPage() {
           </Pressable>
         )}
         <Pressable style={[s.btn, s.primary, { flex: 1 }]} onPress={next}>
-          <Text style={s.primaryText}>
+          <Text style={s.btnPrimaryText}>
             {index < workoutsPerWeek - 1 ? "Next Workout →" : "Next → Goals"}
           </Text>
         </Pressable>
@@ -575,72 +488,87 @@ export default function WorkoutPage() {
   );
 }
 
-const s = StyleSheet.create({
-  h2: { fontSize: 18, fontWeight: "800", marginBottom: 12 },
-  h3: { fontSize: 16, fontWeight: "800", marginBottom: 8 },
-  label: { fontWeight: "700", marginTop: 12, marginBottom: 6 },
-  input: {
-    backgroundColor: "#fff",
-    padding: 12,
-    borderRadius: 10,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "#E5E7EB",
-  },
-  item: {
-    backgroundColor: "#F3F4F6",
-    borderRadius: 10,
-    padding: 10,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginTop: 6,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "#E5E7EB",
-  },
+/* ---- themed styles ---- */
+const makeStyles = (colors: any) =>
+  StyleSheet.create({
+    center: { flex: 1, alignItems: "center", justifyContent: "center" },
+    h2: { fontSize: 18, fontWeight: "800", marginBottom: 12, color: colors.text },
+    h3: { fontSize: 16, fontWeight: "800", marginBottom: 8, color: colors.text },
+    label: { fontWeight: "700", marginTop: 12, marginBottom: 6, color: colors.text },
 
-  row: {
-    backgroundColor: "#fff",
-    borderRadius: 10,
-    padding: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "#E5E7EB",
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  btn: {
-    backgroundColor: "#EEF2F6",
-    paddingVertical: 10,
-    borderRadius: 10,
-    alignItems: "center",
-    paddingHorizontal: 14,
-  },
-  btnText: { fontWeight: "700" },
-  primary: { backgroundColor: "#2563eb" },
-  primaryText: { color: "#fff", fontWeight: "800" },
-  chip: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 999,
-    backgroundColor: "#EEF2F6",
-  },
-  chipActive: { backgroundColor: "#2563eb" },
-  chipOutline: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-    backgroundColor: "#fff",
-  },
-  chipOutlineActive: { borderColor: "#2563eb" },
-  pickerCard: {
-    marginTop: 12,
-    backgroundColor: "#fff",
-    borderRadius: 16,
-    padding: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "#E5E7EB",
-  },
-  empty: { padding: 16, alignItems: "center" },
-});
+    input: {
+      backgroundColor: colors.card,
+      padding: 12,
+      borderRadius: 10,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      color: colors.text,
+    },
+
+    item: {
+      backgroundColor: colors.surface,
+      borderRadius: 10,
+      padding: 10,
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      marginTop: 6,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+    },
+
+    row: {
+      backgroundColor: colors.card,
+      borderRadius: 10,
+      padding: 12,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+    },
+
+    btn: {
+      backgroundColor: colors.surface,
+      paddingVertical: 10,
+      borderRadius: 10,
+      alignItems: "center",
+      paddingHorizontal: 14,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+    },
+    btnText: { fontWeight: "700", color: colors.text },
+    primary: { backgroundColor: colors.primary, borderColor: colors.primary },
+    btnPrimaryText: { color: colors.onPrimary ?? "#fff", fontWeight: "800" },
+
+    chip: {
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      borderRadius: 999,
+      backgroundColor: colors.surface,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+    },
+    chipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+
+    chipOutline: {
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      borderRadius: 999,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.card,
+    },
+    chipOutlineActive: { borderColor: colors.primary },
+
+    pickerCard: {
+      marginTop: 12,
+      backgroundColor: colors.card,
+      borderRadius: 16,
+      padding: 12,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+    },
+
+    empty: { padding: 16, alignItems: "center", backgroundColor: colors.card, borderRadius: 12 },
+  });
