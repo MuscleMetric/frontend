@@ -1,5 +1,6 @@
 // app/features/_layout.tsx
 import { Stack } from "expo-router";
+import React from "react";
 
 export default function FeaturesLayout() {
   return (
@@ -7,6 +8,7 @@ export default function FeaturesLayout() {
       screenOptions={{
         headerShown: false, 
         gestureEnabled: true,
+        fullScreenGestureEnabled: true,
       }}
     >
       <Stack.Screen name="goals/goals" />

@@ -32,11 +32,6 @@ export default function Header({
           <Text style={styles.editText}>Edit</Text>
         </Pressable>
       </View>
-
-      <View style={[styles.row, { marginTop: 10 }]}>
-        <View style={styles.dot} />
-        <Text style={styles.subtle}>Active</Text>
-      </View>
     </View>
   );
 }
@@ -59,7 +54,7 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   avatarText: { color: "white", fontSize: 22, fontWeight: "800" },
-  title: { fontSize: 18, fontWeight: "800" },
+  title: { fontSize: 18, fontWeight: "800", marginBottom: "2%" },
   subtle: { color: "#6b7280" },
   editBtn: {
     backgroundColor: "#e6f0ff",

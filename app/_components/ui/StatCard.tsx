@@ -1,5 +1,6 @@
 import React from "react";
 import { View, Text, StyleSheet } from "react-native";
+import { useTheme } from "@react-navigation/native";
 
 export default function StatCard({
   value,
@@ -10,6 +11,9 @@ export default function StatCard({
   label: string;
   tint?: string;
 }) {
+
+  const { colors } = useTheme();
+
   return (
     <View style={[styles.card, tint ? { backgroundColor: tint } : null]}>
       <Text style={styles.value}>{value}</Text>

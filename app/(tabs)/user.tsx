@@ -1,5 +1,5 @@
 // app/(tabs)/user.tsx
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -9,6 +9,8 @@ import {
   StyleSheet,
   Alert,
   ActivityIndicator,
+  useColorScheme,
+  Platform,
 } from "react-native";
 import { supabase } from "../../lib/supabase";
 import { router } from "expo-router";
@@ -22,7 +24,9 @@ import {
   RingProgress,
   PlanRow,
   SettingRow,
-} from "@/app/_components";
+} from "../_components";
+import { useTheme } from "@react-navigation/native";
+import * as Linking from "expo-linking";
 
 type PlanRowType = {
   id: string;
@@ -36,10 +40,13 @@ export default function UserScreen() {
   const { session } = useAuth();
   const userId = session?.user?.id;
 
-  const [darkMode, setDarkMode] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [showHeightModal, setShowHeightModal] = useState(false);
   const [showWeightModal, setShowWeightModal] = useState(false);
+
+  const scheme = useColorScheme();
+  const isDark = scheme === "dark";
+  const { colors } = useTheme();
+  const matchDevice = true;
 
   // DB-backed state
   const [profile, setProfile] = useState<{
@@ -157,7 +164,7 @@ export default function UserScreen() {
 
   return (
     <FlatList
-      style={{ flex: 1, backgroundColor: "#F7F8FA" }}
+      style={{ flex: 1, backgroundColor: colors.background }}
       contentContainerStyle={{ padding: 16, paddingBottom: 32 }}
       ListHeaderComponent={
         <View style={{ gap: 16 }}>
@@ -180,37 +187,29 @@ export default function UserScreen() {
 
           {/* Quick Update Section */}
           <SectionCard>
-            <Text style={styles.sectionTitle}>Quick Update</Text>
-            <View style={styles.rowBetween}>
+            <View style={styles.centerButtonContainer}>
               <Pressable
-                style={[styles.button, { backgroundColor: "#e6f0ff" }]}
-                onPress={() => setShowHeightModal(true)}
-              >
-                <Text style={[styles.buttonText, { color: "#0b6aa9" }]}>
-                  Update Height
-                </Text>
-              </Pressable>
-              <Pressable
-                style={[styles.button, { backgroundColor: "#e6f0ff" }]}
+                style={{
+                  backgroundColor: colors.primary,
+                  paddingVertical: 18,
+                  paddingHorizontal: 32,
+                  borderRadius: 14,
+                }}
                 onPress={() => setShowWeightModal(true)}
               >
-                <Text style={[styles.buttonText, { color: "#0b6aa9" }]}>
+                <Text
+                  style={{
+                    color: colors.primary,
+                    fontWeight: "700",
+                    fontSize: 20,
+                    textAlign: "center",
+                  }}
+                >
                   Update Weight
                 </Text>
               </Pressable>
             </View>
           </SectionCard>
-
-          <QuickUpdateModal
-            visible={showHeightModal}
-            onClose={() => {
-              setShowHeightModal(false);
-              fetchProfile();
-            }}
-            userId={userId}
-            field="height"
-            currentValue={profile?.settings?.height ?? null}
-          />
 
           <QuickUpdateModal
             visible={showWeightModal}
@@ -249,9 +248,7 @@ export default function UserScreen() {
             </View>
             <Pressable
               style={styles.button}
-              onPress={() =>
-                router.push("/features/achievements/achievements")
-              }
+              onPress={() => router.push("/features/achievements/achievements")}
             >
               <Text style={styles.buttonText}>View Achievements</Text>
             </Pressable>
@@ -309,10 +306,24 @@ export default function UserScreen() {
         <View style={{ gap: 12, marginTop: 16 }}>
           <Text style={styles.groupTitle}>Settings</Text>
 
-          <SettingRow
-            icon="☀️"
-            title="Dark Mode"
-            right={<Switch value={darkMode} onValueChange={setDarkMode} />}
+          <Switch
+            value={matchDevice}
+            onValueChange={() => {
+              Alert.alert(
+                "Appearance",
+                "Theme follows your device’s appearance.",
+                [
+                  {
+                    text:
+                      Platform.OS === "ios"
+                        ? "Open Settings"
+                        : "Open App Settings",
+                    onPress: () => Linking.openSettings(),
+                  },
+                  { text: "OK", style: "cancel" },
+                ]
+              );
+            }}
           />
 
           <SettingRow
@@ -367,6 +378,30 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: "#E5E7EB",
     alignItems: "flex-start",
+  },
+  centerButtonContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 2,
+  },
+
+  weightButton: {
+    backgroundColor: "#e6f0ff",
+    paddingVertical: 18,
+    paddingHorizontal: 32,
+    borderRadius: 14,
+    shadowColor: "#000",
+    shadowOpacity: 0.08,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 4,
+    elevation: 2, // Android shadow
+  },
+
+  weightButtonText: {
+    color: "#0b6aa9",
+    fontWeight: "700",
+    fontSize: 20,
+    textAlign: "center",
   },
 });
 

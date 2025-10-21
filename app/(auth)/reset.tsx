@@ -1,5 +1,5 @@
 // app/(auth)/reset.tsx
-import { useState } from "react";
+import React, { useState } from "react";
 import { View, Text, TextInput, Button, Alert } from "react-native";
 import { supabase } from "../../lib/supabase";
 import { router } from "expo-router";

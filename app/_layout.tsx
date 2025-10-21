@@ -1,7 +1,16 @@
 // app/_layout.tsx
-import { Slot, useRouter, useSegments, useRootNavigationState } from "expo-router";
-import { useEffect, useRef } from "react";
+import {
+  Stack,
+  useRouter,
+  useSegments,
+  useRootNavigationState,
+} from "expo-router";
+import React, { useEffect, useRef } from "react";
 import * as Linking from "expo-linking";
+import { ThemeProvider } from "@react-navigation/native";
+import { useColorScheme } from "react-native";
+import { LightTheme, DarkTheme } from "./theme";
+import { StatusBar } from "expo-status-bar";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../lib/useAuth";
 
@@ -10,14 +19,15 @@ export default function RootLayout() {
   const segments = useSegments();
   const { session, loading } = useAuth();
 
-  // This becomes defined once the NavigationContainer is mounted
+  // 🔹 Device theme (auto-updates if the user toggles system dark mode)
+  const scheme = useColorScheme(); // 'light' | 'dark' | null
+  const theme = scheme === "dark" ? DarkTheme : LightTheme;
+
   const navState = useRootNavigationState();
   const navReady = !!navState?.key;
-
-  // Avoid firing redirects multiple times
   const didRoute = useRef(false);
 
-  // Handle Supabase deep links (magic link / reset)
+  // Deep links
   useEffect(() => {
     const handleUrl = async (url: string | null) => {
       if (!url) return;
@@ -27,23 +37,18 @@ export default function RootLayout() {
         console.warn("exchangeCodeForSession failed:", err);
       }
     };
-
     const sub = Linking.addEventListener("url", ({ url }) => handleUrl(url));
-    // Process the initial URL too
     Linking.getInitialURL().then(handleUrl);
     return () => sub.remove();
   }, []);
 
-  // Auth redirects – only after nav is ready and auth finished loading
+  // Auth redirects
   useEffect(() => {
-    if (!navReady) return;          // wait for navigator to mount
-    if (loading) return;            // wait for auth
-    if (didRoute.current) return;   // prevent double routing in dev Fast Refresh
+    if (!navReady || loading || didRoute.current) return;
 
     const inAuth = segments[0] === "(auth)";
     if (!session && !inAuth) {
       didRoute.current = true;
-      // next tick so it runs after this render commit
       setTimeout(() => router.replace("/(auth)/login"), 0);
       return;
     }
@@ -53,7 +58,25 @@ export default function RootLayout() {
     }
   }, [navReady, loading, session, segments, router]);
 
-  // IMPORTANT: Always render a navigator on the first paint.
-  // Slot renders child stacks/grids; never return null here.
-  return <Slot />;
+  return (
+    <ThemeProvider value={theme}>
+      {/* Status bar adapts to theme */}
+      <StatusBar style={scheme === "dark" ? "light" : "dark"} />
+
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="(auth)" />
+        <Stack.Screen name="(tabs)" />
+        <Stack.Screen
+          name="features"
+          options={{
+            headerShown: false, // keep child stacks in /features controlling their own headers
+            headerTitle: "",
+            headerBackTitle: "",
+            headerShadowVisible: false,
+            gestureEnabled: true,
+          }}
+        />
+      </Stack>
+    </ThemeProvider>
+  );
 }
