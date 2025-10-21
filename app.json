@@ -1,13 +1,13 @@
 {
   "expo": {
-    "name": "musclemetric",
+    "name": "MuscleMetric",
     "slug": "musclemetric",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "musclemetric",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.anonymous.musclemetric"
@@ -41,7 +41,7 @@
       ]
     ],
     "experiments": {
-      "typedRoutes": true,
+      "typedRoutes": false,
       "reactCompiler": false
     }
   }

@@ -1,5 +1,5 @@
 {
-  "extends": "expo/tsconfig.base",
+  "extends": "./node_modules/expo/tsconfig.base",
   "compilerOptions": {
     "strict": true,
     "jsx": "react-jsx",
@@ -15,10 +15,8 @@
     "app",
     "lib",
     "scripts",
-    "expo-env.d.ts",
     "global.d.ts",
     "**/*.ts",
-    "**/*.tsx",
-    ".expo/types/**/*.ts"
+    "**/*.tsx"
   ]
 }

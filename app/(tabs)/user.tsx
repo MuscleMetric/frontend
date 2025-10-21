@@ -306,26 +306,6 @@ export default function UserScreen() {
         <View style={{ gap: 12, marginTop: 16 }}>
           <Text style={styles.groupTitle}>Settings</Text>
 
-          <Switch
-            value={matchDevice}
-            onValueChange={() => {
-              Alert.alert(
-                "Appearance",
-                "Theme follows your device’s appearance.",
-                [
-                  {
-                    text:
-                      Platform.OS === "ios"
-                        ? "Open Settings"
-                        : "Open App Settings",
-                    onPress: () => Linking.openSettings(),
-                  },
-                  { text: "OK", style: "cancel" },
-                ]
-              );
-            }}
-          />
-
           <SettingRow
             icon="🔒"
             title="Change Password"
