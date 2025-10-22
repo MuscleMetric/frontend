@@ -1,5 +1,5 @@
 // app/(tabs)/workout.tsx
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
 import {
   View,
   Text,
@@ -13,8 +13,10 @@ import Svg, { Circle } from "react-native-svg";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../lib/useAuth";
 import { router } from "expo-router";
-import { useAppTheme } from "../../lib/useAppTheme"; // <-- use the helper
+import { useAppTheme } from "../../lib/useAppTheme";
+import { useFocusEffect } from "@react-navigation/native";
 
+/* ---------- types ---------- */
 type Plan = {
   id: string;
   title: string | null;
@@ -44,6 +46,7 @@ type Workout = {
   notes: string | null;
 };
 
+/* ---------- utils ---------- */
 function weeksBetween(startIso?: string | null, endIso?: string | null) {
   if (!startIso || !endIso) return 1;
   const s = new Date(startIso).getTime();
@@ -53,14 +56,13 @@ function weeksBetween(startIso?: string | null, endIso?: string | null) {
   return Math.max(1, Math.round(weeks));
 }
 
-/** Progress color sourced from theme */
 function progressColor(pct: number, colors: any) {
-  if (pct < 40) return colors.danger;          // red for low
-  if (pct < 80) return colors.warnText;        // amber-ish
-  return colors.successText;                   // green-ish
+  if (pct < 40) return colors.danger;
+  if (pct < 80) return colors.warnText;
+  return colors.successText;
 }
 
-/** Simple ring progress with a % label */
+/* ---------- ProgressRing ---------- */
 function ProgressRing({
   size = 64,
   stroke = 8,
@@ -81,11 +83,23 @@ function ProgressRing({
   const color = progressColor(clamped, colors);
 
   return (
-    <View style={{ width: size, height: size, alignItems: "center", justifyContent: "center" }}>
+    <View
+      style={{
+        width: size,
+        height: size,
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
       <Svg width={size} height={size}>
-        {/* track */}
-        <Circle cx={cx} cy={cy} r={radius} stroke={colors.border} strokeWidth={stroke} fill="none" />
-        {/* progress */}
+        <Circle
+          cx={cx}
+          cy={cy}
+          r={radius}
+          stroke={colors.border}
+          strokeWidth={stroke}
+          fill="none"
+        />
         <Circle
           cx={cx}
           cy={cy}
@@ -99,18 +113,21 @@ function ProgressRing({
           transform={`rotate(-90 ${cx} ${cy})`}
         />
       </Svg>
-      <Text style={{ position: "absolute", fontWeight: "800", color: colors.text }}>
+      <Text
+        style={{ position: "absolute", fontWeight: "800", color: colors.text }}
+      >
         {Math.round(clamped)}%
       </Text>
     </View>
   );
 }
 
+/* ---------- Screen ---------- */
 export default function WorkoutScreen() {
   const { session } = useAuth();
-  const userId = session?.user?.id;
+  const userId = session?.user?.id || null;
 
-  const { colors } = useAppTheme();           // <-- themed colors
+  const { colors } = useAppTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
   const [loading, setLoading] = useState(true);
@@ -123,52 +140,68 @@ export default function WorkoutScreen() {
     if (!plan?.end_date) return null;
     try {
       const d = new Date(plan.end_date);
-      return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+      return d.toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      });
     } catch {
       return plan.end_date;
     }
   }, [plan?.end_date]);
 
-  useEffect(() => {
+  const load = useCallback(async () => {
     if (!userId) return;
-    (async () => {
-      try {
-        setLoading(true);
-        // 1) Active plan (else most recent)
-        let { data: activePlan } = await supabase
+    let cancelled = false;
+
+    try {
+      setLoading(true);
+
+      // 1) Active plan (else most recent)
+      let { data: activePlan, error: pErr } = await supabase
+        .from("plans")
+        .select("id, title, start_date, end_date, is_completed")
+        .eq("user_id", userId)
+        .eq("is_completed", false)
+        .order("start_date", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (!activePlan && !pErr) {
+        const { data } = await supabase
           .from("plans")
           .select("id, title, start_date, end_date, is_completed")
           .eq("user_id", userId)
-          .eq("is_completed", false)
-          .order("start_date", { ascending: false })
+          .order("created_at", { ascending: false })
           .limit(1)
           .maybeSingle();
+        activePlan = data ?? null;
+      }
 
-        if (!activePlan) {
-          const { data } = await supabase
-            .from("plans")
-            .select("id, title, start_date, end_date, is_completed")
-            .eq("user_id", userId)
-            .order("created_at", { ascending: false })
-            .limit(1)
-            .maybeSingle();
-          activePlan = data ?? null;
-        }
+      if (cancelled) return;
+      setPlan(activePlan ?? null);
 
-        setPlan(activePlan ?? null);
-
-        // 2) plan_workouts
-        let planWorkoutIds: string[] = [];
-        if (activePlan?.id) {
-          const { data: pws } = await supabase
-            .from("plan_workouts")
-            .select(`
+      // 2) plan_workouts + nested exercises
+      let planWorkoutIds: string[] = [];
+      if (activePlan?.id) {
+        const { data: pws, error: pwErr } = await supabase
+          .from("plan_workouts")
+          .select(
+            `
               id, title, order_index, weekly_complete, workout_id,
-              workouts!inner ( id, workout_exercises ( order_index, exercises ( name ) ) )
-            `)
-            .eq("plan_id", activePlan.id)
-            .order("order_index", { ascending: true });
+              workouts!inner (
+                id,
+                workout_exercises (
+                  order_index,
+                  exercises ( name )
+                )
+              )
+            `
+          )
+          .eq("plan_id", activePlan.id)
+          .order("order_index", { ascending: true });
 
+        if (!pwErr) {
           const rows: PlanWorkoutRow[] = (pws ?? []).map((r: any) => {
             const w = Array.isArray(r.workouts) ? r.workouts[0] : r.workouts;
             return {
@@ -180,43 +213,58 @@ export default function WorkoutScreen() {
               workouts: w
                 ? {
                     id: String(w.id),
-                    workout_exercises: (w.workout_exercises ?? []).map((we: any) => ({
-                      order_index: we?.order_index ?? null,
-                      exercises: we?.exercises ? { name: we.exercises.name ?? null } : null,
-                    })),
+                    workout_exercises: (w.workout_exercises ?? []).map(
+                      (we: any) => ({
+                        order_index: we?.order_index ?? null,
+                        exercises: we?.exercises
+                          ? { name: we.exercises.name ?? null }
+                          : null,
+                      })
+                    ),
                   }
                 : null,
             };
           });
-          setPlanWorkouts(rows);
-          planWorkoutIds = rows.map((r) => r.workout_id);
 
-          // 3) Completed count
-          if (planWorkoutIds.length) {
-            const { count } = await supabase
-              .from("workout_history")
-              .select("*", { count: "exact", head: true })
-              .eq("user_id", userId)
-              .in("workout_id", planWorkoutIds);
-            setCompletedCount(count ?? 0);
-          } else {
-            setCompletedCount(0);
+          if (!cancelled) {
+            setPlanWorkouts(rows);
+            planWorkoutIds = rows.map((r) => r.workout_id);
           }
-        } else {
+        }
+
+        // 3) Completed count for those workouts
+        if (planWorkoutIds.length && !cancelled) {
+          const { count } = await supabase
+            .from("workout_history")
+            .select("*", { count: "exact", head: true })
+            .eq("user_id", userId)
+            .in("workout_id", planWorkoutIds);
+          if (!cancelled) setCompletedCount(count ?? 0);
+        } else if (!cancelled) {
+          setCompletedCount(0);
+        }
+      } else {
+        if (!cancelled) {
           setPlanWorkouts([]);
           setCompletedCount(0);
         }
+      }
 
-        // 4) Loose workouts
+      // 4) Loose workouts
+      if (!cancelled) {
         if (planWorkoutIds.length) {
           const { data: loose } = await supabase
             .from("workouts")
             .select("id, title, notes")
             .eq("user_id", userId)
-            .not("id", "in", `(${planWorkoutIds.map((id) => `'${id}'`).join(",")})`)
+            .not(
+              "id",
+              "in",
+              `(${planWorkoutIds.map((id) => `'${id}'`).join(",")})`
+            )
             .order("updated_at", { ascending: false })
             .limit(20);
-          setLooseWorkouts(loose ?? []);
+          if (!cancelled) setLooseWorkouts(loose ?? []);
         } else {
           const { data: loose } = await supabase
             .from("workouts")
@@ -224,21 +272,39 @@ export default function WorkoutScreen() {
             .eq("user_id", userId)
             .order("updated_at", { ascending: false })
             .limit(20);
-          setLooseWorkouts(loose ?? []);
+          if (!cancelled) setLooseWorkouts(loose ?? []);
         }
-      } catch (e) {
-        console.warn("workout tab load error:", e);
+      }
+    } catch (e) {
+      console.warn("workout tab load error:", e);
+      if (!cancelled) {
         setPlan(null);
         setPlanWorkouts([]);
         setLooseWorkouts([]);
         setCompletedCount(0);
-      } finally {
-        setLoading(false);
       }
-    })();
+    } finally {
+      if (!cancelled) setLoading(false);
+    }
+
+    return () => {
+      cancelled = true;
+    };
   }, [userId]);
 
-  function buildHighlights(row: PlanWorkoutRow): string {
+  // initial load
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  // refresh when tab/screen regains focus
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load])
+  );
+
+  const buildHighlights = useCallback((row: PlanWorkoutRow): string => {
     const exs =
       row.workouts?.workout_exercises
         ?.slice()
@@ -246,12 +312,15 @@ export default function WorkoutScreen() {
         .map((we) => we.exercises?.name || "")
         .filter(Boolean) ?? [];
     return exs.slice(0, 4).join(", ");
-  }
+  }, []);
 
+  /* ---------- states ---------- */
   if (!userId) {
     return (
       <View style={[styles.center, { backgroundColor: colors.background }]}>
-        <Text style={{ color: colors.text }}>Please log in to view your workouts.</Text>
+        <Text style={{ color: colors.text }}>
+          Please log in to view your workouts.
+        </Text>
       </View>
     );
   }
@@ -264,7 +333,7 @@ export default function WorkoutScreen() {
     );
   }
 
-  // Empty-state: no plan and no loose workouts
+  // Empty state
   if (!plan && looseWorkouts.length === 0) {
     return (
       <ScrollView
@@ -277,9 +346,9 @@ export default function WorkoutScreen() {
           primary="Create Plan"
           onPrimary={() => router.push("/features/plans/create/planInfo")}
           secondary="Or add a single workout"
-          onSecondary={() => {
-            Alert.alert("Create Workout", "Workout creator coming soon.");
-          }}
+          onSecondary={() =>
+            Alert.alert("Create Workout", "Workout creator coming soon.")
+          }
         />
       </ScrollView>
     );
@@ -288,7 +357,9 @@ export default function WorkoutScreen() {
   const workoutsPerWeekPlanned = planWorkouts.length;
   const planWeeks = weeksBetween(plan?.start_date, plan?.end_date);
   const totalExpected = workoutsPerWeekPlanned * planWeeks;
-  const pctComplete = totalExpected ? Math.min(100, (completedCount / totalExpected) * 100) : 0;
+  const pctComplete = totalExpected
+    ? Math.min(100, (completedCount / totalExpected) * 100)
+    : 0;
 
   return (
     <ScrollView
@@ -299,10 +370,11 @@ export default function WorkoutScreen() {
       {plan && (
         <View style={styles.card}>
           <View style={{ flexDirection: "row", alignItems: "center" }}>
-            {/* Left: text */}
             <View style={{ flex: 1, paddingRight: 12 }}>
               <Text style={styles.planTitle}>{plan.title ?? "My Plan"}</Text>
-              <Text style={styles.muted}>{endText ? `Ends: ${endText}` : "No end date set"}</Text>
+              <Text style={styles.muted}>
+                {endText ? `Ends: ${endText}` : "No end date set"}
+              </Text>
               <Text style={[styles.muted, { marginTop: 2 }]}>
                 {completedCount} of {totalExpected} workouts completed
               </Text>
@@ -311,8 +383,12 @@ export default function WorkoutScreen() {
               </Text>
             </View>
 
-            {/* Right: progress ring */}
-            <ProgressRing size={72} stroke={8} pct={pctComplete} colors={colors} />
+            <ProgressRing
+              size={72}
+              stroke={8}
+              pct={pctComplete}
+              colors={colors}
+            />
           </View>
         </View>
       )}
@@ -326,12 +402,36 @@ export default function WorkoutScreen() {
               <View style={{ flexDirection: "row", gap: 8 }}>
                 <PillButton
                   label="View"
-                  onPress={() => Alert.alert("View Plan", "Plan details coming soon.")}
+                  onPress={() => {
+                    if (plan?.id) {
+                      router.push({
+                        pathname: "/features/plans/view",
+                        params: { planId: plan.id },
+                      });
+                    } else {
+                      Alert.alert(
+                        "No plan",
+                        "There isn't an active plan to view yet."
+                      );
+                    }
+                  }}
                 />
                 <PillButton
                   label="Edit"
                   tone="warning"
-                  onPress={() => Alert.alert("Edit Plan", "Plan editor coming soon.")}
+                  onPress={() => {
+                    if (plan?.id) {
+                      router.push({
+                        pathname: "/features/plans/edit",
+                        params: { planId: plan.id },
+                      });
+                    } else {
+                      Alert.alert(
+                        "No plan",
+                        "There isn't an active plan to edit yet."
+                      );
+                    }
+                  }}
                 />
               </View>
             }
@@ -343,10 +443,11 @@ export default function WorkoutScreen() {
                 title={pw.title ?? "Workout"}
                 highlights={buildHighlights(pw)}
                 completed={false}
-                onPress={() => Alert.alert("Open Workout", pw.title ?? "Workout")}
+                onPress={() =>
+                  Alert.alert("Open Workout", pw.title ?? "Workout")
+                }
               />
             ))}
-
             {planWorkouts.length === 0 && (
               <View style={styles.card}>
                 <Text style={styles.muted}>No workouts in this plan yet.</Text>
@@ -364,7 +465,9 @@ export default function WorkoutScreen() {
             <PillButton
               label="Create Workout"
               tone="primary"
-              onPress={() => Alert.alert("Create Workout", "Workout creator coming soon.")}
+              onPress={() =>
+                Alert.alert("Create Workout", "Workout creator coming soon.")
+              }
             />
           }
         />
@@ -388,9 +491,14 @@ export default function WorkoutScreen() {
   );
 }
 
-/* ---------- presentational ---------- */
-
-function SectionHeader({ title, right }: { title: string; right?: React.ReactNode }) {
+/* ---------- presentation bits (themed) ---------- */
+function SectionHeader({
+  title,
+  right,
+}: {
+  title: string;
+  right?: React.ReactNode;
+}) {
   const { colors } = useAppTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   return (
@@ -421,7 +529,10 @@ function PillButton({
       : { bg: colors.surface, fg: colors.text };
 
   return (
-    <Pressable onPress={onPress} style={[styles.pill, { backgroundColor: styleByTone.bg }]}>
+    <Pressable
+      onPress={onPress}
+      style={[styles.pill, { backgroundColor: styleByTone.bg }]}
+    >
       <Text style={{ fontWeight: "700", color: styleByTone.fg }}>{label}</Text>
     </Pressable>
   );
@@ -442,7 +553,10 @@ function PlanWorkoutItem({
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
   return (
-    <Pressable onPress={onPress} style={[styles.card, completed && styles.completedCard]}>
+    <Pressable
+      onPress={onPress}
+      style={[styles.card, completed && styles.completedCard]}
+    >
       <Text style={[styles.h3, completed && { color: colors.successText }]}>
         {title}
         {completed ? "  ✓ Completed" : ""}
@@ -465,7 +579,13 @@ function WorkoutCard({
   const styles = useMemo(() => makeStyles(colors), [colors]);
   return (
     <Pressable onPress={onPress} style={styles.card}>
-      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+      <View
+        style={{
+          flexDirection: "row",
+          justifyContent: "space-between",
+          alignItems: "center",
+        }}
+      >
         <Text style={styles.h3}>{title}</Text>
       </View>
       <Text style={styles.muted}>
@@ -495,17 +615,20 @@ function CalloutCard({
   return (
     <View style={styles.card}>
       <Text style={styles.h2}>{title}</Text>
-      {subtitle ? <Text style={[styles.muted, { marginTop: 4 }]}>{subtitle}</Text> : null}
+      {subtitle ? (
+        <Text style={[styles.muted, { marginTop: 4 }]}>{subtitle}</Text>
+      ) : null}
       <View style={{ flexDirection: "row", gap: 10, marginTop: 12 }}>
         <PillButton label={primary} onPress={onPrimary} tone="primary" />
-        {secondary ? <PillButton label={secondary} onPress={onSecondary!} /> : null}
+        {secondary ? (
+          <PillButton label={secondary} onPress={onSecondary!} />
+        ) : null}
       </View>
     </View>
   );
 }
 
 /* ---------- themed styles ---------- */
-
 const makeStyles = (colors: any) =>
   StyleSheet.create({
     center: { flex: 1, alignItems: "center", justifyContent: "center" },
@@ -531,14 +654,15 @@ const makeStyles = (colors: any) =>
       borderColor: colors.successText,
     },
 
-    planTitle: { fontSize: 18, fontWeight: "800", textAlign: "center", color: colors.text },
+    planTitle: {
+      fontSize: 18,
+      fontWeight: "800",
+      textAlign: "center",
+      color: colors.text,
+    },
     muted: { color: colors.subtle },
     h2: { fontSize: 16, fontWeight: "800", color: colors.text },
     h3: { fontSize: 15, fontWeight: "700", color: colors.text },
 
-    pill: {
-      paddingVertical: 6,
-      paddingHorizontal: 12,
-      borderRadius: 999,
-    },
+    pill: { paddingVertical: 6, paddingHorizontal: 12, borderRadius: 999 },
   });

@@ -27,6 +27,16 @@ export default function PlansLayout() {
       <Stack.Screen name="create/workout" options={{ title: "Workout" }} />
       <Stack.Screen name="create/goals" options={{ title: "Goals" }} />
       <Stack.Screen name="create/review" options={{ title: "Review" }} />
+      <Stack.Screen
+        name="edit"
+        options={{
+          headerShown: false, 
+          headerTitle: "",
+          headerBackTitle: "",
+          headerShadowVisible: false,
+          gestureEnabled: true,
+        }}
+      />
     </Stack>
   );
 }

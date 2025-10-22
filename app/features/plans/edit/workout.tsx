@@ -11,10 +11,11 @@ import {
   ScrollView,
   ActivityIndicator,
 } from "react-native";
-import { usePlanDraft, ExerciseRow } from "./store";
-import { useExercisesCache } from "./exercisesStore";
+import { useEditPlan, type ExerciseRow } from "./store";
+import { CachedExercise, useExercisesCache } from "../create/exercisesStore";
 import { nanoid } from "nanoid/non-secure";
 import { useAppTheme } from "../../../../lib/useAppTheme";
+import { supabase } from "../../../../lib/supabase";
 import { Modal } from "react-native";
 
 const TYPE_CHIPS: Array<"all" | "strength" | "cardio" | "mobility"> = [
@@ -52,7 +53,7 @@ export default function WorkoutPage() {
   const { index: idxParam } = useLocalSearchParams<{ index: string }>();
   const index = Number(idxParam ?? 0);
 
-  const { workoutsPerWeek, workouts, setWorkout } = usePlanDraft();
+  const { workoutsPerWeek, workouts, setWorkout } = useEditPlan();
   const draft = workouts?.[index];
 
   if (!Number.isFinite(index) || !draft) {
@@ -72,7 +73,23 @@ export default function WorkoutPage() {
   const [muscleFilter, setMuscleFilter] = useState<string | null>(null);
   const [search, setSearch] = useState("");
 
-  const { items: all } = useExercisesCache();
+  const { items: all, setItems } = useExercisesCache(); // make sure setItems is exported
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (all.length > 0) return;
+      try {
+        const list = await fetchAllExercises();
+        if (!cancelled) setItems(list);
+      } catch (e) {
+        console.warn("Failed to load exercises:", e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [all.length, setItems]);
 
   const [selectedToAdd, setSelectedToAdd] = useState<Set<string>>(new Set());
   function togglePick(id: string) {
@@ -84,6 +101,26 @@ export default function WorkoutPage() {
   }
   function clearPickerSelections() {
     setSelectedToAdd(new Set());
+  }
+
+  async function fetchAllExercises(): Promise<CachedExercise[]> {
+    const pageSize = 500;
+    let from = 0;
+    const out: CachedExercise[] = [];
+    while (true) {
+      const { data, error } = await supabase
+        .from("v_exercises_compact")
+        .select("id,name,type,primary_muscle,popularity")
+        .order("popularity", { ascending: false })
+        .range(from, from + pageSize - 1);
+
+      if (error) throw error;
+      const chunk = (data ?? []) as CachedExercise[];
+      out.push(...chunk);
+      if (chunk.length < pageSize) break;
+      from += pageSize;
+    }
+    return out;
   }
 
   // Superset selection
@@ -173,18 +210,19 @@ export default function WorkoutPage() {
     return pool.slice(0, 10);
   }, [all, typeFilter, muscleFilter, search, hasExercise]);
 
-  function next() {
-    if (!draft.title.trim()) return Alert.alert("Add a workout title");
-    if (draft.exercises.length === 0)
-      return Alert.alert("Add at least one exercise");
-    if (index < workoutsPerWeek - 1) {
-      router.push({
-        pathname: "/features/plans/create/workout",
-        params: { index: index + 1 },
-      });
-    } else {
-      router.push("/features/plans/create/goals");
+  // In edit mode we just confirm and go back
+  function updateAndReturn() {
+    if (!draft.title.trim()) {
+      Alert.alert("Add a workout title");
+      return;
     }
+    if (draft.exercises.length === 0) {
+      Alert.alert("Add at least one exercise");
+      return;
+    }
+    // draft is already saved in store via setWorkout calls above.
+    Alert.alert("Updated", "Workout changes saved.");
+    router.back(); // or router.replace('/features/plans/edit/review') if you have a review page
   }
 
   const SUPERSET_COLORS = [
@@ -209,7 +247,7 @@ export default function WorkoutPage() {
       contentContainerStyle={{ padding: 16 }}
     >
       <Text style={s.h2}>
-        Workout {index + 1} of {workoutsPerWeek}
+        Update Workout {index + 1} of {workoutsPerWeek}
       </Text>
 
       <Text style={s.label}>Title</Text>
@@ -383,7 +421,7 @@ export default function WorkoutPage() {
         ) : null}
       </View>
 
-      {/* Picker */}
+      {/* Fullscreen Picker Modal */}
       <Modal
         visible={showPicker}
         animationType="slide"
@@ -423,7 +461,9 @@ export default function WorkoutPage() {
                     <Text
                       style={{
                         fontWeight: "700",
-                        color: active ? colors.primary ?? "#fff" : colors.text,
+                        color: active
+                          ? colors.primary ?? "#fff"
+                          : colors.text,
                         textTransform: "capitalize",
                       }}
                     >
@@ -588,16 +628,18 @@ export default function WorkoutPage() {
         </View>
       </Modal>
 
+      {/* Bottom actions */}
       <View style={{ flexDirection: "row", gap: 12, marginTop: 16 }}>
         {index > 0 && (
           <Pressable style={s.btn} onPress={() => router.back()}>
             <Text style={s.btnText}>← Back</Text>
           </Pressable>
         )}
-        <Pressable style={[s.btn, s.primary, { flex: 1 }]} onPress={next}>
-          <Text style={s.btnPrimaryText}>
-            {index < workoutsPerWeek - 1 ? "Next Workout →" : "Next → Goals"}
-          </Text>
+        <Pressable
+          style={[s.btn, s.primary, { flex: 1 }]}
+          onPress={updateAndReturn}
+        >
+          <Text style={s.btnPrimaryText}>Update Workout</Text>
         </Pressable>
       </View>
     </ScrollView>
