@@ -209,25 +209,56 @@ export default function Home() {
           setWorkoutsCompleted(wc);
         }
 
-        // 3) Total volume lifted (kg)
+        // 3) Total volume lifted (kg) — sum of reps * weight from workout_set_history
         {
-          const tryWeightCol = async (col: "weight_kg" | "weight") => {
-            const { data, error } = await supabase
-              .from("workout_sets")
-              .select(`${col}, reps`)
-              .eq("user_id", userId)
-              .limit(20000);
-            if (error || !Array.isArray(data)) return null;
-            return data.reduce((sum: number, s: any) => {
-              const w = Number(s[col]) || 0;
-              const r = Number(s.reps) || 0;
-              return sum + w * r;
-            }, 0);
-          };
+          // Step A: get this user's workout_history ids (limit generously)
+          const { data: wh, error: whErr } = await supabase
+            .from("workout_history")
+            .select("id")
+            .eq("user_id", userId)
+            .order("completed_at", { ascending: false })
+            .limit(5000);
 
-          let sum = await tryWeightCol("weight_kg");
-          if (sum == null) sum = await tryWeightCol("weight");
-          setTotalVolumeKg(Math.round(sum ?? 0));
+          if (!whErr && Array.isArray(wh) && wh.length > 0) {
+            const whIds = wh.map((r: any) => r.id);
+
+            // Step B: find the related workout_exercise_history ids
+            const { data: wexh, error: wexhErr } = await supabase
+              .from("workout_exercise_history")
+              .select("id, workout_history_id")
+              .in("workout_history_id", whIds)
+              .limit(50000);
+
+            if (!wexhErr && Array.isArray(wexh) && wexh.length > 0) {
+              const wexhIds = wexh.map((r: any) => r.id);
+
+              // Step C: fetch the sets and sum reps*weight for strength rows
+              const { data: sets, error: setErr } = await supabase
+                .from("workout_set_history")
+                .select("reps, weight, time_seconds, distance")
+                .in("workout_exercise_history_id", wexhIds)
+                .limit(100000);
+
+              if (!setErr && Array.isArray(sets)) {
+                const total = sets.reduce((sum: number, s: any) => {
+                  const reps = Number(s?.reps ?? 0);
+                  const weight = Number(s?.weight ?? 0);
+                  // cardio rows have time/distance and 0 reps/weight — they contribute 0 to volume
+                  if (!Number.isFinite(reps) || !Number.isFinite(weight))
+                    return sum;
+                  return sum + reps * weight;
+                }, 0);
+
+                setTotalVolumeKg(Math.round(total));
+              } else {
+                setTotalVolumeKg(0);
+              }
+            } else {
+              setTotalVolumeKg(0);
+            }
+          } else {
+            setTotalVolumeKg(0);
+          }
         }
 
         // 4) Recent lift progress

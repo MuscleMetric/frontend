@@ -26,7 +26,7 @@ import {
   updateLiveWorkout,
   stopLiveWorkout,
 } from "../../../lib/liveWorkout";
-
+import { setReviewPayload } from "../../../lib/sessionStore";
 
 /* ---------- types ---------- */
 type Workout = {
@@ -43,6 +43,7 @@ type Exercise = {
 
 type WorkoutExercise = {
   id: string;
+  exercise_id: string;
   order_index: number | null;
   target_sets: number | null;
   target_reps: number | null;
@@ -153,6 +154,9 @@ export default function StartWorkoutScreen() {
   const params = useLocalSearchParams();
   const workoutId =
     typeof params.workoutId === "string" ? params.workoutId : undefined;
+
+  const planWorkoutId =
+    typeof params.planWorkoutId === "string" ? params.planWorkoutId : undefined;
 
   const [loading, setLoading] = useState(true);
   const [workout, setWorkout] = useState<Workout | null>(null);
@@ -278,7 +282,7 @@ export default function StartWorkoutScreen() {
           `
           id, title,
           workout_exercises(
-            id, order_index, target_sets, target_reps, target_weight, target_time_seconds, target_distance, notes, is_dropset,
+            id, exercise_id, order_index, target_sets, target_reps, target_weight, target_time_seconds, target_distance, notes, is_dropset,
             superset_group, superset_index,
             exercises ( id, name, type )
           )
@@ -297,6 +301,7 @@ export default function StartWorkoutScreen() {
             workout_exercises: (data.workout_exercises ?? [])
               .map((we: any) => ({
                 id: String(we.id),
+                exercise_id: String(we.exercise_id),
                 order_index: we.order_index ?? null,
                 target_sets: we.target_sets ?? null,
                 target_reps: we.target_reps ?? null,
@@ -603,11 +608,47 @@ export default function StartWorkoutScreen() {
       };
     });
 
+  function hasSetDataForNext(ex: ExerciseState): boolean {
+    const i = ex.currentSet;
+
+    if (ex.kind === "strength") {
+      const cur = ex.sets[i] as StrengthSet;
+      if ((ex as any).dropMode) {
+        const drops = cur.drops ?? [];
+        // at least one drop row has reps or weight
+        return drops.some(
+          (d) => (d.reps && d.reps !== "0") || (d.weight && d.weight !== "0")
+        );
+      }
+      // regular: reps or weight present
+      return !!(
+        (cur.reps && cur.reps !== "0") ||
+        (cur.weight && cur.weight !== "0")
+      );
+    }
+
+    // cardio: distance or time present
+    const cur = ex.sets[i] as CardioSet;
+    return !!(
+      (cur.distance && cur.distance !== "0") ||
+      (cur.timeSec && cur.timeSec !== "0")
+    );
+  }
+
   const setNextSet = (weId: string) =>
     setState((s) => {
       if (!s) return s;
       const ex = s.byWeId[weId];
       if (!ex) return s;
+
+      // 🚫 Block next if current set is empty
+      if (!hasSetDataForNext(ex)) {
+        Alert.alert(
+          "Add a set",
+          "Please enter reps/weight (or a drop row) before moving to the next set."
+        );
+        return s;
+      }
 
       const isStrength = isStrengthState(ex);
       const isCardioT = isCardioState(ex);
@@ -1070,37 +1111,63 @@ export default function StartWorkoutScreen() {
                             };
                           })
                         }
-                        style={{ flexDirection: "row", alignItems: "center" }}
+                        style={{
+                          flexDirection: "row",
+                          alignItems: "center",
+                          gap: 10,
+                          backgroundColor: colors.surface,
+                          paddingVertical: 6,
+                          paddingHorizontal: 10,
+                          borderRadius: 8,
+                          borderWidth: StyleSheet.hairlineWidth,
+                          borderColor: colors.border,
+                          shadowColor: colors.text,
+                          shadowOpacity: 0.08,
+                          shadowOffset: { width: 0, height: 1 },
+                          shadowRadius: 2,
+                        }}
                         hitSlop={8}
                       >
                         <View
                           style={{
-                            width: 18,
-                            height: 18,
-                            borderRadius: 4,
-                            borderWidth: StyleSheet.hairlineWidth,
-                            borderColor: colors.border,
+                            width: 22,
+                            height: 22,
+                            borderRadius: 6,
+                            borderWidth: 2,
+                            borderColor: exState.dropMode
+                              ? colors.primaryText
+                              : colors.subtle,
                             backgroundColor: exState.dropMode
                               ? colors.primaryBg
-                              : colors.surface,
+                              : colors.background,
                             alignItems: "center",
                             justifyContent: "center",
-                            marginRight: 8,
+                            shadowColor: colors.text,
+                            shadowOpacity: exState.dropMode ? 0.25 : 0.05,
+                            shadowOffset: { width: 0, height: 1 },
+                            shadowRadius: exState.dropMode ? 2 : 0,
                           }}
                         >
                           {exState.dropMode ? (
                             <Text
                               style={{
                                 color: colors.primaryText,
-                                fontWeight: "800",
-                                fontSize: 12,
+                                fontWeight: "900",
+                                fontSize: 14,
                               }}
                             >
                               ✓
                             </Text>
                           ) : null}
                         </View>
-                        <Text style={{ color: colors.text, fontWeight: "700" }}>
+
+                        <Text
+                          style={{
+                            color: colors.text,
+                            fontWeight: "700",
+                            fontSize: 15,
+                          }}
+                        >
                           Drop set (multiple weights in one set)
                         </Text>
                       </Pressable>
@@ -1543,12 +1610,19 @@ export default function StartWorkoutScreen() {
           disabled={!state.anyCompleted}
           onPress={() => {
             stopLiveWorkout();
-            // We'll implement the review/save screen next
             const totalElapsedSec = Math.floor(
               (Date.now() - state.startedAt) / 1000
             );
             const durationWithCardio =
               totalElapsedSec + state.cardioTimeBonusSec;
+
+            // capture a snapshot for review
+            setReviewPayload({
+              workout,
+              state,
+              supersets, // you already compute this for supersets A, B, ...
+            });
+
             router.push({
               pathname: "/features/workouts/review",
               params: {
@@ -1556,6 +1630,7 @@ export default function StartWorkoutScreen() {
                 elapsedSec: String(totalElapsedSec),
                 bonusSec: String(state.cardioTimeBonusSec),
                 totalSec: String(durationWithCardio),
+                planWorkoutId,
               },
             });
           }}

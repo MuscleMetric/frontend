@@ -212,6 +212,9 @@ export default function WorkoutViewScreen() {
   const [workout, setWorkout] = useState<Workout | null>(null);
   const [infoTarget, setInfoTarget] = useState<Exercise | null>(null);
   const [infoOpen, setInfoOpen] = useState(false);
+  const params = useLocalSearchParams();
+  const planWorkoutId =
+  typeof params.planWorkoutId === "string" ? params.planWorkoutId : undefined;
 
   const openInfo = (ex: Exercise | null) => {
     setInfoTarget(ex);
@@ -394,7 +397,7 @@ export default function WorkoutViewScreen() {
           onPress={() =>
             router.push({
               pathname: "/features/workouts/start",
-              params: { workoutId: workout.id },
+              params: { workoutId: workout.id, planWorkoutId, },
             })
           }
           style={[styles.startBtn, { backgroundColor: "#22c55e" }]}

@@ -452,7 +452,7 @@ export default function WorkoutScreen() {
                   } else {
                     router.push({
                       pathname: "/features/workouts/view",
-                      params: { workoutId: pw.workout_id },
+                      params: { workoutId: pw.workout_id, planWorkoutId: pw.id  },
                     });
                   }
                 }}
