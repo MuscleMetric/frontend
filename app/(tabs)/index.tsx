@@ -12,6 +12,13 @@ import {
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../lib/useAuth";
 import { useAppTheme } from "../../lib/useAppTheme";
+import { Pedometer } from "expo-sensors";
+import { PermissionsAndroid } from "react-native";
+import { AppState } from "react-native";
+import {
+  registerBackgroundFetch,
+  onAppActiveSync,
+} from "../features/steps/stepsSync";
 
 type LiftProgress = {
   exercise: string;
@@ -36,12 +43,92 @@ export default function Home() {
   const [workoutsCompleted, setWorkoutsCompleted] = useState<number>(0);
   const [totalVolumeKg, setTotalVolumeKg] = useState<number>(0);
 
-  // steps (hidden by default)
-  const [stepsToday, setStepsToday] = useState<number | null>(null);
-  const stepsGoal = 10000;
+  // CHANGE your steps state to default to 0 and keep "unavailable" flag
+  const [stepsToday, setStepsToday] = useState<number>(0);
+  const [stepsAvailable, setStepsAvailable] = useState<boolean>(true);
+  const [stepsGoal, setStepsGoal] = useState<number>(10000);
 
   // recent lift progress
   const [liftProgress, setLiftProgress] = useState<LiftProgress[]>([]);
+
+  // ADD helper to get start of today (local)
+  function startOfToday() {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }
+
+  useEffect(() => {
+    if (!userId) return;
+    registerBackgroundFetch();
+    onAppActiveSync();
+    const sub = AppState.addEventListener("change", (s) => {
+      if (s === "active") onAppActiveSync();
+    });
+    return () => sub.remove();
+  }, [userId]);
+
+  // ADD this effect (separate from your big data-loading effect)
+  useEffect(() => {
+    let sub: { remove: () => void } | null = null;
+    let alive = true;
+
+    async function askAndroidPermissionIfNeeded() {
+      if (Platform.OS !== "android") return true;
+      // Android 10+ needs runtime permission
+      try {
+        const status = await PermissionsAndroid.request(
+          "android.permission.ACTIVITY_RECOGNITION"
+        );
+        return status === PermissionsAndroid.RESULTS.GRANTED;
+      } catch {
+        return false;
+      }
+    }
+
+    async function loadTodayStepsOnce() {
+      try {
+        const available = await Pedometer.isAvailableAsync();
+        if (!available) {
+          if (alive) setStepsAvailable(false);
+          return;
+        }
+        if (Platform.OS === "android") {
+          const ok = await askAndroidPermissionIfNeeded();
+          if (!ok) {
+            if (alive) setStepsAvailable(false);
+            return;
+          }
+        }
+        const start = startOfToday();
+        const end = new Date();
+        const count = await Pedometer.getStepCountAsync(start, end);
+        if (alive) {
+          setStepsAvailable(true);
+          setStepsToday(count?.steps ?? 0);
+        }
+      } catch {
+        if (alive) setStepsAvailable(false);
+      }
+    }
+
+    // initial load
+    loadTodayStepsOnce();
+
+    // live updates (fires with small deltas; we re-query to keep “today” accurate)
+    sub = Pedometer.watchStepCount(async () => {
+      await loadTodayStepsOnce();
+    });
+
+    // also refresh every ~60s in case the watcher is quiet
+    const interval = setInterval(loadTodayStepsOnce, 60_000);
+
+    return () => {
+      alive = false;
+      if (sub) sub.remove();
+      clearInterval(interval);
+    };
+  }, []);
 
   const greeting = useMemo(() => {
     const h = new Date().getHours();
@@ -66,14 +153,39 @@ export default function Home() {
       try {
         setLoading(true);
 
-        // 1) Profile name
+        // 1) Profile name + steps goal
         {
           const { data, error } = await supabase
             .from("profiles")
-            .select("name")
+            .select("name, steps_goal, settings")
             .eq("id", userId)
             .maybeSingle();
-          if (!error && data?.name) setFullName(data.name);
+
+          if (!error && data) {
+            if (data.name) setFullName(data.name);
+
+            // prefer the column; fall back to settings JSON if you used that before
+            const fromColumn =
+              typeof data.steps_goal === "number" ? data.steps_goal : null;
+            const fromSettings = (() => {
+              try {
+                const sg = (data as any)?.settings?.steps_goal;
+                return typeof sg === "number" ? sg : Number(sg);
+              } catch {
+                return null;
+              }
+            })();
+
+            const goal = Number.isFinite(fromColumn)
+              ? fromColumn!
+              : Number.isFinite(fromSettings!)
+              ? Number(fromSettings)
+              : 10000;
+
+            // clamp to a sensible range (optional)
+            const safeGoal = Math.max(0, Math.min(50000, Math.round(goal)));
+            setStepsGoal(safeGoal);
+          }
         }
 
         // 2) Workouts completed
@@ -118,11 +230,7 @@ export default function Home() {
           setTotalVolumeKg(Math.round(sum ?? 0));
         }
 
-        // 4) Steps placeholder
-        if (Platform.OS === "ios") setStepsToday(null);
-        else setStepsToday(null);
-
-        // 5) Recent lift progress
+        // 4) Recent lift progress
         {
           const { data, error } = await supabase
             .from("workout_sets")
@@ -151,7 +259,10 @@ export default function Home() {
             byEx.forEach((arr, ex) => {
               arr.sort((a, b) => b.t - a.t);
               const latestPeak = Math.max(...arr.slice(0, 50).map((x) => x.pr));
-              const previousPeak = Math.max(...arr.slice(50, 150).map((x) => x.pr), 0);
+              const previousPeak = Math.max(
+                ...arr.slice(50, 150).map((x) => x.pr),
+                0
+              );
               if (!isFinite(latestPeak) || latestPeak <= 0) return;
               const from = previousPeak > 0 ? previousPeak : latestPeak;
               const to = latestPeak;
@@ -183,28 +294,37 @@ export default function Home() {
             {greeting}, {firstName} 👋
           </Text>
         </View>
-
         {/* Daily Summary */}
         <View style={styles.card}>
           <Text style={styles.h2}>Daily Summary</Text>
           {loading ? (
             <ActivityIndicator style={{ marginTop: 8 }} />
           ) : (
-            <View style={{ flexDirection: "row", gap: 12 }}>
-              <CardStat value={String(workoutsCompleted)} label="Workouts Completed" />
-              <CardStat value={formatNumber(totalVolumeKg)} label="Total Volume Lifted (kg)" />
+            <View
+              style={{
+                flexDirection: "row",
+                flexWrap: "wrap",
+                gap: 12,
+                justifyContent: "space-between",
+              }}
+            >
+              <CardStat
+                value={String(workoutsCompleted)}
+                label="Workouts Completed"
+              />
+              <CardStat
+                value={formatNumber(totalVolumeKg)}
+                label="Total Volume (kg)"
+              />
+              {stepsAvailable && (
+                <CardStat
+                  value={formatNumber(stepsToday)}
+                  label={`Steps (${formatNumber(stepsGoal)} goal)`}
+                />
+              )}
             </View>
           )}
         </View>
-
-        {/* Steps (hidden unless wired) */}
-        {stepsToday != null && (
-          <View style={styles.card}>
-            <Text style={styles.h3}>Total Steps</Text>
-            <Text style={styles.big}>{formatNumber(stepsToday)}</Text>
-            <Text style={styles.subtle}>/{formatNumber(stepsGoal)} steps</Text>
-          </View>
-        )}
 
         {/* Recent Lift Progress */}
         <View style={styles.card}>
@@ -219,14 +339,20 @@ export default function Home() {
                   name={lp.exercise}
                   from={`${Math.round(lp.from)}kg`}
                   to={`${Math.round(lp.to)}kg`}
-                  delta={`${lp.deltaPct > 0 ? "+" : ""}${(lp.deltaPct * 100).toFixed(1)}%`}
+                  delta={`${lp.deltaPct > 0 ? "+" : ""}${(
+                    lp.deltaPct * 100
+                  ).toFixed(1)}%`}
                 />
               ))}
             </>
           ) : workoutsCompleted > 0 ? (
-            <Text style={styles.subtle}>Keep logging sets to see progress trends here.</Text>
+            <Text style={styles.subtle}>
+              Keep logging sets to see progress trends here.
+            </Text>
           ) : (
-            <Text style={styles.subtle}>Complete some workouts and your progress will appear here.</Text>
+            <Text style={styles.subtle}>
+              Complete some workouts and your progress will appear here.
+            </Text>
           )}
         </View>
       </ScrollView>
@@ -245,7 +371,17 @@ function CardStat({ value, label }: { value: string; label: string }) {
   );
 }
 
-function LiftRow({ name, from, to, delta }: { name: string; from: string; to: string; delta: string }) {
+function LiftRow({
+  name,
+  from,
+  to,
+  delta,
+}: {
+  name: string;
+  from: string;
+  to: string;
+  delta: string;
+}) {
   const { colors } = useAppTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   return (
@@ -273,19 +409,36 @@ const makeStyles = (colors: any) =>
       borderColor: colors.border,
     },
     hi: { fontSize: 22, fontWeight: "800", color: colors.text },
-    h2: { fontSize: 18, fontWeight: "700", marginBottom: 12, color: colors.text },
-    h3: { fontSize: 16, fontWeight: "700", marginBottom: 8, color: colors.text },
+    h2: {
+      fontSize: 18,
+      fontWeight: "700",
+      marginBottom: 12,
+      color: colors.text,
+    },
+    h3: {
+      fontSize: 16,
+      fontWeight: "700",
+      marginBottom: 8,
+      color: colors.text,
+    },
     text: { color: colors.text },
     subtle: { color: colors.subtle },
     stat: {
       flex: 1,
+      minWidth: 110,
       backgroundColor: colors.surface,
       padding: 16,
       borderRadius: 16,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.border,
     },
-    statValue: { fontSize: 28, fontWeight: "900", marginBottom: 6, color: colors.text },
+
+    statValue: {
+      fontSize: 28,
+      fontWeight: "900",
+      marginBottom: 6,
+      color: colors.text,
+    },
     big: { fontSize: 24, fontWeight: "800", color: colors.text },
   });
 

@@ -14,11 +14,14 @@ import {
   Modal,
   ActivityIndicator,
 } from "react-native";
-import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
+import DateTimePicker, {
+  DateTimePickerEvent,
+} from "@react-native-community/datetimepicker";
 import { Picker } from "@react-native-picker/picker";
 import { supabase } from "../../lib/supabase";
 import { router } from "expo-router";
 import { useAppTheme } from "../../lib/useAppTheme";
+import { toISODateUTC } from "../utils/dates";
 
 type Level = "beginner" | "intermediate" | "advanced";
 type Goal = "build_muscle" | "lose_fat" | "get_stronger" | "improve_endurance";
@@ -46,6 +49,7 @@ export default function Signup() {
   const [level, setLevel] = useState<Level>("beginner");
   const [primaryGoal, setPrimaryGoal] = useState<Goal>("build_muscle");
   const [workoutsPerWeek, setWorkoutsPerWeek] = useState<number>(3);
+  const [stepsGoal, setStepsGoal] = useState<string>("10000");
 
   const [loading, setLoading] = useState(false);
 
@@ -75,13 +79,17 @@ export default function Signup() {
     if (step === 1) {
       const okEmail = /\S+@\S+\.\S+/.test(email);
       if (!fullName || !okEmail || password.length < 6) {
-        Alert.alert("Please fill your name, a valid email, and a 6+ character password.");
+        Alert.alert(
+          "Please fill your name, a valid email, and a 6+ character password."
+        );
         return;
       }
       setStep(2);
     } else if (step === 2) {
       if (!dob || !gender || !height || !weight) {
-        Alert.alert("Please select your date of birth, gender, height, and weight.");
+        Alert.alert(
+          "Please select your date of birth, gender, height, and weight."
+        );
         return;
       }
       setStep(3);
@@ -91,11 +99,14 @@ export default function Signup() {
   async function complete() {
     try {
       setLoading(true);
-      const { data: signUpData, error: signUpErr } = await supabase.auth.signUp({
-        email,
-        password,
-        options: { data: { name: fullName, gender } },
-      });
+
+      const { data: signUpData, error: signUpErr } = await supabase.auth.signUp(
+        {
+          email,
+          password,
+          options: { data: { name: fullName, gender } },
+        }
+      );
       if (signUpErr) throw signUpErr;
 
       const userId = signUpData.user?.id || signUpData.session?.user.id;
@@ -107,9 +118,10 @@ export default function Signup() {
           email,
           height: height ? Number(height) : null,
           weight: weight ? Number(weight) : null,
+          date_of_birth: dob ? toISODateUTC(dob) : null,
+          steps_goal: Math.max(0, Number(stepsGoal) || 0),
           settings: {
             gender,
-            dob: dob ? dob.toISOString().slice(0, 10) : null,
             level,
             primaryGoal,
             workoutsPerWeek,
@@ -117,7 +129,10 @@ export default function Signup() {
             unit_height: "cm",
           },
         };
-        const { error: upsertErr } = await supabase.from("profiles").upsert(profilePayload);
+
+        const { error: upsertErr } = await supabase
+          .from("profiles")
+          .upsert(profilePayload);
         if (upsertErr) throw upsertErr;
       } else {
         Alert.alert(
@@ -136,7 +151,10 @@ export default function Signup() {
   }
 
   return (
-    <KeyboardAvoidingView behavior={Platform.select({ ios: "padding", android: undefined })} style={{ flex: 1 }}>
+    <KeyboardAvoidingView
+      behavior={Platform.select({ ios: "padding", android: undefined })}
+      style={{ flex: 1 }}
+    >
       <ScrollView
         style={{ flex: 1, backgroundColor: colors.background }}
         contentContainerStyle={{ padding: 20, paddingBottom: 40 }}
@@ -197,15 +215,23 @@ export default function Signup() {
             <>
               {/* DOB */}
               <Field label="Date of Birth">
-                <Pressable style={[styles.input, { justifyContent: "center" }]} onPress={openDobPicker}>
+                <Pressable
+                  style={[styles.input, { justifyContent: "center" }]}
+                  onPress={openDobPicker}
+                >
                   <Text style={{ color: colors.text }}>
-                    {dob ? dob.toDateString() : "Tap to select your date of birth"}
+                    {dob
+                      ? dob.toDateString()
+                      : "Tap to select your date of birth"}
                   </Text>
                 </Pressable>
 
                 {age != null && (
                   <Text style={{ marginTop: 6, color: colors.subtle }}>
-                    Age: <Text style={{ fontWeight: "700", color: colors.text }}>{age}</Text>
+                    Age:{" "}
+                    <Text style={{ fontWeight: "700", color: colors.text }}>
+                      {age}
+                    </Text>
                   </Text>
                 )}
               </Field>
@@ -221,12 +247,17 @@ export default function Signup() {
                         onPress={() => setGender(g)}
                         style={[
                           styles.chip,
-                          active && { backgroundColor: colors.primary, borderColor: colors.primary },
+                          active && {
+                            backgroundColor: colors.primary,
+                            borderColor: colors.primary,
+                          },
                         ]}
                       >
                         <Text
                           style={{
-                            color: active ? (colors.primary ?? "#fff") : colors.text,
+                            color: active
+                              ? colors.primary ?? "#fff"
+                              : colors.text,
                             fontWeight: "700",
                             textTransform: "capitalize",
                           }}
@@ -277,7 +308,10 @@ export default function Signup() {
             <>
               <Field label="Current Fitness Level">
                 <View style={styles.pickerWrap}>
-                  <Picker selectedValue={level} onValueChange={(v: Level) => setLevel(v)}>
+                  <Picker
+                    selectedValue={level}
+                    onValueChange={(v: Level) => setLevel(v)}
+                  >
                     <Picker.Item label="Beginner" value="beginner" />
                     <Picker.Item label="Intermediate" value="intermediate" />
                     <Picker.Item label="Advanced - 2+ years" value="advanced" />
@@ -287,22 +321,73 @@ export default function Signup() {
 
               <Field label="Primary Fitness Goal">
                 <View style={styles.pickerWrap}>
-                  <Picker selectedValue={primaryGoal} onValueChange={(v: Goal) => setPrimaryGoal(v)}>
+                  <Picker
+                    selectedValue={primaryGoal}
+                    onValueChange={(v: Goal) => setPrimaryGoal(v)}
+                  >
                     <Picker.Item label="Build Muscle" value="build_muscle" />
                     <Picker.Item label="Lose Fat" value="lose_fat" />
                     <Picker.Item label="Get Stronger" value="get_stronger" />
-                    <Picker.Item label="Improve Endurance" value="improve_endurance" />
+                    <Picker.Item
+                      label="Improve Endurance"
+                      value="improve_endurance"
+                    />
                   </Picker>
                 </View>
               </Field>
 
               <Field label="Workouts Per Week">
                 <View style={styles.pickerWrap}>
-                  <Picker selectedValue={workoutsPerWeek} onValueChange={(v) => setWorkoutsPerWeek(Number(v))}>
+                  <Picker
+                    selectedValue={workoutsPerWeek}
+                    onValueChange={(v) => setWorkoutsPerWeek(Number(v))}
+                  >
                     <Picker.Item label="3 workouts" value={3} />
                     <Picker.Item label="4 workouts" value={4} />
                     <Picker.Item label="5 workouts" value={5} />
                   </Picker>
+                </View>
+              </Field>
+
+              <Field label="Daily Steps Goal">
+                <View style={{ gap: 8 }}>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="e.g. 10000"
+                    placeholderTextColor={colors.subtle}
+                    keyboardType="number-pad"
+                    value={stepsGoal}
+                    onChangeText={setStepsGoal}
+                  />
+
+                  {/* Optional quick chips */}
+                  <View style={{ flexDirection: "row", gap: 8 }}>
+                    {[8000, 10000, 12000].map((n) => (
+                      <Pressable
+                        key={n}
+                        style={[
+                          styles.chip,
+                          stepsGoal === String(n) && {
+                            backgroundColor: colors.primary,
+                            borderColor: colors.primary,
+                          },
+                        ]}
+                        onPress={() => setStepsGoal(String(n))}
+                      >
+                        <Text
+                          style={{
+                            fontWeight: "700",
+                            color:
+                              stepsGoal === String(n)
+                                ? colors.primary ?? "#fff"
+                                : colors.text,
+                          }}
+                        >
+                          {n.toLocaleString()}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
                 </View>
               </Field>
 
@@ -311,16 +396,26 @@ export default function Signup() {
                   <SecondaryButton title="←  Back" onPress={() => setStep(2)} />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <PrimaryButton title={loading ? "Creating..." : "Complete  ✓"} onPress={complete} loading={loading} />
+                  <PrimaryButton
+                    title={loading ? "Creating..." : "Complete  ✓"}
+                    onPress={complete}
+                    loading={loading}
+                  />
                 </View>
               </View>
             </>
           )}
         </View>
 
-        <Pressable onPress={() => router.replace("/(auth)/login")} style={{ alignSelf: "center", marginTop: 16 }}>
+        <Pressable
+          onPress={() => router.replace("/(auth)/login")}
+          style={{ alignSelf: "center", marginTop: 16 }}
+        >
           <Text style={{ color: colors.text }}>
-            Already have an account? <Text style={{ color: colors.primaryText, fontWeight: "700" }}>Sign in</Text>
+            Already have an account?{" "}
+            <Text style={{ color: colors.primaryText, fontWeight: "700" }}>
+              Sign in
+            </Text>
           </Text>
         </Pressable>
       </ScrollView>
@@ -351,7 +446,15 @@ export default function Signup() {
 
 /* ---------- small UI components ---------- */
 
-function Header({ title, subtitle, step }: { title: string; subtitle: string; step: 1 | 2 | 3 }) {
+function Header({
+  title,
+  subtitle,
+  step,
+}: {
+  title: string;
+  subtitle: string;
+  step: 1 | 2 | 3;
+}) {
   const { colors } = useAppTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
@@ -377,7 +480,14 @@ function Header({ title, subtitle, step }: { title: string; subtitle: string; st
                 },
               ]}
             >
-              <Text style={{ color: active ? (colors.primary ?? "#fff") : colors.text, fontSize: 12 }}>{n}</Text>
+              <Text
+                style={{
+                  color: active ? colors.primary ?? "#fff" : colors.text,
+                  fontSize: 12,
+                }}
+              >
+                {n}
+              </Text>
             </View>
           );
         })}
@@ -442,17 +552,33 @@ function DobSheet({
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
   const { colors } = useAppTheme();
   return (
     <View style={{ marginBottom: 14 }}>
-      <Text style={{ marginBottom: 6, fontWeight: "700", color: colors.text }}>{label}</Text>
+      <Text style={{ marginBottom: 6, fontWeight: "700", color: colors.text }}>
+        {label}
+      </Text>
       {children}
     </View>
   );
 }
 
-function PrimaryButton({ title, onPress, loading }: { title: string; onPress: () => void; loading?: boolean }) {
+function PrimaryButton({
+  title,
+  onPress,
+  loading,
+}: {
+  title: string;
+  onPress: () => void;
+  loading?: boolean;
+}) {
   const { colors } = useAppTheme();
   return (
     <Pressable
@@ -470,12 +596,24 @@ function PrimaryButton({ title, onPress, loading }: { title: string; onPress: ()
         loading && { opacity: 0.7 },
       ]}
     >
-      {loading ? <ActivityIndicator /> : <Text style={{ color: colors.primary ?? "#fff", fontWeight: "700" }}>{title}</Text>}
+      {loading ? (
+        <ActivityIndicator />
+      ) : (
+        <Text style={{ color: colors.primary ?? "#fff", fontWeight: "700" }}>
+          {title}
+        </Text>
+      )}
     </Pressable>
   );
 }
 
-function SecondaryButton({ title, onPress }: { title: string; onPress: () => void }) {
+function SecondaryButton({
+  title,
+  onPress,
+}: {
+  title: string;
+  onPress: () => void;
+}) {
   const { colors } = useAppTheme();
   return (
     <Pressable

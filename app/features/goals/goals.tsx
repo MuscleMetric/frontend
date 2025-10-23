@@ -7,12 +7,16 @@ import {
   Pressable,
   ActivityIndicator,
   ScrollView,
+  TextInput,
+  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { supabase } from "../../../lib/supabase";
 import { useAuth } from "../../../lib/useAuth";
 import { useAppTheme } from "../../../lib/useAppTheme";
+
+/* ---------- types ---------- */
 
 type Plan = {
   id: string;
@@ -33,6 +37,8 @@ type GoalRow = {
   exercises: { name: string | null } | null;
 };
 
+/* ---------- component ---------- */
+
 export default function GoalsScreen() {
   const { session } = useAuth();
   const userId = session?.user?.id;
@@ -44,7 +50,60 @@ export default function GoalsScreen() {
   const [plan, setPlan] = useState<Plan | null>(null);
   const [goals, setGoals] = useState<GoalRow[]>([]);
 
-  // Fetch plan + goals
+  // steps goal state
+  const [stepsLoading, setStepsLoading] = useState(true);
+  const [stepsGoal, setStepsGoal] = useState<number>(10000);
+  const [editingSteps, setEditingSteps] = useState(false);
+  const [stepsDraft, setStepsDraft] = useState<string>("10000");
+  const [savingSteps, setSavingSteps] = useState(false);
+
+  /* ----- load steps goal ----- */
+  useEffect(() => {
+    if (!userId) return;
+    let alive = true;
+    (async () => {
+      try {
+        setStepsLoading(true);
+        const { data, error } = await supabase
+          .from("profiles")
+          .select("steps_goal")
+          .eq("id", userId)
+          .maybeSingle();
+        const goal = !error && data?.steps_goal != null ? Number(data.steps_goal) : 10000;
+        if (alive) {
+          const safe = Math.max(0, Math.min(50000, Math.round(goal)));
+          setStepsGoal(safe);
+          setStepsDraft(String(safe));
+        }
+      } finally {
+        if (alive) setStepsLoading(false);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [userId]);
+
+  async function saveStepsGoal() {
+    if (!userId) return;
+    const n = Math.max(0, Math.min(50000, Math.round(Number(stepsDraft) || 0)));
+    try {
+      setSavingSteps(true);
+      const { error } = await supabase
+        .from("profiles")
+        .update({ steps_goal: n })
+        .eq("id", userId);
+      if (error) throw error;
+      setStepsGoal(n);
+      setEditingSteps(false);
+    } catch (e: any) {
+      Alert.alert("Could not save steps goal", e?.message ?? "Unknown error");
+    } finally {
+      setSavingSteps(false);
+    }
+  }
+
+  /* ----- load plan + goals ----- */
   useEffect(() => {
     if (!userId) return;
 
@@ -177,6 +236,8 @@ export default function GoalsScreen() {
     }
   }
 
+  /* ---------- render ---------- */
+
   return (
     <SafeAreaView edges={["top", "left", "right"]} style={styles.safe}>
       {/* Header */}
@@ -185,7 +246,7 @@ export default function GoalsScreen() {
           <Text style={styles.link}>← Back</Text>
         </Pressable>
         <View style={{ flex: 1 }}>
-          <Text style={styles.h1}>Plan Goals</Text>
+          <Text style={styles.h1}>Goals</Text>
           <Text style={styles.h2}>
             {plan
               ? `From “${planTitle}”${endText ? ` • Ends ${endText}` : ""}`
@@ -195,54 +256,102 @@ export default function GoalsScreen() {
         <View style={{ width: 52 }} />
       </View>
 
-      {/* Body */}
-      <View style={styles.body}>
-        {loading ? (
-          <View style={[styles.card, { alignItems: "center" }]}>
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ gap: 12, paddingVertical: 16 }}>
+        {/* Steps Goal card */}
+        <View style={styles.card}>
+          <Text style={styles.h3}>Daily Steps Goal</Text>
+
+          {stepsLoading ? (
+            <ActivityIndicator style={{ marginTop: 6 }} />
+          ) : !editingSteps ? (
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 6 }}>
+              <Text style={styles.big}>{stepsGoal.toLocaleString()} steps</Text>
+              <Pressable style={[styles.btn, styles.primary]} onPress={() => setEditingSteps(true)}>
+                <Text style={styles.btnPrimaryText}>Edit</Text>
+              </Pressable>
+            </View>
+          ) : (
+            <View style={{ flexDirection: "row", gap: 8, alignItems: "center", marginTop: 8 }}>
+              <TextInput
+                style={[styles.input, { flex: 1 }]}
+                value={stepsDraft}
+                onChangeText={setStepsDraft}
+                keyboardType="number-pad"
+                placeholder="e.g. 10000"
+                placeholderTextColor={colors.subtle}
+              />
+              <Pressable
+                style={[styles.btn, styles.primary, { opacity: savingSteps ? 0.7 : 1 }]}
+                disabled={savingSteps}
+                onPress={saveStepsGoal}
+              >
+                <Text style={styles.btnPrimaryText}>{savingSteps ? "Saving…" : "Save"}</Text>
+              </Pressable>
+              <Pressable
+                style={styles.btn}
+                onPress={() => {
+                  setStepsDraft(String(stepsGoal));
+                  setEditingSteps(false);
+                }}
+              >
+                <Text style={styles.btnText}>Cancel</Text>
+              </Pressable>
+            </View>
+          )}
+          <Text style={[styles.subtle, { marginTop: 6 }]}>
+            This goal powers your daily summary and streaks.
+          </Text>
+        </View>
+
+        {/* Plan Goals card(s) */}
+        <View style={styles.card}>
+          <Text style={styles.h3}>Plan Goals</Text>
+          <View style={{ height: 8 }} />
+
+          {loading ? (
             <ActivityIndicator />
-          </View>
-        ) : goals.length === 0 ? (
-          <View style={styles.card}>
-            <Text style={styles.subtle}>
-              No plan goals yet. Once you create a plan with goals, they will
-              appear here.
-            </Text>
-            <Pressable
-              style={[styles.btn, styles.primary, { marginTop: 12 }]}
-              onPress={() => router.push("/features/plans/create/planInfo")}
-            >
-              <Text style={styles.btnPrimaryText}>Create Plan</Text>
-            </Pressable>
-          </View>
-        ) : (
-          <ScrollView contentContainerStyle={{ gap: 12 }}>
-            {goals.map((g) => {
-              const start = parseStart(g.notes);
-              const exerciseName = g.exercises?.name ?? "Exercise";
-              return (
-                <View key={g.id} style={styles.card}>
-                  <Text style={styles.title}>{exerciseName}</Text>
-                  <Text style={styles.subtle}>
-                    {fmtMode(g.type)} → {g.target_number}
-                    {g.unit ? ` ${g.unit}` : ""}
-                    {start != null ? `  (start ${start}${g.unit ?? ""})` : ""}
-                  </Text>
-                  {!!g.deadline && (
-                    <Text style={styles.deadline}>
-                      Due{" "}
-                      {new Date(g.deadline).toLocaleDateString("en-US", {
-                        month: "short",
-                        day: "numeric",
-                        year: "numeric",
-                      })}
+          ) : goals.length === 0 ? (
+            <>
+              <Text style={styles.subtle}>
+                No plan goals yet. Once you create a plan with goals, they will appear here.
+              </Text>
+              <Pressable
+                style={[styles.btn, styles.primary, { marginTop: 12 }]}
+                onPress={() => router.push("/features/plans/create/planInfo")}
+              >
+                <Text style={styles.btnPrimaryText}>Create Plan</Text>
+              </Pressable>
+            </>
+          ) : (
+            <View style={{ gap: 12 }}>
+              {goals.map((g) => {
+                const start = parseStart(g.notes);
+                const exerciseName = g.exercises?.name ?? "Exercise";
+                return (
+                  <View key={g.id} style={styles.goalRow}>
+                    <Text style={styles.title}>{exerciseName}</Text>
+                    <Text style={styles.subtle}>
+                      {fmtMode(g.type)} → {g.target_number}
+                      {g.unit ? ` ${g.unit}` : ""}
+                      {start != null ? `  (start ${start}${g.unit ?? ""})` : ""}
                     </Text>
-                  )}
-                </View>
-              );
-            })}
-          </ScrollView>
-        )}
-      </View>
+                    {!!g.deadline && (
+                      <Text style={styles.deadline}>
+                        Due{" "}
+                        {new Date(g.deadline).toLocaleDateString("en-US", {
+                          month: "short",
+                          day: "numeric",
+                          year: "numeric",
+                        })}
+                      </Text>
+                    )}
+                  </View>
+                );
+              })}
+            </View>
+          )}
+        </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -265,12 +374,16 @@ const makeStyles = (colors: any) =>
       alignItems: "flex-start",
       gap: 12,
     },
-    body: { flex: 1, paddingVertical: 16 },
     h1: { fontSize: 18, fontWeight: "800", color: colors.text },
     h2: { color: colors.subtle },
+    h3: { fontSize: 16, fontWeight: "800", color: colors.text },
+    big: { fontSize: 20, fontWeight: "800", color: colors.text },
+
+    body: { flex: 1, paddingVertical: 16 },
+
     subtle: { color: colors.subtle },
     title: { fontWeight: "800", color: colors.text },
-    deadline: { color: colors.muted, marginTop: 4 },
+    deadline: { color: colors.subtle, marginTop: 4 },
 
     card: {
       backgroundColor: colors.card,
@@ -279,10 +392,28 @@ const makeStyles = (colors: any) =>
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.border,
     },
+    goalRow: {
+      backgroundColor: colors.surface,
+      borderRadius: 12,
+      padding: 12,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+    },
+
+    input: {
+      backgroundColor: colors.card,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      color: colors.text,
+      borderRadius: 10,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+    },
 
     btn: {
       backgroundColor: colors.surface,
       paddingVertical: 10,
+      paddingHorizontal: 12,
       borderRadius: 10,
       alignItems: "center",
       borderWidth: StyleSheet.hairlineWidth,

@@ -14,6 +14,9 @@ import { supabase } from "../../lib/supabase";
 import { router } from "expo-router";
 import { useAuth } from "../../lib/useAuth";
 import QuickUpdateModal from "../features/profile/QuickUpdateModal";
+import { toISODateUTC } from "../utils/dates";
+import { AppState } from "react-native";
+import { useRef } from "react";
 
 import {
   Header,
@@ -24,7 +27,7 @@ import {
   SettingRow,
 } from "../_components";
 import { useTheme } from "@react-navigation/native";
-import { useAppTheme } from '../../lib/useAppTheme';
+import { useAppTheme } from "../../lib/useAppTheme";
 
 type PlanRowType = {
   id: string;
@@ -60,6 +63,15 @@ export default function UserScreen() {
 
   const [plans, setPlans] = useState<PlanRowType[]>([]);
 
+  // NEW step stats UI state
+  const [stepsStreak, setStepsStreak] = useState<number>(0);
+  const [stepsBest, setStepsBest] = useState<number>(0);
+  const [stepsDaysMet30, setStepsDaysMet30] = useState<number>(0);
+  const [stepsDaysMet90, setStepsDaysMet90] = useState<number>(0);
+  const [stepsDaysMetTotal, setStepsDaysMetTotal] = useState<number>(0);
+  const [profileTz, setProfileTz] = useState<string>("UTC");
+  const appState = useRef(AppState.currentState);
+
   const name =
     profile?.name ?? (session?.user?.user_metadata as any)?.name ?? "User";
   const email = profile?.email ?? session?.user?.email ?? "user@example.com";
@@ -71,6 +83,79 @@ export default function UserScreen() {
 
   useEffect(() => {
     if (userId) fetchProfile();
+  }, [userId]);
+
+  async function syncTimezoneIfChanged(userId: string) {
+    try {
+      const deviceTz =
+        Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+
+      // read current profile timezone
+      const { data } = await supabase
+        .from("profiles")
+        .select("timezone")
+        .eq("id", userId)
+        .maybeSingle();
+
+      const currentTz = data?.timezone || "UTC";
+      setProfileTz(currentTz);
+
+      if (deviceTz && deviceTz !== currentTz) {
+        await supabase
+          .from("profiles")
+          .update({ timezone: deviceTz })
+          .eq("id", userId);
+        setProfileTz(deviceTz);
+        // You can optionally trigger recompute here if you want immediate refresh:
+        // await supabase.rpc('recompute_step_stats', { p_user_id: userId });
+      }
+    } catch (e) {
+      console.warn("syncTimezoneIfChanged error", e);
+    }
+  }
+
+  async function fetchStepStats(uid: string) {
+    const { data, error } = await supabase
+      .from("user_steps_stats")
+      .select(
+        "streak_current, streak_best, days_met_30, days_met_90, days_met_total"
+      )
+      .eq("user_id", uid)
+      .maybeSingle();
+
+    if (!error && data) {
+      setStepsStreak(data.streak_current ?? 0);
+      setStepsBest(data.streak_best ?? 0);
+      setStepsDaysMet30(data.days_met_30 ?? 0);
+      setStepsDaysMet90(data.days_met_90 ?? 0);
+      setStepsDaysMetTotal(data.days_met_total ?? 0);
+    } else {
+      setStepsStreak(0);
+      setStepsBest(0);
+      setStepsDaysMet30(0);
+      setStepsDaysMet90(0);
+      setStepsDaysMetTotal(0);
+    }
+  }
+
+  useEffect(() => {
+    if (!userId) return;
+
+    // initial run
+    syncTimezoneIfChanged(userId);
+    fetchStepStats(userId);
+
+    // also refresh when app returns to foreground
+
+    const sub = AppState.addEventListener("change", (next) => {
+      if (appState.current.match(/inactive|background/) && next === "active") {
+        syncTimezoneIfChanged(userId);
+        fetchStepStats(userId);
+      }
+      appState.current = next;
+    });
+
+    return () => sub.remove();
   }, [userId]);
 
   async function fetchProfile() {
@@ -183,18 +268,48 @@ export default function UserScreen() {
 
             {/* Stats */}
             <View style={styles.row}>
-              <StatCard value={workoutsCompleted} label="Workouts" tint={colors.primaryBg} />
-              <StatCard value={dayStreak} label="Day Streak" tint={colors.successBg} />
+              <StatCard
+                value={workoutsCompleted}
+                label="Workouts"
+                tint={colors.primaryBg}
+              />
+              <StatCard
+                value={dayStreak}
+                label="Day Streak"
+                tint={colors.successBg}
+              />
             </View>
+
+            <View style={[styles.row, { marginTop: 8 }]}>
+              <StatCard
+                value={stepsStreak}
+                label="Step Streak"
+                tint={colors.successBg}
+              />
+              <StatCard
+                value={stepsDaysMetTotal}
+                label="Days Met (All)"
+                tint={colors.surface}
+              />
+            </View>
+
 
             {/* Quick Update Section */}
             <SectionCard>
               <View style={styles.centerButtonContainer}>
                 <Pressable
-                  style={[styles.primaryButton, { backgroundColor: colors.primary }]}
+                  style={[
+                    styles.primaryButton,
+                    { backgroundColor: colors.primary },
+                  ]}
                   onPress={() => setShowWeightModal(true)}
                 >
-                  <Text style={[styles.primaryButtonText, { color: dark ? colors.text : "#FFFFFF" }]}>
+                  <Text
+                    style={[
+                      styles.primaryButtonText,
+                      { color: dark ? colors.text : "#FFFFFF" },
+                    ]}
+                  >
                     Update Weight
                   </Text>
                 </Pressable>
@@ -236,10 +351,15 @@ export default function UserScreen() {
                   }
                 />
               </View>
-              <Pressable style={[styles.button, { backgroundColor: colors.successBg }]}
-                onPress={() => router.push("/features/achievements/achievements")}
+              <Pressable
+                style={[styles.button, { backgroundColor: colors.successBg }]}
+                onPress={() =>
+                  router.push("/features/achievements/achievements")
+                }
               >
-                <Text style={[styles.buttonText, { color: colors.successText }]}>
+                <Text
+                  style={[styles.buttonText, { color: colors.successText }]}
+                >
                   View Achievements
                 </Text>
               </Pressable>
@@ -305,7 +425,9 @@ export default function UserScreen() {
             />
 
             <Pressable style={styles.logout} onPress={onLogout}>
-              <Text style={{ color: "#ef4444", fontWeight: "700" }}>Logout</Text>
+              <Text style={{ color: "#ef4444", fontWeight: "700" }}>
+                Logout
+              </Text>
             </Pressable>
           </View>
         }
@@ -325,7 +447,12 @@ const makeStyles = (colors: any) =>
     },
     centered: { flex: 1, justifyContent: "center", alignItems: "center" },
 
-    sectionTitle: { fontSize: 16, fontWeight: "700", marginBottom: 8, color: colors.text },
+    sectionTitle: {
+      fontSize: 16,
+      fontWeight: "700",
+      marginBottom: 8,
+      color: colors.text,
+    },
     groupTitle: {
       fontSize: 18,
       fontWeight: "800",
