@@ -442,10 +442,20 @@ export default function WorkoutScreen() {
                 key={pw.id}
                 title={pw.title ?? "Workout"}
                 highlights={buildHighlights(pw)}
-                completed={false}
-                onPress={() =>
-                  Alert.alert("Open Workout", pw.title ?? "Workout")
-                }
+                completed={!!pw.weekly_complete}
+                onPress={() => {
+                  if (pw.weekly_complete) {
+                    Alert.alert(
+                      "Workout Completed",
+                      "You’ve already completed this workout for the week."
+                    );
+                  } else {
+                    router.push({
+                      pathname: "/features/workouts/view",
+                      params: { workoutId: pw.workout_id },
+                    });
+                  }
+                }}
               />
             ))}
             {planWorkouts.length === 0 && (

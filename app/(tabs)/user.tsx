@@ -289,7 +289,7 @@ export default function UserScreen() {
               <StatCard
                 value={stepsDaysMetTotal}
                 label="Days Met (All)"
-                tint={colors.surface}
+                tint={colors.primaryBg}
               />
             </View>
 

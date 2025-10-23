@@ -30,6 +30,7 @@
       "favicon": "./assets/icon.png"
     },
     "plugins": [
+      "expo-live-activity",
       "expo-router",
       [
         "expo-splash-screen",
