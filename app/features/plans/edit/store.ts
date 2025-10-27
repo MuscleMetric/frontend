@@ -8,6 +8,7 @@ export type ExerciseRow = {
 };
 
 export type WorkoutExerciseDraft = {
+  id?: string;
   exercise: ExerciseRow;
   order_index: number;
   supersetGroup?: string | null;
@@ -15,6 +16,7 @@ export type WorkoutExerciseDraft = {
 };
 
 export type WorkoutDraft = {
+  id?: string;
   title: string;
   exercises: WorkoutExerciseDraft[];
 };

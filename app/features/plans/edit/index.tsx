@@ -81,17 +81,18 @@ export default function EditPlan() {
           .from("plan_workouts")
           .select(
             `
-            id, title, order_index,
-            workouts!inner (
-              id, title,
-              workout_exercises (
-                order_index, superset_group, is_dropset,
-                exercises ( id, name, type )
-              )
-            )
-          `
+    id, title, order_index, workout_id,
+    workouts!inner (
+      id, title,
+      workout_exercises (
+        id, order_index, superset_group, is_dropset, is_archived,
+        exercises ( id, name, type )
+      )
+    )
+  `
           )
           .eq("plan_id", planId)
+          .eq("is_archived", false)
           .order("order_index");
 
         // Normalize -> WorkoutDraft[]
@@ -105,6 +106,7 @@ export default function EditPlan() {
               (a: any, b: any) => (a.order_index ?? 0) - (b.order_index ?? 0)
             )
             .map((we: any, i: number) => ({
+              id: String(we.id ?? ""), // <-- keep id
               exercise: {
                 id: String(we.exercises?.id ?? ""),
                 name: we.exercises?.name ?? "Exercise",
@@ -115,6 +117,7 @@ export default function EditPlan() {
               isDropset: !!we?.is_dropset,
             }));
           return {
+            id: String(row.id ?? ""), // <-- keep id
             title: row.title ?? w?.title ?? "Workout",
             exercises: exs,
           };
@@ -163,23 +166,27 @@ export default function EditPlan() {
     try {
       setSaving(true);
 
-      // Use a single RPC that replaces the plan content atomically (simplest + safe):
-      // See RPC in section 4.
       const payload = {
         p_plan_id: planId,
         p_user_id: userId,
         p_title: title,
-        p_end_date: endDate, // yyyy-mm-dd or null
-        p_workouts: workouts.map((w) => ({
+        p_end_date: endDate,
+        // when building payload
+        p_workouts: workouts.map((w, wIdx) => ({
+          id: w.id ?? null,
           title: w.title,
+          order_index: wIdx, // optional; supported by RPC
           exercises: w.exercises.map((e, idx) => ({
+            id: e.id ?? null,
             exerciseId: e.exercise.id,
             order_index: idx,
-            supersetGroup: e.supersetGroup ?? null,
+            supersetGroup: e.supersetGroup ?? null, // RPC stores as text
             isDropset: !!e.isDropset,
           })),
         })),
+
         p_goals: goals.map((g) => ({
+          // keep whatever IDs you have; if none today it's fine to insert
           exerciseId: g.exercise.id,
           mode: g.mode,
           target: g.target,
