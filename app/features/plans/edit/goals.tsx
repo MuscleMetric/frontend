@@ -77,6 +77,7 @@ export default function Goals() {
     }
     const firstMode = modeOptionsForExercise(ex)[0];
     const newGoal: GoalDraft = {
+      id: null,
       exercise: ex,
       mode: firstMode,
       unit: MODE_UNIT[firstMode],
@@ -299,11 +300,8 @@ export default function Goals() {
 
       <View style={{ height: 8 }} />
 
-      <Pressable
-        style={[s.btn, s.primary]}
-        onPress={() => router.push("/features/plans/create/review")}
-      >
-        <Text style={s.btnPrimaryText}>Next → Review Plan</Text>
+      <Pressable style={[s.btn, s.primary]} onPress={() => router.back()}>
+        <Text style={s.btnPrimaryText}>Update Goals</Text>
       </Pressable>
     </ScrollView>
   );

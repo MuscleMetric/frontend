@@ -13,7 +13,6 @@ import { useRouter } from "expo-router";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../lib/useAuth";
 import { useAppTheme } from "../../lib/useAppTheme";
-// ⬇️ Replace the named import with this:
 const V = require("victory-native");
 
 // Guard every component so it's never undefined at render time
@@ -25,7 +24,6 @@ const VictoryLegend = V?.VictoryLegend ?? V?.default?.VictoryLegend;
 const VictoryGroup = V?.VictoryGroup ?? V?.default?.VictoryGroup;
 const VictoryLabel = V?.VictoryLabel ?? V?.default?.VictoryLabel;
 const VictoryBar = V?.VictoryBar ?? V?.default?.VictoryBar;
-// Histogram & Theme are flaky across builds—skip them for now
 const VictoryHistogram = undefined;
 const themeMaterial = V?.VictoryTheme?.material ?? undefined;
 

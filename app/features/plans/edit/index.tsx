@@ -134,6 +134,7 @@ export default function EditPlan() {
           .order("created_at");
 
         const goalDrafts: GoalDraft[] = (g ?? []).map((r: any) => ({
+          id: String(r.id),
           exercise: {
             id: String(r.exercises?.id ?? ""),
             name: r.exercises?.name ?? "Exercise",
@@ -186,7 +187,7 @@ export default function EditPlan() {
         })),
 
         p_goals: goals.map((g) => ({
-          // keep whatever IDs you have; if none today it's fine to insert
+          id: g.id ?? null,  
           exerciseId: g.exercise.id,
           mode: g.mode,
           target: g.target,

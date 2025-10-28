@@ -22,6 +22,7 @@ export type WorkoutDraft = {
 };
 
 export type GoalDraft = {
+  id?: string | null;
   exercise: ExerciseRow;
   mode: "exercise_weight" | "exercise_reps" | "distance" | "time";
   unit: string | null;
