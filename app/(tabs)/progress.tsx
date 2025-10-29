@@ -8,6 +8,7 @@ import {
   TextInput,
   ActivityIndicator,
   Dimensions,
+  Modal,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { supabase } from "../../lib/supabase";
@@ -99,7 +100,159 @@ function fmtDurationMin(sec?: number | null) {
   const m = Math.round(sec / 60);
   return `${m}min`;
 }
+
+// --- Axis helpers ---
+const SCREEN_W = Dimensions.get("window").width;
+// near chart helpers
+const CHART_PAD = { left: 64, right: 28, top: 28, bottom: 44 }; // more room for labels
+const AXIS_LABEL_STYLE = { axisLabel: { padding: 36, fontSize: 12 } };
+const AXIS_LABEL_STYLE_Y = { axisLabel: { padding: 46, fontSize: 12 } }; // y needs more
+
+function niceBounds(minRaw: number, maxRaw: number, targetTicks = 5) {
+  if (!isFinite(minRaw) || !isFinite(maxRaw))
+    return { min: 0, max: 1, ticks: [0, 1] };
+  if (minRaw === maxRaw) {
+    const pad = Math.max(1, Math.abs(minRaw) * 0.1);
+    minRaw -= pad;
+    maxRaw += pad;
+  }
+  const span = Math.max(1e-9, maxRaw - minRaw);
+  const step0 = span / Math.max(1, targetTicks);
+  const pow10 = Math.pow(10, Math.floor(Math.log10(step0)));
+  const steps = [1, 2, 2.5, 5, 10].map((m) => m * pow10);
+  const step = steps.reduce(
+    (best, s) => (Math.abs(s - step0) < Math.abs(best - step0) ? s : best),
+    steps[0]
+  );
+  const min = Math.floor(minRaw / step) * step;
+  const max = Math.ceil(maxRaw / step) * step;
+  const ticks: number[] = [];
+  for (let t = min; t <= max + 1e-9; t += step)
+    ticks.push(Number(t.toFixed(6)));
+  return { min, max, ticks };
+}
+
+// Integer tick list: 1..n (optionally step k)
+function intTicks(n: number, step = 1) {
+  const arr: number[] = [];
+  for (let i = 1; i <= n; i += step) arr.push(i);
+  return arr;
+}
+
+function makeBins(values: number[], binWidth: number) {
+  if (values.length === 0) return { bins: [], xN: niceBounds(0, 1) };
+  const vMin = Math.min(...values);
+  const vMax = Math.max(...values);
+  const start = Math.floor(vMin / binWidth) * binWidth;
+  const end = Math.ceil(vMax / binWidth) * binWidth;
+  const counts: { x: number; y: number }[] = [];
+  for (let x = start; x < end; x += binWidth) {
+    const next = x + binWidth;
+    const c = values.filter((v) => v >= x && v < next).length;
+    counts.push({ x: x + binWidth / 2, y: c });
+  }
+  const xN = niceBounds(start, end, 6);
+  return { bins: counts, xN };
+}
+
 const CARD_W = Math.min(360, Math.round(Dimensions.get("window").width * 0.8));
+
+// put near top of file
+function InfoButton({
+  title,
+  children,
+  colors,
+}: {
+  title: string;
+  children: React.ReactNode;
+  colors: any;
+}) {
+  const [open, setOpen] = React.useState(false);
+
+  return (
+    <>
+      {/* Small info bubble icon */}
+      <Pressable
+        onPress={() => setOpen(true)}
+        hitSlop={10}
+        style={{
+          paddingHorizontal: 8,
+          paddingVertical: 4,
+          borderRadius: 999,
+          backgroundColor: colors.surface,
+          borderWidth: StyleSheet.hairlineWidth,
+          borderColor: colors.border,
+          alignSelf: "flex-start",
+        }}
+      >
+        <Text style={{ fontWeight: "800", color: colors.text }}>ⓘ</Text>
+      </Pressable>
+
+      {/* Centered modal */}
+      <Modal
+        visible={open}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setOpen(false)}
+      >
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: "rgba(0,0,0,0.35)",
+            justifyContent: "center",
+            alignItems: "center",
+            padding: 24,
+          }}
+        >
+          <View
+            style={{
+              width: "90%",
+              maxWidth: 400,
+              backgroundColor: colors.card,
+              borderRadius: 16,
+              padding: 16,
+              borderWidth: StyleSheet.hairlineWidth,
+              borderColor: colors.border,
+              shadowColor: "#000",
+              shadowOpacity: 0.25,
+              shadowRadius: 8,
+              elevation: 4,
+            }}
+          >
+            {/* Header */}
+            <View
+              style={{
+                flexDirection: "row",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: 8,
+              }}
+            >
+              <Text
+                style={{
+                  color: colors.text,
+                  fontSize: 16,
+                  fontWeight: "800",
+                  flexShrink: 1,
+                }}
+              >
+                {title}
+              </Text>
+              <Pressable onPress={() => setOpen(false)} hitSlop={10}>
+                <Text style={{ color: colors.primary, fontWeight: "800" }}>
+                  ✕
+                </Text>
+              </Pressable>
+            </View>
+
+            {/* Scrollable info body */}
+            <ScrollView style={{ maxHeight: 320 }}>{children}</ScrollView>
+          </View>
+        </View>
+      </Modal>
+    </>
+  );
+}
 
 export default function ProgressScreen() {
   const router = useRouter();
@@ -593,7 +746,7 @@ function epley1RM(weight: number, reps: number) {
 
 // 3.1 Time series with forecast (Weight & Est 1RM)
 function TimeSeriesWithForecast({
-  rows, // SetStatsRow[] raw
+  rows,
   colors,
 }: {
   volumes: { date: string; volume: number }[];
@@ -615,37 +768,154 @@ function TimeSeriesWithForecast({
     const best1RM = Math.max(byDay.get(d)?.best1RM ?? 0, oneRM);
     byDay.set(d, { topW, best1RM });
   }
+
   const days = Array.from(byDay.keys()).sort();
-  if (!days.length)
+  if (!days.length) {
     return (
       <Text style={{ color: colors.subtle, marginTop: 8 }}>
         No session history.
       </Text>
     );
+  }
+
   const { toXY } = dateKeyToDayOffset(days);
 
   const weightSeries = days.map((d) => toXY(d, byDay.get(d)!.topW!));
   const rmSeries = days.map((d) => toXY(d, Math.round(byDay.get(d)!.best1RM!)));
 
-  const forecastW = project(weightSeries, 30);
-  const forecastRM = project(rmSeries, 30);
+  // --- Forecast that starts at LAST observed x (clearer)
+  const lastX = Math.max(
+    ...weightSeries.map((p) => p.x),
+    ...rmSeries.map((p) => p.x),
+    0
+  );
+  const lastW = weightSeries.length
+    ? weightSeries[weightSeries.length - 1]
+    : null;
+  const lastRM = rmSeries.length ? rmSeries[rmSeries.length - 1] : null;
+
+  // Simple linear regression
+  const wFit = linearRegression(weightSeries);
+  const rmFit = linearRegression(rmSeries);
+
+  const forecastHorizon = 30;
+  const fx1 = lastX;
+  const fx2 = lastX + forecastHorizon;
+
+  const forecastW = lastW
+    ? [
+        { x: fx1, y: wFit.m * fx1 + wFit.b },
+        { x: fx2, y: wFit.m * fx2 + wFit.b },
+      ]
+    : [];
+
+  const forecastRM = lastRM
+    ? [
+        { x: fx1, y: rmFit.m * fx1 + rmFit.b },
+        { x: fx2, y: rmFit.m * fx2 + rmFit.b },
+      ]
+    : [];
+
+  // Y bounds across actual + forecast
+  const allY = [
+    ...weightSeries.map((p) => p.y),
+    ...rmSeries.map((p) => p.y),
+    ...forecastW.map((p) => p.y),
+    ...forecastRM.map((p) => p.y),
+  ].filter(Number.isFinite);
+
+  const yN = niceBounds(Math.min(...allY), Math.max(...allY), 6);
+
+  // X ticks (leave some breathing room to the right so labels don’t clip)
+  const maxX = Math.max(fx2, lastX);
+  const xTicksStep = maxX > 20 ? 5 : 1;
+  const xTicks = intTicks(maxX, xTicksStep);
 
   return (
     <View style={{ marginTop: 16 }}>
-      <Text style={{ color: colors.text, fontWeight: "700", marginBottom: 6 }}>
-        Weight & Est. 1RM (with 30-day forecast)
-      </Text>
-      <VictoryChart
-        theme={themeMaterial}
-        height={220}
-        padding={{ left: 48, right: 24, top: 24, bottom: 36 }}
+      <View
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+          marginTop: 16,
+        }}
       >
-        <VictoryAxis label="Days" style={{ axisLabel: { padding: 28 } }} />
+        <Text style={{ color: colors.text, fontWeight: "700" }}>
+          Weight & Est. 1RM (with 30-day forecast)
+        </Text>
+        <InfoButton title="Weight & Est. 1RM" colors={colors}>
+          <Text style={{ color: colors.text }}>
+            Shows your heaviest set per session and estimated 1RM (Epley).
+            Dashed line extrapolates the recent trend 30 days forward.
+          </Text>
+          <View style={{ height: 8 }} />
+          <Text style={{ color: colors.text, fontWeight: "700" }}>
+            What to look for
+          </Text>
+          <Text style={{ color: colors.text }}>
+            • Both lines trending up → strength gains.{"\n"}• 1RM up while top
+            weight flat → progress via reps.{"\n"}• Forecast down → recent
+            sessions lowered trend.
+          </Text>
+          <View style={{ height: 8 }} />
+          <Text style={{ color: colors.text, fontWeight: "700" }}>Example</Text>
+          <Text style={{ color: colors.text }}>
+            3–6 points climbing over weeks with an upward forecast.
+          </Text>
+        </InfoButton>
+      </View>
+
+      <VictoryChart
+        width={SCREEN_W - 32}
+        theme={themeMaterial}
+        height={230}
+        // more bottom padding so the X-axis title isn't cut off
+        padding={{ left: 56, right: 28, top: 24, bottom: 56 }}
+        // give extra space on the right so forecast endpoint and labels breathe
+        domainPadding={{ x: [0, 6] }}
+        domain={{ x: [0, maxX], y: [yN.min, yN.max] }}
+      >
+        <VictoryAxis
+          label="Days"
+          tickValues={xTicks}
+          tickFormat={(t: number) => `${t | 0}`}
+          style={{
+            axisLabel: {
+              padding: 36,
+              fill: colors.text,
+              fontSize: 12,
+              fontWeight: 700,
+            },
+            tickLabels: { fill: colors.subtle, fontSize: 10 },
+            grid: {
+              stroke: colors.border,
+              strokeDasharray: "4,4",
+              opacity: 0.5,
+            },
+          }}
+        />
         <VictoryAxis
           dependentAxis
           label="Kg"
-          style={{ axisLabel: { padding: 40 } }}
+          tickValues={yN.ticks}
+          tickFormat={(t: number) => `${Math.round(t)}`}
+          style={{
+            axisLabel: {
+              padding: 44,
+              fill: colors.text,
+              fontSize: 12,
+              fontWeight: 700,
+            },
+            tickLabels: { fill: colors.subtle, fontSize: 10 },
+            grid: {
+              stroke: colors.border,
+              strokeDasharray: "4,4",
+              opacity: 0.6,
+            },
+          }}
         />
+
         <VictoryLegend
           x={0}
           y={0}
@@ -656,23 +926,41 @@ function TimeSeriesWithForecast({
             { name: "Est. 1RM", symbol: { fill: colors.warning ?? "#f39c12" } },
             { name: "Forecast", symbol: { fill: colors.subtle } },
           ]}
+          style={{ labels: { fill: colors.text } }}
         />
+
         <VictoryGroup>
+          {/* thicker solid lines for actual series */}
           <VictoryLine
             data={weightSeries}
-            style={{ data: { stroke: colors.primary } }}
+            style={{ data: { stroke: colors.primary, strokeWidth: 3 } }}
           />
           <VictoryLine
             data={rmSeries}
-            style={{ data: { stroke: colors.warning ?? "#f39c12" } }}
+            style={{
+              data: { stroke: colors.warning ?? "#f39c12", strokeWidth: 3 },
+            }}
           />
+          {/* thinner dashed forecast starting at last observed x */}
           <VictoryLine
             data={forecastW}
-            style={{ data: { stroke: colors.subtle, strokeDasharray: "6,4" } }}
+            style={{
+              data: {
+                stroke: colors.subtle,
+                strokeDasharray: "6,4",
+                strokeWidth: 2,
+              },
+            }}
           />
           <VictoryLine
             data={forecastRM}
-            style={{ data: { stroke: colors.subtle, strokeDasharray: "6,4" } }}
+            style={{
+              data: {
+                stroke: colors.subtle,
+                strokeDasharray: "6,4",
+                strokeWidth: 2,
+              },
+            }}
           />
         </VictoryGroup>
       </VictoryChart>
@@ -685,14 +973,12 @@ function ScatterIso1RM({ rows, colors }: { rows: SetStatsRow[]; colors: any }) {
   const pts = rows
     .filter((r) => r.weight != null && r.reps != null)
     .map((r) => ({ x: Number(r.reps), y: Number(r.weight) }));
-  if (!pts.length)
-    return (
-      <Text style={{ color: colors.subtle, marginTop: 8 }}>
-        No set data for scatter.
-      </Text>
-    );
 
-  // pick iso-1RM curves from data range
+  const minW = Math.min(...pts.map((p) => p.y));
+  const maxW = Math.max(...pts.map((p) => p.y));
+  const yN = niceBounds(minW, maxW, 6);
+  const maxReps = Math.max(15, Math.max(...pts.map((p) => p.x)));
+
   const ests = rows
     .filter((r) => r.weight != null && r.reps != null)
     .map((r) => epley1RM(Number(r.weight), Number(r.reps)));
@@ -711,24 +997,62 @@ function ScatterIso1RM({ rows, colors }: { rows: SetStatsRow[]; colors: any }) {
 
   return (
     <View style={{ marginTop: 16 }}>
-      <Text style={{ color: colors.text, fontWeight: "700", marginBottom: 6 }}>
-        Weight vs Reps (iso-1RM curves)
-      </Text>
+      <View
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+          marginTop: 16,
+        }}
+      >
+        <Text style={{ color: colors.text, fontWeight: "700" }}>
+          Weight vs Reps (iso-1RM curves)
+        </Text>
+        <InfoButton title="Weight vs Reps" colors={colors}>
+          <Text style={{ color: colors.text }}>
+            Each dot is a set (reps on X, weight on Y). Dashed lines are iso-1RM
+            curves— points on the same line have the same estimated 1RM.
+          </Text>
+          <View style={{ height: 8 }} />
+          <Text style={{ color: colors.text, fontWeight: "700" }}>
+            What to look for
+          </Text>
+          <Text style={{ color: colors.text }}>
+            • New dots on higher curves → stronger 1RM.{"\n"}• More reps at same
+            weight → endurance gain.{"\n"}• Heavier weight at same reps →
+            strength gain.
+          </Text>
+          <View style={{ height: 8 }} />
+          <Text style={{ color: colors.text, fontWeight: "700" }}>
+            Example of a useful graph
+          </Text>
+          <Text style={{ color: colors.text }}>
+            Recent points shifting up and left (heavier at similar reps).
+          </Text>
+        </InfoButton>
+      </View>
+
       <VictoryChart
+        width={SCREEN_W - 32}
         theme={themeMaterial}
         height={240}
-        padding={{ left: 48, right: 24, top: 24, bottom: 36 }}
+        padding={CHART_PAD}
+        domain={{ x: [1, maxReps], y: [yN.min, yN.max] }}
       >
         <VictoryAxis
           label="Reps"
-          style={{ axisLabel: { padding: 28 } }}
-          tickFormat={(t: number | string) => `${t}`}
+          style={AXIS_LABEL_STYLE}
+          tickValues={intTicks(maxReps, maxReps > 12 ? 2 : 1)}
+          tickFormat={(t: number) => `${t | 0}`}
         />
         <VictoryAxis
           dependentAxis
           label="Kg"
-          style={{ axisLabel: { padding: 40 } }}
+          style={AXIS_LABEL_STYLE_Y}
+          tickValues={yN.ticks}
+          tickFormat={(t: number) => `${Math.round(t)}`}
         />
+        {/* iso-1RM curves (reuse yN for consistent y scaling) */}
         {curves.map((c, i) => (
           <VictoryLine
             key={i}
@@ -790,27 +1114,72 @@ function WaterfallSets({ rows, colors }: { rows: SetStatsRow[]; colors: any }) {
     return { x: s.idx, y: cum, y0, label: `${s.vol.toFixed(0)}` };
   });
 
+  const n = session.length;
+  const cumMax = bars.length ? bars[bars.length - 1].y : 0;
+  const yN = niceBounds(0, cumMax, 6);
+
   return (
     <View style={{ marginTop: 16 }}>
-      <Text style={{ color: colors.text, fontWeight: "700", marginBottom: 6 }}>
-        Waterfall — {latest} (set volume contributions)
-      </Text>
+      <View
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+          marginTop: 16,
+        }}
+      >
+        <Text style={{ color: colors.text, fontWeight: "700" }}>
+          Waterfall — {latest} (set volume contributions)
+        </Text>
+        <InfoButton title="Waterfall (Session Volume)" colors={colors}>
+          <Text style={{ color: colors.text }}>
+            Bars show how each set contributes to cumulative volume (weight ×
+            reps).
+          </Text>
+          <View style={{ height: 8 }} />
+          <Text style={{ color: colors.text, fontWeight: "700" }}>
+            What to look for
+          </Text>
+          <Text style={{ color: colors.text }}>
+            • Consistent bar sizes → steady effort.{"\n"}• Early huge bars →
+            front-loaded work; later fatigue may be high.{"\n"}• Tiny final bars
+            → consider stopping before junk volume.
+          </Text>
+          <View style={{ height: 8 }} />
+          <Text style={{ color: colors.text, fontWeight: "700" }}>
+            Example of a useful graph
+          </Text>
+          <Text style={{ color: colors.text }}>
+            Bars that step up smoothly across 4–6 sets.
+          </Text>
+        </InfoButton>
+      </View>
+
       <VictoryChart
+        width={SCREEN_W - 32}
         theme={themeMaterial}
         height={220}
-        padding={{ left: 52, right: 24, top: 24, bottom: 36 }}
+        padding={CHART_PAD}
+        domain={{ x: [1, Math.max(1, n)], y: [yN.min, yN.max] }}
       >
-        <VictoryAxis label="Set #" style={{ axisLabel: { padding: 28 } }} />
+        <VictoryAxis
+          label="Set #"
+          style={AXIS_LABEL_STYLE}
+          tickValues={intTicks(n, n > 10 ? 2 : 1)} // show every set or every 2nd if long
+          tickFormat={(t: number) => `${t | 0}`}
+        />
         <VictoryAxis
           dependentAxis
           label="Cumulative Volume"
-          style={{ axisLabel: { padding: 44 } }}
+          style={AXIS_LABEL_STYLE_Y}
+          tickValues={yN.ticks}
+          tickFormat={(t: number) => `${Math.round(t)}`}
         />
         <VictoryBar
-          data={bars} // [{ x, y, y0, label }]
+          data={bars}
           x="x"
           y="y"
-          y0={(datum: any) => (datum as any).y0}
+          y0={(d: any) => (d as any).y0}
           labels={({ datum }: { datum: any }) => datum.label as string}
           style={{ data: { fill: colors.primary, opacity: 0.85 } }}
         />
@@ -831,30 +1200,93 @@ function Histograms({ rows, colors }: { rows: SetStatsRow[]; colors: any }) {
         No distribution yet.
       </Text>
     );
+
+  const w = makeBins(weights, 2.5); // 2.5kg bins
+  const r = makeBins(reps, 1); // 1-rep bins
+  const yW = niceBounds(0, Math.max(1, ...w.bins.map((b) => b.y)), 5);
+  const yR = niceBounds(0, Math.max(1, ...r.bins.map((b) => b.y)), 5);
+
   return (
     <View style={{ marginTop: 16 }}>
-      <Text style={{ color: colors.text, fontWeight: "700", marginBottom: 6 }}>
-        Distributions — Working Weights & Reps
-      </Text>
+      <View
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+          marginTop: 16,
+        }}
+      >
+        <Text style={{ color: colors.text, fontWeight: "700" }}>
+          Distributions — Working Weights & Reps
+        </Text>
+        <InfoButton title="Distributions" colors={colors}>
+          <Text style={{ color: colors.text }}>
+            Histograms of all recorded set weights and reps for this exercise.
+          </Text>
+          <View style={{ height: 8 }} />
+          <Text style={{ color: colors.text, fontWeight: "700" }}>
+            What to look for
+          </Text>
+          <Text style={{ color: colors.text }}>
+            • Weight peaks shifting right over time → progressive overload.
+            {"\n"}• Reps peak matches your intended rep range (e.g., 5–8 or
+            8–12).{"\n"}• Very wide spread → inconsistent loading.
+          </Text>
+          <View style={{ height: 8 }} />
+          <Text style={{ color: colors.text, fontWeight: "700" }}>
+            Example of a useful graph
+          </Text>
+          <Text style={{ color: colors.text }}>
+            Weight histogram with a clear peak near your current top sets and a
+            smaller tail above it.
+          </Text>
+        </InfoButton>
+      </View>
+
       <VictoryChart
+        width={SCREEN_W - 32}
         theme={themeMaterial}
         height={220}
-        padding={{ left: 48, right: 24, top: 24, bottom: 36 }}
+        padding={CHART_PAD}
+        domain={{ x: [w.xN.min, w.xN.max], y: [yW.min, yW.max] }}
       >
+        <VictoryAxis label="Weight (kg)" style={AXIS_LABEL_STYLE} />
         <VictoryAxis
-          label="Weight (kg)"
-          style={{ axisLabel: { padding: 28 } }}
+          dependentAxis
+          tickValues={yW.ticks}
+          style={AXIS_LABEL_STYLE_Y}
         />
-        <VictoryAxis dependentAxis />
+        <VictoryBar
+          data={w.bins}
+          x="x"
+          y="y"
+          style={{ data: { fill: colors.primary, opacity: 0.85 } }}
+        />
       </VictoryChart>
 
       <VictoryChart
+        width={SCREEN_W - 32}
         theme={themeMaterial}
         height={220}
-        padding={{ left: 48, right: 24, top: 24, bottom: 36 }}
+        padding={CHART_PAD}
+        domain={{ x: [r.xN.min, r.xN.max], y: [yR.min, yR.max] }}
       >
-        <VictoryAxis label="Reps" style={{ axisLabel: { padding: 28 } }} />
-        <VictoryAxis dependentAxis />
+        <VictoryAxis
+          label="Reps"
+          style={AXIS_LABEL_STYLE}
+          tickValues={intTicks(r.xN.max, 1)}
+        />
+        <VictoryAxis
+          dependentAxis
+          tickValues={yR.ticks}
+          style={AXIS_LABEL_STYLE_Y}
+        />
+        <VictoryBar
+          data={r.bins}
+          x="x"
+          y="y"
+          style={{ data: { fill: colors.primary, opacity: 0.85 } }}
+        />
       </VictoryChart>
     </View>
   );
