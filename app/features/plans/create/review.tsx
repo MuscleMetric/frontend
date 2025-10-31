@@ -124,6 +124,47 @@ export default function Review() {
         return;
       }
 
+      // ------------------ NEW: set weekly workout goal + init current week ------------------
+      const weeklyTarget = Math.max(
+        1,
+        Math.min(14, Number(workoutsPerWeek) || p_workouts.length || 3)
+      );
+      const now = new Date();
+      const currentWeekKey = weekKeySundayLocal(now); // e.g. "2025-10-26" (the Sunday that starts the week)
+
+      // 1) Store the goal and the "active" week key in profile.settings (no timezone stored)
+      await supabase
+        .from("profiles")
+        .update({
+          weekly_workout_goal: weeklyTarget,
+          settings: {
+            ...((
+              await supabase
+                .from("profiles")
+                .select("settings")
+                .eq("id", userId)
+                .maybeSingle()
+            ).data?.settings ?? {}),
+            workout_week_key: currentWeekKey,
+          },
+        })
+        .eq("id", userId);
+
+      // 2) Ensure a row exists for this week in your per-week stats table (create if you don’t have it)
+      // Suggest a table: user_weekly_workout_stats(user_id uuid, week_key text, goal int, completed int, met bool, updated_at timestamptz)
+      await supabase.from("user_weekly_workout_stats").upsert(
+        {
+          user_id: userId,
+          week_key: currentWeekKey,
+          goal: weeklyTarget,
+          completed: 0,
+          met: false,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "user_id,week_key" }
+      );
+      // --------------------------------------------------------------------------------------
+
       Alert.alert("Plan created", "Your plan has been saved.");
       reset();
       setPendingNav(true);
@@ -135,6 +176,18 @@ export default function Review() {
     }
   }
 
+  /** Helper: returns the Sunday (local) that starts the week as YYYY-MM-DD */
+  function weekKeySundayLocal(d: Date) {
+    const copy = new Date(d); // local
+    const dow = copy.getDay(); // 0=Sun
+    copy.setHours(0, 0, 0, 0);
+    copy.setDate(copy.getDate() - dow); // back to Sunday
+    const y = copy.getFullYear();
+    const m = String(copy.getMonth() + 1).padStart(2, "0");
+    const day = String(copy.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`; // the "week_key"
+  }
+
   if (loading || !userId) {
     return (
       <View style={styles.center}>
@@ -144,7 +197,13 @@ export default function Review() {
   }
 
   // keep your fun superset colors (they read well on both themes)
-  const SUPERSET_COLORS = ["#2563eb", "#16a34a", "#f59e0b", "#ef4444", "#8b5cf6"];
+  const SUPERSET_COLORS = [
+    "#2563eb",
+    "#16a34a",
+    "#f59e0b",
+    "#ef4444",
+    "#8b5cf6",
+  ];
   function colorForGroupId(id: string, order: number) {
     return SUPERSET_COLORS[order % SUPERSET_COLORS.length];
   }
@@ -222,7 +281,10 @@ export default function Review() {
                         key={`m-${gid}-${memberIdx}`}
                         style={[
                           styles.muted,
-                          isGoal && { color: colors.primaryText, fontWeight: "700" },
+                          isGoal && {
+                            color: colors.primaryText,
+                            fontWeight: "700",
+                          },
                         ]}
                       >
                         • {x.exercise.name}
@@ -277,7 +339,10 @@ export default function Review() {
             {goals.map((g, i) => (
               <Text
                 key={i}
-                style={[styles.muted, { color: colors.primaryText, fontWeight: "700" }]}
+                style={[
+                  styles.muted,
+                  { color: colors.primaryText, fontWeight: "700" },
+                ]}
               >
                 • {g.exercise.name} — {g.mode.replace("_", " ")} → {g.target}
                 {g.unit ? ` ${g.unit}` : ""}
@@ -300,7 +365,12 @@ export default function Review() {
           {saving ? (
             <ActivityIndicator color={colors.primary ?? "#fff"} />
           ) : (
-            <Text style={[styles.btnText, { color: colors.primary ?? "#fff", fontWeight: "800" }]}>
+            <Text
+              style={[
+                styles.btnText,
+                { color: colors.primary ?? "#fff", fontWeight: "800" },
+              ]}
+            >
               Create Plan
             </Text>
           )}

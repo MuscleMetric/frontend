@@ -26,7 +26,6 @@ import {
   PlanRow,
   SettingRow,
 } from "../_components";
-import { useTheme } from "@react-navigation/native";
 import { useAppTheme } from "../../lib/useAppTheme";
 
 type PlanRowType = {
@@ -36,6 +35,41 @@ type PlanRowType = {
   status: string;
   statusColor: string;
 };
+
+function weekKeySundayLocal(d: Date) {
+  const copy = new Date(d);
+  const dow = copy.getDay(); // 0=Sun
+  copy.setHours(0, 0, 0, 0);
+  copy.setDate(copy.getDate() - dow);
+  const y = copy.getFullYear();
+  const m = String(copy.getMonth() + 1).padStart(2, "0");
+  const day = String(copy.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+/** Compute consecutive weekly streak (weeks in a row goal was met) */
+async function fetchWeeklyWorkoutStreak(userId: string) {
+  // Fetch the user’s weekly stats, ordered by most recent
+  const { data, error } = await supabase
+    .from("user_weekly_workout_stats")
+    .select("week_key, met")
+    .eq("user_id", userId)
+    .order("week_key", { ascending: false })
+    .limit(52);
+
+  if (error || !data) return 0;
+
+  let streak = 0;
+  const seen = new Set<string>();
+  for (const w of data) {
+    // Stop when we hit a week not met
+    if (!w.met) break;
+    if (seen.has(w.week_key)) continue;
+    streak++;
+    seen.add(w.week_key);
+  }
+  return streak;
+}
 
 export default function UserScreen() {
   const { session } = useAuth();
@@ -57,6 +91,7 @@ export default function UserScreen() {
 
   const [workoutsCompleted, setWorkoutsCompleted] = useState<number>(0);
   const [dayStreak, setDayStreak] = useState<number>(0);
+  const [weeklyStreak, setWeeklyStreak] = useState<number>(0);
 
   const [achievementsTotal, setAchievementsTotal] = useState<number>(0);
   const [achievementsUnlocked, setAchievementsUnlocked] = useState<number>(0);
@@ -84,6 +119,78 @@ export default function UserScreen() {
   useEffect(() => {
     if (userId) fetchProfile();
   }, [userId]);
+
+  async function rolloverWeeklyIfNeeded(userId: string) {
+    // 1) read goal + current week_key from profile.settings
+    const { data: profileRow } = await supabase
+      .from("profiles")
+      .select("weekly_workout_goal, settings")
+      .eq("id", userId)
+      .maybeSingle();
+
+    const goal = Number(profileRow?.weekly_workout_goal ?? 0) || 3;
+    const lastKey = profileRow?.settings?.workout_week_key as
+      | string
+      | undefined;
+
+    const nowKey = weekKeySundayLocal(new Date());
+    if (lastKey === nowKey) return; // same week, nothing to do
+
+    // 2) finalize previous week (if we had one)
+    if (lastKey) {
+      // compute "met" from existing row
+      const { data: prev } = await supabase
+        .from("user_weekly_workout_stats")
+        .select("completed, goal")
+        .eq("user_id", userId)
+        .eq("week_key", lastKey)
+        .maybeSingle();
+
+      const prevCompleted = Number(prev?.completed ?? 0);
+      const prevGoal = Number(prev?.goal ?? goal);
+      const met = prevCompleted >= prevGoal;
+
+      await supabase.from("user_weekly_workout_stats").upsert(
+        {
+          user_id: userId,
+          week_key: lastKey,
+          goal: prevGoal,
+          completed: prevCompleted,
+          met,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "user_id,week_key" }
+      );
+    }
+
+    // 3) open the new week with current goal
+    await supabase.from("user_weekly_workout_stats").upsert(
+      {
+        user_id: userId,
+        week_key: nowKey,
+        goal,
+        completed: 0,
+        met: false,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "user_id,week_key" }
+    );
+
+    // 3.5) Weekly streak
+    const weekly = await fetchWeeklyWorkoutStreak(userId);
+    setWeeklyStreak(weekly);
+
+    // 4) store the active week key in profile.settings
+    await supabase
+      .from("profiles")
+      .update({
+        settings: {
+          ...(profileRow?.settings ?? {}),
+          workout_week_key: nowKey,
+        },
+      })
+      .eq("id", userId);
+  }
 
   async function syncTimezoneIfChanged(userId: string) {
     try {
@@ -145,7 +252,7 @@ export default function UserScreen() {
     syncTimezoneIfChanged(userId);
     fetchStepStats(userId);
 
-    // also refresh when app returns to foreground
+    rolloverWeeklyIfNeeded(userId);
 
     const sub = AppState.addEventListener("change", (next) => {
       if (appState.current.match(/inactive|background/) && next === "active") {
@@ -274,8 +381,8 @@ export default function UserScreen() {
                 tint={colors.primaryBg}
               />
               <StatCard
-                value={dayStreak}
-                label="Day Streak"
+                value={weeklyStreak}
+                label="Weekly Streak"
                 tint={colors.successBg}
               />
             </View>
@@ -292,7 +399,6 @@ export default function UserScreen() {
                 tint={colors.primaryBg}
               />
             </View>
-
 
             {/* Quick Update Section */}
             <SectionCard>

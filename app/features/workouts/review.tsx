@@ -22,6 +22,7 @@ import {
 } from "../../../lib/sessionStore";
 import { useAuth } from "../../../lib/useAuth";
 import { saveCompletedWorkout } from "../../../lib/saveWorkout";
+import { supabase } from "../../../lib/supabase";
 
 /* ---------- utils ---------- */
 function secondsToHMS(total: number) {
@@ -50,6 +51,27 @@ function sumStrengthSet(set: StrengthSet, dropMode?: boolean) {
 
 function sumCardioSet(set: CardioSet) {
   return { dist: n(set.distance), time: n(set.timeSec) };
+}
+
+/** Sunday (local) week key, e.g. "2025-10-26" */
+function weekKeySundayLocal(d: Date) {
+  const copy = new Date(d);
+  const dow = copy.getDay(); // 0 = Sunday
+  copy.setHours(0, 0, 0, 0);
+  copy.setDate(copy.getDate() - dow);
+  const y = copy.getFullYear();
+  const m = String(copy.getMonth() + 1).padStart(2, "0");
+  const day = String(copy.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+/** Increment the 'completed' count for the current local week */
+async function bumpWeeklyCompleted(userId: string) {
+  const key = weekKeySundayLocal(new Date());
+  await supabase.rpc("increment_weekly_completed", {
+    p_user_id: userId,
+    p_week_key: key,
+  });
 }
 
 /* ---------- main ---------- */
@@ -393,6 +415,12 @@ export default function ReviewWorkoutScreen() {
                 completedAt: new Date(),
                 planWorkoutIdToComplete: planWorkoutId,
               });
+
+              try {
+                await bumpWeeklyCompleted(userId);
+              } catch (e) {
+                console.warn("bumpWeeklyCompleted failed:", e);
+              }
 
               clearReviewPayload();
               Alert.alert("Saved", "Your workout has been saved.", [

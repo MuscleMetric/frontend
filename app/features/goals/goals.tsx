@@ -37,6 +37,17 @@ type GoalRow = {
   exercises: { name: string | null } | null;
 };
 
+function weekKeySundayLocal(d: Date) {
+  const copy = new Date(d);
+  const dow = copy.getDay(); // 0=Sun
+  copy.setHours(0, 0, 0, 0);
+  copy.setDate(copy.getDate() - dow);
+  const y = copy.getFullYear();
+  const m = String(copy.getMonth() + 1).padStart(2, "0");
+  const day = String(copy.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 /* ---------- component ---------- */
 
 export default function GoalsScreen() {
@@ -57,6 +68,13 @@ export default function GoalsScreen() {
   const [stepsDraft, setStepsDraft] = useState<string>("10000");
   const [savingSteps, setSavingSteps] = useState(false);
 
+  // weekly workout goal state
+  const [weeklyLoading, setWeeklyLoading] = useState(true);
+  const [weeklyGoal, setWeeklyGoal] = useState<number>(1);
+  const [editingWeekly, setEditingWeekly] = useState(false);
+  const [weeklyDraft, setWeeklyDraft] = useState<string>("3");
+  const [savingWeekly, setSavingWeekly] = useState(false);
+
   /* ----- load steps goal ----- */
   useEffect(() => {
     if (!userId) return;
@@ -69,7 +87,8 @@ export default function GoalsScreen() {
           .select("steps_goal")
           .eq("id", userId)
           .maybeSingle();
-        const goal = !error && data?.steps_goal != null ? Number(data.steps_goal) : 10000;
+        const goal =
+          !error && data?.steps_goal != null ? Number(data.steps_goal) : 10000;
         if (alive) {
           const safe = Math.max(0, Math.min(50000, Math.round(goal)));
           setStepsGoal(safe);
@@ -236,6 +255,89 @@ export default function GoalsScreen() {
     }
   }
 
+  /* ----- load weekly goal ----- */
+  useEffect(() => {
+    if (!userId) return;
+    let alive = true;
+    (async () => {
+      try {
+        setWeeklyLoading(true);
+        const { data, error } = await supabase
+          .from("profiles")
+          .select("weekly_workout_goal")
+          .eq("id", userId)
+          .maybeSingle();
+        const goal =
+          !error && data?.weekly_workout_goal != null
+            ? Number(data.weekly_workout_goal)
+            : 3;
+        if (alive) {
+          const safe = Math.max(1, Math.min(14, Math.round(goal)));
+          setWeeklyGoal(safe);
+          setWeeklyDraft(String(safe));
+        }
+      } finally {
+        if (alive) setWeeklyLoading(false);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [userId]);
+
+  async function saveWeeklyGoal() {
+    if (!userId) return;
+    const n = Math.max(1, Math.min(14, Math.round(Number(weeklyDraft) || 0)));
+    try {
+      setSavingWeekly(true);
+
+      // 1) Save to profile
+      const { error: profErr } = await supabase
+        .from("profiles")
+        .update({ weekly_workout_goal: n })
+        .eq("id", userId);
+      if (profErr) throw profErr;
+
+      // 2) Sync the *current week* row
+      const nowKey = weekKeySundayLocal(new Date());
+
+      // read existing completed (if any)
+      const { data: existing, error: readErr } = await supabase
+        .from("user_weekly_workout_stats")
+        .select("completed")
+        .eq("user_id", userId)
+        .eq("week_key", nowKey)
+        .maybeSingle();
+      if (readErr) throw readErr;
+
+      const completed = Number(existing?.completed ?? 0);
+      const met = completed >= n;
+
+      // upsert current week with new goal
+      const { error: upsertErr } = await supabase
+        .from("user_weekly_workout_stats")
+        .upsert(
+          {
+            user_id: userId,
+            week_key: nowKey,
+            goal: n,
+            completed,
+            met,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "user_id,week_key" }
+        );
+      if (upsertErr) throw upsertErr;
+
+      setWeeklyGoal(n);
+      setEditingWeekly(false);
+    } catch (e: any) {
+      Alert.alert("Could not save weekly goal", e?.message ?? "Unknown error");
+    } finally {
+      setSavingWeekly(false);
+    }
+  }
+
   /* ---------- render ---------- */
 
   return (
@@ -256,7 +358,81 @@ export default function GoalsScreen() {
         <View style={{ width: 52 }} />
       </View>
 
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ gap: 12, paddingVertical: 16 }}>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ gap: 12, paddingVertical: 16 }}
+      >
+        {/* Weekly Workout Goal card */}
+        <View style={styles.card}>
+          <Text style={styles.h3}>Weekly Workout Goal</Text>
+
+          {weeklyLoading ? (
+            <ActivityIndicator style={{ marginTop: 6 }} />
+          ) : !editingWeekly ? (
+            <View
+              style={{
+                flexDirection: "row",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginTop: 6,
+              }}
+            >
+              <Text style={styles.big}>{weeklyGoal} workouts/week</Text>
+              {!plan ? (
+                <Pressable
+                  style={[styles.btn, styles.primary]}
+                  onPress={() => setEditingWeekly(true)}
+                >
+                  <Text style={styles.btnPrimaryText}>Edit</Text>
+                </Pressable>
+              ) : null}
+            </View>
+          ) : (
+            <View
+              style={{
+                flexDirection: "row",
+                gap: 8,
+                alignItems: "center",
+                marginTop: 8,
+              }}
+            >
+              <TextInput
+                style={[styles.input, { flex: 1 }]}
+                value={weeklyDraft}
+                onChangeText={setWeeklyDraft}
+                keyboardType="number-pad"
+                placeholder="e.g. 3"
+                placeholderTextColor={colors.subtle}
+              />
+              <Pressable
+                style={[
+                  styles.btn,
+                  styles.primary,
+                  { opacity: savingWeekly ? 0.7 : 1 },
+                ]}
+                disabled={savingWeekly}
+                onPress={saveWeeklyGoal}
+              >
+                <Text style={styles.btnPrimaryText}>
+                  {savingWeekly ? "Saving…" : "Save"}
+                </Text>
+              </Pressable>
+              <Pressable
+                style={styles.btn}
+                onPress={() => {
+                  setWeeklyDraft(String(weeklyGoal));
+                  setEditingWeekly(false);
+                }}
+              >
+                <Text style={styles.btnText}>Cancel</Text>
+              </Pressable>
+            </View>
+          )}
+          <Text style={[styles.subtle, { marginTop: 6 }]}>
+            This goal determines your weekly progress streak.
+          </Text>
+        </View>
+
         {/* Steps Goal card */}
         <View style={styles.card}>
           <Text style={styles.h3}>Daily Steps Goal</Text>
@@ -264,14 +440,31 @@ export default function GoalsScreen() {
           {stepsLoading ? (
             <ActivityIndicator style={{ marginTop: 6 }} />
           ) : !editingSteps ? (
-            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 6 }}>
+            <View
+              style={{
+                flexDirection: "row",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginTop: 6,
+              }}
+            >
               <Text style={styles.big}>{stepsGoal.toLocaleString()} steps</Text>
-              <Pressable style={[styles.btn, styles.primary]} onPress={() => setEditingSteps(true)}>
+              <Pressable
+                style={[styles.btn, styles.primary]}
+                onPress={() => setEditingSteps(true)}
+              >
                 <Text style={styles.btnPrimaryText}>Edit</Text>
               </Pressable>
             </View>
           ) : (
-            <View style={{ flexDirection: "row", gap: 8, alignItems: "center", marginTop: 8 }}>
+            <View
+              style={{
+                flexDirection: "row",
+                gap: 8,
+                alignItems: "center",
+                marginTop: 8,
+              }}
+            >
               <TextInput
                 style={[styles.input, { flex: 1 }]}
                 value={stepsDraft}
@@ -281,11 +474,17 @@ export default function GoalsScreen() {
                 placeholderTextColor={colors.subtle}
               />
               <Pressable
-                style={[styles.btn, styles.primary, { opacity: savingSteps ? 0.7 : 1 }]}
+                style={[
+                  styles.btn,
+                  styles.primary,
+                  { opacity: savingSteps ? 0.7 : 1 },
+                ]}
                 disabled={savingSteps}
                 onPress={saveStepsGoal}
               >
-                <Text style={styles.btnPrimaryText}>{savingSteps ? "Saving…" : "Save"}</Text>
+                <Text style={styles.btnPrimaryText}>
+                  {savingSteps ? "Saving…" : "Save"}
+                </Text>
               </Pressable>
               <Pressable
                 style={styles.btn}
@@ -313,7 +512,8 @@ export default function GoalsScreen() {
           ) : goals.length === 0 ? (
             <>
               <Text style={styles.subtle}>
-                No plan goals yet. Once you create a plan with goals, they will appear here.
+                No plan goals yet. Once you create a plan with goals, they will
+                appear here.
               </Text>
               <Pressable
                 style={[styles.btn, styles.primary, { marginTop: 12 }]}

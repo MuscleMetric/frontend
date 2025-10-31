@@ -120,6 +120,7 @@ export default function Signup() {
           weight: weight ? Number(weight) : null,
           date_of_birth: dob ? toISODateUTC(dob) : null,
           steps_goal: Math.max(0, Number(stepsGoal) || 0),
+          weekly_workout_goal: workoutsPerWeek,
           settings: {
             gender,
             level,
