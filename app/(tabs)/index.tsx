@@ -13,20 +13,57 @@ import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../lib/useAuth";
 import { useAppTheme } from "../../lib/useAppTheme";
 import { Pedometer } from "expo-sensors";
-import { PermissionsAndroid } from "react-native";
-import { AppState } from "react-native";
+import { PermissionsAndroid, AppState } from "react-native";
 import {
   registerBackgroundFetch,
   onAppActiveSync,
 } from "../features/steps/stepsSync";
+import Svg, { Circle, Polyline } from "react-native-svg";
+import { Pressable } from "react-native";
+import { useRouter } from "expo-router";
 
-type LiftProgress = {
-  exercise: string;
-  from: number;
-  to: number;
-  deltaPct: number;
+/** ---------------- Types ---------------- */
+type WeeklyBasics = {
+  user_id: string;
+  workouts_this_week: number;
+  weekly_workout_goal: number | null;
+  volume_this_week: number;
+  volume_last_week: number;
+  volume_vs_last_week_ratio: number | null;
 };
 
+type TopMuscleRow = {
+  user_id: string;
+  muscle_name: string;
+  muscle_volume: number;
+  pct_of_week: number; // 0..100
+  cardio_sessions_this_week: number;
+};
+
+type LatestPR = {
+  user_id: string;
+  exercise_name: string;
+  weight: number; // kg
+  reps: number;
+  completed_at: string;
+};
+
+type NextWorkoutRow = {
+  user_id: string;
+  next_workout_title: string;
+};
+
+type PlanWorkoutUI = {
+  id: string;
+  workout_id: string;
+  title: string | null;
+  order_index: number;
+  weekly_complete: boolean | null;
+  is_archived: boolean | null;
+  exercises: string[];
+};
+
+/** ---------------- Component ---------------- */
 export default function Home() {
   const { session } = useAuth();
   const userId = session?.user?.id ?? null;
@@ -36,22 +73,30 @@ export default function Home() {
 
   const [loading, setLoading] = useState(true);
 
-  // profile / greeting
+  // name + greeting
   const [fullName, setFullName] = useState<string>("User");
 
-  // daily summary
-  const [workoutsCompleted, setWorkoutsCompleted] = useState<number>(0);
-  const [totalVolumeKg, setTotalVolumeKg] = useState<number>(0);
-
-  // CHANGE your steps state to default to 0 and keep "unavailable" flag
+  // steps (device)
   const [stepsToday, setStepsToday] = useState<number>(0);
   const [stepsAvailable, setStepsAvailable] = useState<boolean>(true);
   const [stepsGoal, setStepsGoal] = useState<number>(10000);
 
-  // recent lift progress
-  const [liftProgress, setLiftProgress] = useState<LiftProgress[]>([]);
+  // new view-driven data
+  const [weeklyBasics, setWeeklyBasics] = useState<WeeklyBasics | null>(null);
+  const [topMuscle, setTopMuscle] = useState<TopMuscleRow | null>(null);
+  const [latestPR, setLatestPR] = useState<LatestPR | null>(null);
+  const [nextWorkout, setNextWorkout] = useState<NextWorkoutRow | null>(null);
 
-  // ADD helper to get start of today (local)
+  // 7-day steps sparkline data
+  const [steps7, setSteps7] = useState<number[]>([]);
+
+  const router = useRouter();
+
+  const [hasPlans, setHasPlans] = useState<boolean>(false);
+  const [activePlanId, setActivePlanId] = useState<string | null>(null);
+  const [planWorkouts, setPlanWorkouts] = useState<PlanWorkoutUI[]>([]);
+
+  // Helpers
   function startOfToday() {
     const d = new Date();
     d.setHours(0, 0, 0, 0);
@@ -68,14 +113,13 @@ export default function Home() {
     return () => sub.remove();
   }, [userId]);
 
-  // ADD this effect (separate from your big data-loading effect)
+  // Load today's steps from device
   useEffect(() => {
     let sub: { remove: () => void } | null = null;
     let alive = true;
 
     async function askAndroidPermissionIfNeeded() {
       if (Platform.OS !== "android") return true;
-      // Android 10+ needs runtime permission
       try {
         const status = await PermissionsAndroid.request(
           "android.permission.ACTIVITY_RECOGNITION"
@@ -112,15 +156,10 @@ export default function Home() {
       }
     }
 
-    // initial load
     loadTodayStepsOnce();
-
-    // live updates (fires with small deltas; we re-query to keep “today” accurate)
     sub = Pedometer.watchStepCount(async () => {
       await loadTodayStepsOnce();
     });
-
-    // also refresh every ~60s in case the watcher is quiet
     const interval = setInterval(loadTodayStepsOnce, 60_000);
 
     return () => {
@@ -147,165 +186,193 @@ export default function Home() {
     return String(src).split(" ")[0] || "there";
   }, [session?.user?.user_metadata, fullName, session?.user?.email]);
 
+  // Main load
   useEffect(() => {
     if (!userId) return;
     (async () => {
       try {
         setLoading(true);
 
-        // 1) Profile name + steps goal
+        // Profile: name + steps goal
         {
-          const { data, error } = await supabase
+          const { data: profile, error: profErr } = await supabase
             .from("profiles")
-            .select("name, steps_goal, settings")
+            .select("name, steps_goal, settings, active_plan_id")
             .eq("id", userId)
             .maybeSingle();
 
-          if (!error && data) {
-            if (data.name) setFullName(data.name);
+          if (!profErr && profile) {
+            if (profile.name) setFullName(profile.name);
 
-            // prefer the column; fall back to settings JSON if you used that before
+            // steps goal (unchanged)
             const fromColumn =
-              typeof data.steps_goal === "number" ? data.steps_goal : null;
+              typeof profile.steps_goal === "number"
+                ? profile.steps_goal
+                : null;
             const fromSettings = (() => {
               try {
-                const sg = (data as any)?.settings?.steps_goal;
+                const sg = (profile as any)?.settings?.steps_goal;
                 return typeof sg === "number" ? sg : Number(sg);
               } catch {
                 return null;
               }
             })();
-
             const goal = Number.isFinite(fromColumn)
               ? fromColumn!
               : Number.isFinite(fromSettings!)
               ? Number(fromSettings)
               : 10000;
+            setStepsGoal(Math.max(0, Math.min(50000, Math.round(goal))));
 
-            // clamp to a sensible range (optional)
-            const safeGoal = Math.max(0, Math.min(50000, Math.round(goal)));
-            setStepsGoal(safeGoal);
+            // NEW: active plan id
+            setActivePlanId(profile.active_plan_id ?? null);
           }
-        }
 
-        // 2) Workouts completed
-        {
-          let wc = 0;
-          const { data, error } = await supabase
-            .from("v_user_totals")
-            .select("workouts_completed")
-            .eq("user_id", userId)
-            .maybeSingle();
-
-          if (!error && data?.workouts_completed != null) {
-            wc = Number(data.workouts_completed);
-          } else {
-            const { count } = await supabase
-              .from("workout_history")
-              .select("*", { count: "exact", head: true })
-              .eq("user_id", userId);
-            wc = count ?? 0;
-          }
-          setWorkoutsCompleted(wc);
-        }
-
-        // 3) Total volume lifted (kg) — sum of reps * weight from workout_set_history
-        {
-          // Step A: get this user's workout_history ids (limit generously)
-          const { data: wh, error: whErr } = await supabase
-            .from("workout_history")
+          // NEW: does the user have any plans at all?
+          const { data: plansList } = await supabase
+            .from("plans")
             .select("id")
             .eq("user_id", userId)
-            .order("completed_at", { ascending: false })
-            .limit(5000);
+            .limit(1);
 
-          if (!whErr && Array.isArray(wh) && wh.length > 0) {
-            const whIds = wh.map((r: any) => r.id);
-
-            // Step B: find the related workout_exercise_history ids
-            const { data: wexh, error: wexhErr } = await supabase
-              .from("workout_exercise_history")
-              .select("id, workout_history_id")
-              .in("workout_history_id", whIds)
-              .limit(50000);
-
-            if (!wexhErr && Array.isArray(wexh) && wexh.length > 0) {
-              const wexhIds = wexh.map((r: any) => r.id);
-
-              // Step C: fetch the sets and sum reps*weight for strength rows
-              const { data: sets, error: setErr } = await supabase
-                .from("workout_set_history")
-                .select("reps, weight, time_seconds, distance")
-                .in("workout_exercise_history_id", wexhIds)
-                .limit(100000);
-
-              if (!setErr && Array.isArray(sets)) {
-                const total = sets.reduce((sum: number, s: any) => {
-                  const reps = Number(s?.reps ?? 0);
-                  const weight = Number(s?.weight ?? 0);
-                  // cardio rows have time/distance and 0 reps/weight — they contribute 0 to volume
-                  if (!Number.isFinite(reps) || !Number.isFinite(weight))
-                    return sum;
-                  return sum + reps * weight;
-                }, 0);
-
-                setTotalVolumeKg(Math.round(total));
-              } else {
-                setTotalVolumeKg(0);
-              }
-            } else {
-              setTotalVolumeKg(0);
-            }
-          } else {
-            setTotalVolumeKg(0);
-          }
+          setHasPlans(!!plansList && plansList.length > 0);
         }
 
-        // 4) Recent lift progress
-        {
-          const { data, error } = await supabase
-            .from("workout_sets")
-            .select("exercise_name, reps, weight_kg, weight, completed_at")
+        // Views: basics, top muscle, PR, next workout
+        const [basics, muscle, pr, nextW] = await Promise.all([
+          supabase
+            .from("v_user_weekly_basics")
+            .select("*")
             .eq("user_id", userId)
-            .order("completed_at", { ascending: false })
-            .limit(2000);
+            .maybeSingle(),
+          supabase
+            .from("v_user_top_muscle_this_week")
+            .select("*")
+            .eq("user_id", userId)
+            .maybeSingle(),
+          supabase
+            .from("v_user_latest_pr")
+            .select("*")
+            .eq("user_id", userId)
+            .maybeSingle(),
+          supabase
+            .from("v_user_next_workout")
+            .select("*")
+            .eq("user_id", userId)
+            .maybeSingle(),
+        ]);
 
-          if (!error && Array.isArray(data) && data.length > 0) {
-            const rows = data.map((s: any) => ({
-              exercise: s.exercise_name ?? "Exercise",
-              w: s.weight_kg ?? s.weight ?? 0,
-              reps: s.reps ?? 0,
-              t: s.completed_at ? new Date(s.completed_at).getTime() : 0,
-            }));
+        if (activePlanId) {
+          // 1) Read plan_workouts for the active plan
+          const { data: pwRows } = await supabase
+            .from("plan_workouts")
+            .select(
+              "id, workout_id, title, order_index, weekly_complete, is_archived"
+            )
+            .eq("plan_id", activePlanId)
+            .order("order_index", { ascending: true });
 
-            const byEx = new Map<string, { t: number; pr: number }[]>();
-            for (const r of rows) {
-              const pr = Number(r.w) || 0;
-              const arr = byEx.get(r.exercise) ?? [];
-              arr.push({ t: r.t, pr });
-              byEx.set(r.exercise, arr);
-            }
+          const cleanPW = (pwRows ?? []).filter((r: any) => !r.is_archived);
 
-            const progress: LiftProgress[] = [];
-            byEx.forEach((arr, ex) => {
-              arr.sort((a, b) => b.t - a.t);
-              const latestPeak = Math.max(...arr.slice(0, 50).map((x) => x.pr));
-              const previousPeak = Math.max(
-                ...arr.slice(50, 150).map((x) => x.pr),
-                0
+          // 2) Get exercises for those workout_ids (first 6 names each)
+          const workoutIds = Array.from(
+            new Set(cleanPW.map((r: any) => r.workout_id).filter(Boolean))
+          );
+          let byWorkout = new Map<string, string[]>();
+
+          if (workoutIds.length) {
+            // 1) Raw workout_exercises rows (no nested select)
+            const { data: wex, error: wexErr } = await supabase
+              .from("workout_exercises")
+              .select("workout_id, exercise_id, order_index")
+              .in("workout_id", workoutIds)
+              .order("order_index", { ascending: true });
+
+            if (wexErr) {
+              console.log("WEX fetch error", wexErr);
+            } else if (Array.isArray(wex) && wex.length) {
+              // 2) Fetch exercise names explicitly
+              const exIds = Array.from(
+                new Set(wex.map((r: any) => r.exercise_id).filter(Boolean))
               );
-              if (!isFinite(latestPeak) || latestPeak <= 0) return;
-              const from = previousPeak > 0 ? previousPeak : latestPeak;
-              const to = latestPeak;
-              const deltaPct = from > 0 ? (to - from) / from : 0;
-              progress.push({ exercise: ex, from, to, deltaPct });
-            });
 
-            progress.sort((a, b) => b.deltaPct - a.deltaPct);
-            setLiftProgress(progress.slice(0, 3));
-          } else {
-            setLiftProgress([]);
+              let nameById = new Map<string, string>();
+              if (exIds.length) {
+                const { data: exRows, error: exErr } = await supabase
+                  .from("exercises")
+                  .select("id, name")
+                  .in("id", exIds);
+
+                if (exErr) {
+                  console.log("Exercises fetch error", exErr);
+                } else {
+                  (exRows ?? []).forEach((r: any) => {
+                    nameById.set(r.id, r.name ?? "Exercise");
+                  });
+                }
+              }
+
+              // 3) Build workout_id -> [exercise names]
+              wex.forEach((row: any) => {
+                const arr = byWorkout.get(row.workout_id) ?? [];
+                const nm = nameById.get(row.exercise_id) ?? "Exercise";
+                arr.push(nm);
+                byWorkout.set(row.workout_id, arr);
+              });
+            } else {
+              console.log("WEX empty for workouts", workoutIds);
+            }
           }
+
+          const enriched: PlanWorkoutUI[] = cleanPW.map((r: any) => ({
+            id: r.id,
+            workout_id: r.workout_id,
+            title: r.title,
+            order_index: r.order_index,
+            weekly_complete: r.weekly_complete,
+            is_archived: r.is_archived,
+            exercises: (byWorkout.get(r.workout_id) ?? []).slice(0, 6),
+          }));
+
+          setPlanWorkouts(enriched);
+        } else {
+          setPlanWorkouts([]);
+        }
+
+        setWeeklyBasics((basics?.data as WeeklyBasics) ?? null);
+        setTopMuscle((muscle?.data as TopMuscleRow) ?? null);
+        setLatestPR((pr?.data as LatestPR) ?? null);
+        setNextWorkout((nextW?.data as NextWorkoutRow) ?? null);
+
+        // Last 7 days steps for sparkline (from daily_steps table)
+        {
+          const today = new Date();
+          const from = new Date(today);
+          from.setDate(today.getDate() - 6); // 7 days window
+
+          const { data: ds } = await supabase
+            .from("daily_steps")
+            .select("day, steps")
+            .eq("user_id", userId)
+            .gte("day", from.toISOString().slice(0, 10))
+            .lte("day", today.toISOString().slice(0, 10))
+            .order("day", { ascending: true });
+
+          if (Array.isArray(ds)) {
+            // Build a 7-element array in case of missing days
+            const map = new Map<string, number>();
+            ds.forEach((r: any) =>
+              map.set(String(r.day).slice(0, 10), r.steps ?? 0)
+            );
+            const arr: number[] = [];
+            for (let i = 6; i >= 0; i--) {
+              const d = new Date(today);
+              d.setDate(today.getDate() - i);
+              const key = d.toISOString().slice(0, 10);
+              arr.push(map.get(key) ?? 0);
+            }
+            setSteps7(arr);
+          } else setSteps7([]);
         }
       } finally {
         setLoading(false);
@@ -313,164 +380,656 @@ export default function Home() {
     })();
   }, [userId]);
 
+  // Pick the next incomplete workout (fallback to first non-archived if all done)
+  const nextIncompletePW = React.useMemo(() => {
+    if (!planWorkouts?.length) return null;
+    const notArchived = planWorkouts.filter((pw) => !pw.is_archived);
+    const next = notArchived.find((pw) => !pw.weekly_complete);
+    return next ?? notArchived[0] ?? null;
+  }, [planWorkouts]);
+
+  // Computed ring percentages
+  const stepsPct = useMemo(
+    () => (stepsGoal > 0 ? stepsToday / stepsGoal : 0),
+    [stepsToday, stepsGoal]
+  );
+
+  const workoutsPct = useMemo(() => {
+    const w = weeklyBasics?.workouts_this_week ?? 0;
+    const g = weeklyBasics?.weekly_workout_goal ?? 3;
+    return g > 0 ? w / g : 0;
+  }, [weeklyBasics]);
+
+  const volumePct = useMemo(() => {
+    const vThis = weeklyBasics?.volume_this_week ?? 0;
+    const vLast = weeklyBasics?.volume_last_week ?? 0;
+    if (vLast <= 0) return vThis > 0 ? 1 : 0;
+    return vThis / vLast;
+  }, [weeklyBasics]);
+
+  const goalPct = Math.max(0, Math.min(1, workoutsPct));
+  const goalPctLabel = `You're ${Math.round(
+    goalPct * 100
+  )}% toward your weekly goal`;
+
+  const greetingName = useMemo(() => {
+    return `${greeting}, ${firstName} 👋`;
+  }, [greeting, firstName]);
+
+  const nextTitle =
+    nextWorkout?.next_workout_title ??
+    (nextIncompletePW?.title || "Next workout");
+
+  const canOpenNext = !!activePlanId && !!nextIncompletePW?.workout_id;
+
+  const openNext = () => {
+    if (!canOpenNext) return;
+    router.push({
+      pathname: "/features/workouts/view",
+      params: {
+        workoutId: String(nextIncompletePW!.workout_id),
+        planWorkoutId: String(nextIncompletePW!.id),
+      },
+    });
+  };
+
+  // choose container: Pressable when we can open, else View
+  const NextContainer: any = canOpenNext ? Pressable : View;
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
       <ScrollView
         style={{ flex: 1, backgroundColor: colors.background }}
         contentContainerStyle={{ padding: 16, gap: 16 }}
       >
-        {/* Greeting */}
-        <View style={styles.card}>
-          <Text style={styles.hi}>
-            {greeting}, {firstName} 👋
-          </Text>
+        {/* Header / Greeting */}
+        <View style={styles.headerCard}>
+          <Text style={styles.headerTitle}>{greetingName}</Text>
         </View>
-        {/* Daily Summary */}
-        <View style={styles.card}>
-          <Text style={styles.h2}>Daily Summary</Text>
+
+        {/* Top Rings (Steps / Workouts / Volume) */}
+        <View style={styles.ringsCard}>
           {loading ? (
-            <ActivityIndicator style={{ marginTop: 8 }} />
+            <ActivityIndicator />
           ) : (
-            <View
-              style={{
-                flexDirection: "row",
-                flexWrap: "wrap",
-                gap: 12,
-                justifyContent: "space-between",
-              }}
-            >
-              <CardStat
-                value={String(workoutsCompleted)}
-                label="Workouts Completed"
-              />
-              <CardStat
-                value={formatNumber(totalVolumeKg)}
-                label="Total Volume (kg)"
-              />
-              {stepsAvailable && (
-                <CardStat
-                  value={formatNumber(stepsToday)}
-                  label={`Steps (${formatNumber(stepsGoal)} goal)`}
+            <View style={styles.ringsRow}>
+              {/* Steps */}
+              <View style={styles.ringCol}>
+                <RingCard
+                  label="STEPS"
+                  value={`${formatNumber(stepsToday)}\n of ${formatNumber(
+                    stepsGoal
+                  )}`}
+                  percent={stepsPct}
+                  colors={colors}
+                  trackColor={colors.primaryBg}
+                  progressColor={colors.primary}
+                  textColor={colors.text}
                 />
-              )}
+              </View>
+
+              {/* Workouts */}
+              <View style={styles.ringCol}>
+                <RingCard
+                  label="WORKOUTS"
+                  value={String(weeklyBasics?.workouts_this_week ?? 0)}
+                  subValue={`Goal ${weeklyBasics?.weekly_workout_goal ?? 3}`}
+                  percent={workoutsPct}
+                  colors={colors}
+                  trackColor={colors.successBg}
+                  progressColor={colors.successText}
+                  textColor={colors.text}
+                />
+              </View>
+
+              {/* Volume */}
+              <View style={styles.ringCol}>
+                <RingCard
+                  label="VOLUME"
+                  value={`${formatNumber(
+                    weeklyBasics?.volume_this_week ?? 0
+                  )}\nkg`}
+                  subValue={
+                    (weeklyBasics?.volume_last_week ?? 0) > 0
+                      ? `vs ${formatNumber(
+                          weeklyBasics?.volume_last_week ?? 0
+                        )}`
+                      : "vs last week"
+                  }
+                  percent={volumePct}
+                  colors={colors}
+                  trackColor={colors.warnBg}
+                  progressColor={colors.warnText}
+                  textColor={colors.text}
+                />
+              </View>
             </View>
           )}
         </View>
 
-        {/* Recent Lift Progress */}
-        <View style={styles.card}>
-          <Text style={styles.h3}>Recent Lift Progress</Text>
-          {loading ? (
-            <ActivityIndicator style={{ marginTop: 8 }} />
-          ) : liftProgress.length > 0 ? (
-            <>
-              {liftProgress.map((lp) => (
-                <LiftRow
-                  key={lp.exercise}
-                  name={lp.exercise}
-                  from={`${Math.round(lp.from)}kg`}
-                  to={`${Math.round(lp.to)}kg`}
-                  delta={`${lp.deltaPct > 0 ? "+" : ""}${(
-                    lp.deltaPct * 100
-                  ).toFixed(1)}%`}
+        {/* Grid: Top Muscle / Personal Best */}
+        {/* Grid Row 1: Top Muscle / Personal Best */}
+        <View style={styles.gridRow}>
+          <View style={[styles.gridCard, styles.gridCardEqual]}>
+            <Text style={styles.cardTitle}>TOP MUSCLE GROUP THIS WEEK</Text>
+            {loading ? (
+              <ActivityIndicator />
+            ) : topMuscle ? (
+              <View style={styles.rowAlign}>
+                <MiniDonut
+                  size={56}
+                  percent={(topMuscle.pct_of_week ?? 0) / 100}
+                  trackColor={"#E5E7EB22"}
+                  progressColor={colors.primary}
                 />
-              ))}
-            </>
-          ) : workoutsCompleted > 0 ? (
-            <Text style={styles.subtle}>
-              Keep logging sets to see progress trends here.
-            </Text>
-          ) : (
-            <Text style={styles.subtle}>
-              Complete some workouts and your progress will appear here.
-            </Text>
-          )}
+                <View style={{ flex: 1 }}>
+                  <Text
+                    style={styles.bigText}
+                    numberOfLines={1}
+                    allowFontScaling={false}
+                  >
+                    {topMuscle.muscle_name}
+                  </Text>
+                  <Text style={styles.subtle}>
+                    {Math.round(topMuscle.pct_of_week)}%
+                  </Text>
+                </View>
+              </View>
+            ) : (
+              <Text style={styles.subtle}>Log a session to see focus.</Text>
+            )}
+          </View>
+
+          <View style={[styles.gridCard, styles.gridCardEqual]}>
+            <Text style={styles.cardTitle}>PERSONAL BEST</Text>
+            {loading ? (
+              <ActivityIndicator />
+            ) : latestPR ? (
+              <Text
+                style={styles.bigText}
+                numberOfLines={2}
+                allowFontScaling={false}
+              >
+                New PR: {latestPR.exercise_name}{" "}
+                {Number(latestPR.weight).toFixed(1)} kg × {latestPR.reps}
+              </Text>
+            ) : (
+              <Text style={styles.subtle}>
+                Hit a heavy set to register a PR.
+              </Text>
+            )}
+          </View>
         </View>
+
+        {/* Grid Row 2: Steps (sparkline) / Goal Progress */}
+        <View style={styles.gridRow}>
+          <View style={[styles.gridCard, styles.gridCardEqual]}>
+            <Text style={styles.cardTitle}>STEPS - LAST 7 DAYS</Text>
+            {loading ? (
+              <ActivityIndicator />
+            ) : (
+              <>
+                <Sparkline data={steps7} height={70} padding={8} />
+                <View style={styles.weekLabels}>
+                  {last7DayInitials().map((d, i) => (
+                    <Text
+                      key={i}
+                      style={[styles.subtle, { opacity: 0.8 }]}
+                      allowFontScaling={false}
+                    >
+                      {d}
+                    </Text>
+                  ))}
+                </View>
+              </>
+            )}
+          </View>
+
+          <View style={[styles.gridCard, styles.gridCardEqual]}>
+            <Text style={styles.cardTitle}>GOAL PROGRESS</Text>
+            {loading ? (
+              <ActivityIndicator />
+            ) : (
+              <Text
+                style={styles.bigText}
+                numberOfLines={2}
+                allowFontScaling={false}
+              >
+                {goalPctLabel}
+              </Text>
+            )}
+          </View>
+        </View>
+
+        {/* Next Workout / Plan Section */}
+        {/* Next Workout / Plan Section */}
+        <NextContainer
+          style={({ pressed }: any) => [
+            styles.nextCard,
+            canOpenNext && pressed
+              ? { opacity: 0.95, transform: [{ scale: 0.997 }] }
+              : null,
+          ]}
+          onPress={canOpenNext ? openNext : undefined}
+        >
+          <Text style={styles.cardTitle}>NEXT WORKOUT</Text>
+
+          {loading ? (
+            <ActivityIndicator />
+          ) : !hasPlans ? (
+            // No plans at all → CTA to create plan
+            <>
+              <Text style={styles.subtle}>
+                Create a plan to enable Next Workout.
+              </Text>
+              <Pressable
+                onPress={() => router.push("/features/plans/create/planInfo")}
+                style={[
+                  styles.button,
+                  { backgroundColor: colors.primary, marginTop: 12 },
+                ]}
+              >
+                <Text style={[styles.buttonText, { color: colors.background }]}>
+                  Create a plan
+                </Text>
+              </Pressable>
+            </>
+          ) : !activePlanId ? (
+            // Has plans but no active selected
+            <Text style={styles.subtle}>
+              You have plans but no active plan selected. Pick one in Plans.
+            </Text>
+          ) : nextIncompletePW ? (
+            // Active plan & we have a next incomplete workout
+            <>
+              {/* Big title (only once) */}
+              <Text style={[styles.nextTitle, { color: colors.successText }]}>
+                {nextTitle}
+              </Text>
+
+              {/* Divider */}
+              <View
+                style={{
+                  height: 1,
+                  backgroundColor: colors.border,
+                  marginVertical: 10,
+                }}
+              />
+
+              {/* Exercises only (no second title) */}
+              <Text style={styles.pwExercises} numberOfLines={2}>
+                {nextIncompletePW.exercises?.length
+                  ? nextIncompletePW.exercises.join(" • ")
+                  : "No exercises"}
+              </Text>
+            </>
+          ) : (
+            // All workouts completed and no fallback
+            <Text style={styles.subtle}>All workouts completed this week.</Text>
+          )}
+        </NextContainer>
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-function CardStat({ value, label }: { value: string; label: string }) {
-  const { colors } = useAppTheme();
-  const styles = useMemo(() => makeStyles(colors), [colors]);
-  return (
-    <View style={styles.stat}>
-      <Text style={styles.statValue}>{value}</Text>
-      <Text style={styles.subtle}>{label}</Text>
-    </View>
-  );
-}
+/** ---------------- Presentational helpers ---------------- */
 
-function LiftRow({
-  name,
-  from,
-  to,
-  delta,
+/** Accurate circular ring using react-native-svg */
+function SvgRing({
+  size = 100,
+  strokeWidth = 10,
+  progress = 0, // raw value, can exceed 1
+  trackColor,
+  progressColor,
 }: {
-  name: string;
-  from: string;
-  to: string;
-  delta: string;
+  size?: number;
+  strokeWidth?: number;
+  progress?: number;
+  trackColor: string;
+  progressColor: string;
 }) {
-  const { colors } = useAppTheme();
-  const styles = useMemo(() => makeStyles(colors), [colors]);
+  const radius = (size - strokeWidth) / 2;
+  const cx = size / 2;
+  const cy = size / 2;
+  const circumference = 2 * Math.PI * radius;
+
+  const over = progress > 1;
+  const clamped = Math.max(0, Math.min(1, progress));
+  const dash = circumference * clamped;
+  const gap = circumference - dash;
+
   return (
-    <View style={{ paddingVertical: 8 }}>
-      <Text style={styles.h3}>{name}</Text>
-      <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-        <Text style={styles.text}>
-          {from} → {to}
+    <Svg width={size} height={size}>
+      {/* Track */}
+      <Circle
+        cx={cx}
+        cy={cy}
+        r={radius}
+        stroke={trackColor}
+        strokeWidth={strokeWidth}
+        fill="none"
+      />
+      {/* Progress (if >1, still draw full ring but we’ll signal with color outside) */}
+      <Circle
+        cx={cx}
+        cy={cy}
+        r={radius}
+        stroke={over ? progressColor : progressColor}
+        strokeWidth={strokeWidth}
+        fill="none"
+        strokeDasharray={`${dash},${gap}`}
+        strokeLinecap="round"
+        transform={`rotate(-90 ${cx} ${cy})`}
+      />
+    </Svg>
+  );
+}
+
+function RingCard(props: {
+  label: string;
+  value: string;
+  subValue?: string;
+  percent: number; // can exceed 1
+  colors: any;
+  trackColor: string;
+  progressColor: string;
+  textColor: string;
+}) {
+  const {
+    label,
+    value,
+    subValue,
+    percent,
+    colors,
+    trackColor,
+    progressColor,
+    textColor,
+  } = props;
+
+  const over = percent > 1;
+  const displayPct = Math.round(percent * 100);
+  const centerText =
+    displayPct > 100 ? `+${displayPct - 100}%` : `${displayPct}%`;
+  const centerColor = over ? colors.successText : textColor;
+
+  return (
+    <View style={{ alignItems: "center", gap: 8 }}>
+      <SvgRing
+        size={100}
+        strokeWidth={10}
+        progress={Math.max(0, percent)}
+        trackColor={trackColor}
+        progressColor={over ? colors.successText : progressColor}
+      />
+      <View style={{ position: "absolute", top: 28, alignItems: "center" }}>
+        <Text style={{ color: centerColor, fontWeight: "900", fontSize: 18 }}>
+          {centerText}
         </Text>
-        <Text style={styles.h3}>{delta}</Text>
       </View>
+
+      <Text style={{ color: textColor, fontWeight: "800", letterSpacing: 1.2 }}>
+        {label}
+      </Text>
+      <Text
+        style={{
+          color: textColor,
+          fontSize: 16,
+          fontWeight: "800",
+          textAlign: "center",
+        }}
+      >
+        {value}
+      </Text>
+      {!!subValue && (
+        <Text style={{ color: "#9CA3AF", fontSize: 12, marginTop: 2 }}>
+          {subValue}
+        </Text>
+      )}
     </View>
   );
 }
 
-/* -------- themed styles & utils -------- */
+/** Mini donut for top muscle percent */
+function MiniDonut({
+  size = 56,
+  percent = 0.32,
+  trackColor = "#e5e7eb",
+  progressColor = "#0b6aa9",
+}: {
+  size?: number;
+  percent?: number; // 0..1
+  trackColor?: string;
+  progressColor?: string;
+}) {
+  const strokeWidth = 10;
+  const radius = (size - strokeWidth) / 2;
+  const cx = size / 2;
+  const cy = size / 2;
+  const circumference = 2 * Math.PI * radius;
+  const dash = circumference * Math.max(0, Math.min(1, percent));
+  const gap = circumference - dash;
 
+  return (
+    <Svg width={size} height={size}>
+      <Circle
+        cx={cx}
+        cy={cy}
+        r={radius}
+        stroke={trackColor}
+        strokeWidth={strokeWidth}
+        fill="none"
+      />
+      <Circle
+        cx={cx}
+        cy={cy}
+        r={radius}
+        stroke={progressColor}
+        strokeWidth={strokeWidth}
+        fill="none"
+        strokeDasharray={`${dash},${gap}`}
+        strokeLinecap="round"
+        transform={`rotate(-90 ${cx} ${cy})`}
+      />
+    </Svg>
+  );
+}
+
+function last7DayInitials(): string[] {
+  const labels: string[] = [];
+  const fmt = new Intl.DateTimeFormat(undefined, { weekday: "short" });
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    const short = fmt.format(d); // e.g., "Mon"
+    labels.push(short[0].toUpperCase()); // M/T/W/T/F/S/S
+  }
+  return labels;
+}
+
+/** Simple sparkline for 7-day steps (no axes) */
+export function Sparkline({
+  data,
+  height = 70,
+  stroke = "#93c5fd",
+  padding = 8, // ← use this for BOTH the chart and the labels container
+}: {
+  data: number[];
+  height?: number;
+  stroke?: string;
+  padding?: number;
+}) {
+  const [containerW, setContainerW] = React.useState(0);
+
+  // Guard for layout
+  const width = Math.max(160, containerW);
+
+  const points = React.useMemo(() => {
+    if (!Array.isArray(data) || data.length === 0 || width <= 0) return "";
+    const max = Math.max(...data, 1);
+    const min = Math.min(...data, 0);
+    const span = Math.max(1, max - min);
+    const n = data.length;
+
+    return data
+      .map((v, i) => {
+        const x = padding + (i * (width - padding * 2)) / Math.max(1, n - 1);
+        const y =
+          height - padding - ((v - min) / span) * (height - padding * 2);
+        return `${x},${y}`;
+      })
+      .join(" ");
+  }, [data, height, padding, width]);
+
+  return (
+    <View
+      onLayout={(e) => setContainerW(e.nativeEvent.layout.width)}
+      style={{ width: "100%" }}
+    >
+      <Svg width={width} height={height}>
+        <Polyline points={points} fill="none" stroke={stroke} strokeWidth={3} />
+      </Svg>
+    </View>
+  );
+}
+
+/** ---------------- Styles & utils ---------------- */
 const makeStyles = (colors: any) =>
   StyleSheet.create({
-    card: {
+    button: {
+      paddingVertical: 12,
+      paddingHorizontal: 14,
+      borderRadius: 12,
+      alignSelf: "flex-start",
+    },
+    buttonText: {
+      fontWeight: "800",
+      fontSize: 14,
+    },
+
+    pwRow: {
+      paddingVertical: 10,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: "#00000020",
+    },
+    pwTitle: {
+      color: colors.text,
+      fontSize: 16,
+      fontWeight: "800",
+      maxWidth: "82%",
+    },
+    pwExercises: {
+      color: colors.subtle,
+      marginTop: 4,
+    },
+    badge: {
+      fontWeight: "800",
+      fontSize: 12,
+    },
+
+    headerCard: {
       backgroundColor: colors.card,
       padding: 16,
       borderRadius: 16,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.border,
     },
-    hi: { fontSize: 22, fontWeight: "800", color: colors.text },
-    h2: {
-      fontSize: 18,
-      fontWeight: "700",
-      marginBottom: 12,
+    headerTitle: {
+      fontSize: 22,
+      fontWeight: "800",
       color: colors.text,
     },
-    h3: {
-      fontSize: 16,
-      fontWeight: "700",
-      marginBottom: 8,
-      color: colors.text,
+
+    ringsCard: {
+      backgroundColor: colors.card,
+      padding: 16,
+      borderRadius: 16,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
     },
-    text: { color: colors.text },
-    subtle: { color: colors.subtle },
-    stat: {
+    ringsRow: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+    },
+    ringCol: {
+      width: "32%", // three equal columns
+      alignItems: "center",
+    },
+
+    gridCardDark: {
       flex: 1,
-      minWidth: 110,
       backgroundColor: colors.surface,
       padding: 16,
       borderRadius: 16,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.border,
     },
-
-    statValue: {
-      fontSize: 28,
-      fontWeight: "900",
-      marginBottom: 6,
-      color: colors.text,
+    nextCard: {
+      backgroundColor: colors.card,
+      padding: 16,
+      borderRadius: 16,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
     },
-    big: { fontSize: 24, fontWeight: "800", color: colors.text },
+
+    nextTitle: {
+      fontSize: 24,
+      fontWeight: "900",
+    },
+
+    gridRow: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      marginBottom: 12,
+    },
+
+    gridCard: {
+      width: "48%", // two columns
+      minWidth: 0, // prevent long text from widening card
+      backgroundColor: colors.card,
+      padding: 16,
+      borderRadius: 16,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+    },
+
+    // Same height cards per row. Adjust minHeight to taste (120–160 looks good).
+    gridCardEqual: {
+      minHeight: 140,
+      justifyContent: "space-between", // keeps content balanced vertically
+    },
+
+    rowAlign: {
+      flexDirection: "row",
+      alignItems: "center",
+      columnGap: 14, // RN 0.73+; if not supported, wrap children in a View with margins
+    },
+
+    weekLabels: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      paddingHorizontal: 8, // must match Sparkline padding
+      marginTop: 8,
+    },
+
+    cardTitle: {
+      color: colors.subtle,
+      fontSize: 14,
+      fontWeight: "800",
+      letterSpacing: 1,
+      marginBottom: 10,
+      textTransform: "uppercase",
+    },
+
+    bigText: {
+      color: colors.text,
+      fontSize: 10,
+      fontWeight: "800",
+      lineHeight: 22,
+    },
+
+    subtle: { color: colors.subtle },
   });
 
 function formatNumber(n: number) {

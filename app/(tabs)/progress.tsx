@@ -554,7 +554,7 @@ export default function ProgressScreen() {
     >
       {/* Header + “Workout History” link */}
       <Pressable
-        onPress={() => router.push("/features/history")}
+        onPress={() => router.push("../features/workouts/history")}
         style={[s.rowBetween]}
       >
         <Text style={s.h2}>Workout History</Text>
@@ -574,7 +574,7 @@ export default function ProgressScreen() {
                 key={w.id}
                 onPress={() =>
                   router.push({
-                    pathname: "/features/history/detail",
+                    pathname: "../features/workouts/history/detail",
                     params: { id: w.id },
                   })
                 }
