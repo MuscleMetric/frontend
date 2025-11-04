@@ -26,8 +26,8 @@ async function getStepsForDayLocal(day: Date) {
 }
 
 async function uploadStepsForDay(dayISO: string, steps: number) {
-  const { error } = await supabase.rpc("record_daily_steps", {
-    p_day: dayISO,
+  const { error } = await supabase.rpc("record_daily_steps_on", {
+    p_day: dayISO, // 'YYYY-MM-DD'
     p_steps: steps,
   });
   if (error) throw error;
@@ -55,8 +55,7 @@ async function setLastSyncedDay(d: Date) {
  */
 async function backfillRange(fromDay: Date, toDay: Date): Promise<Date | null> {
   // clamp by platform capability
-  const maxDays =
-    Platform.OS === "ios" ? 7 : 1; // iOS Core Motion ~7 days; Android sensor 0–1 day without Google Fit
+  const maxDays = Platform.OS === "ios" ? 7 : 1; // iOS Core Motion ~7 days; Android sensor 0–1 day without Google Fit
   const daysDiff = Math.floor(
     (toDay.getTime() - fromDay.getTime()) / (1000 * 60 * 60 * 24)
   );
@@ -107,31 +106,60 @@ export async function onAppActiveSync() {
   const now = new Date();
   const todayISO = toISODateLocal(now);
 
-  // figure yesterday
+  // Compute yesterday (local)
   const yesterday = new Date(now);
   yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayISO = toISODateLocal(yesterday);
 
-  // server-stored anchor
+  console.log("🔄 Step Sync Triggered", {
+    now: now.toISOString(),
+    todayISO,
+    yesterdayISO,
+  });
+
+  // 1️⃣ Get last synced day (server anchor)
   let last = await getLastSyncedDay();
 
-  // If unknown, assume "yesterday" (so we at least push yesterday + today)
   if (!last) {
+    // If never synced, start from yesterday to ensure we fill at least yesterday + today
     last = new Date(yesterday);
+    console.log(
+      "⚠️ No last synced day found — assuming yesterday:",
+      yesterdayISO
+    );
   }
 
-  // If last < yesterday, backfill [last..yesterday]
-  if (last <= yesterday) {
+  const lastISO = toISODateLocal(last);
+  console.log("📅 Sync state before:", { lastISO, yesterdayISO, todayISO });
+
+  // 2️⃣ If last < yesterday, backfill [last..yesterday]
+  if (last < yesterday) {
+    console.log(`📦 Backfilling range ${lastISO} → ${yesterdayISO} ...`);
     const lastBackfilled = await backfillRange(last, yesterday);
+
     if (lastBackfilled) {
+      const finalDay = toISODateLocal(lastBackfilled);
       await setLastSyncedDay(lastBackfilled);
+      console.log(`✅ Backfill complete up to ${finalDay}`);
+    } else {
+      console.log("⚠️ No days backfilled (possibly sensor returned 0s)");
     }
+  } else {
+    console.log("⏭ No backfill needed (already up to date)");
   }
 
-  // Push today so far (doesn't move last_synced_day; that remains a *completed* day)
+  // 3️⃣ Push today’s steps (so far)
   try {
     const stepsToday = await getStepsForDayLocal(now);
+    console.log(`🚶 Steps for today (${todayISO}):`, stepsToday);
+
     await uploadStepsForDay(todayISO, stepsToday);
-  } catch {}
+    console.log("✅ Uploaded today's step count");
+  } catch (err) {
+    console.error("❌ Error uploading today's steps:", err);
+  }
+
+  console.log("🟢 Step sync completed");
 }
 
 // Background task: push “today so far” silently
