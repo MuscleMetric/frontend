@@ -422,6 +422,18 @@ export default function ReviewWorkoutScreen() {
                 console.warn("bumpWeeklyCompleted failed:", e);
               }
 
+              try {
+                const { error } = await supabase.rpc(
+                  "check_and_award_achievements",
+                  {
+                    p_user_id: userId,
+                  }
+                );
+                if (error) console.warn("award achievements error:", error);
+              } catch (e) {
+                console.warn("award achievements threw:", e);
+              }
+
               clearReviewPayload();
               Alert.alert("Saved", "Your workout has been saved.", [
                 {

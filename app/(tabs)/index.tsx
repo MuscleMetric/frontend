@@ -52,9 +52,9 @@ export default function Home() {
     planWorkouts,
     steps7,
     topMuscle,
-  } = useWeeklyHomeData(userId); // "last" = last week (your current mapping)
+  } = useWeeklyHomeData(userId); 
 
-  const todayKey = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+  const todayKey = new Date().toISOString().slice(0, 10); 
   const seed = `${session?.user?.id ?? "anon"}|${todayKey}`;
   const dailyQuote = quoteOfTheDay(seed);
 

@@ -34,7 +34,7 @@ type GoalRow = {
   deadline: string | null;
   is_active: boolean | null;
   notes: string | null; // JSON with { start?: number }
-  exercises: { name: string | null } | null;
+  exercises: { id: string; name: string | null } | null;
 };
 
 function weekKeySundayLocal(d: Date) {
@@ -168,7 +168,7 @@ export default function GoalsScreen() {
               deadline,
               is_active,
               notes,
-              exercises ( name )
+              exercises ( id, name )
             `
             )
             .eq("plan_id", activePlan.id)
@@ -176,12 +176,17 @@ export default function GoalsScreen() {
             .order("created_at", { ascending: true });
 
           const rows: GoalRow[] = (g ?? []).map((r: any) => {
-            let ex: { name: string | null } | null = null;
+            let ex: { id: string; name: string | null } | null = null;
             if (Array.isArray(r.exercises)) {
               const first = r.exercises[0];
-              ex = first ? { name: first?.name ?? null } : null;
+              ex = first
+                ? { id: String(first?.id), name: first?.name ?? null }
+                : null;
             } else if (r.exercises) {
-              ex = { name: r.exercises?.name ?? null };
+              ex = {
+                id: String(r.exercises?.id),
+                name: r.exercises?.name ?? null,
+              };
             }
 
             return {

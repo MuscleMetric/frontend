@@ -23,6 +23,8 @@ type Achievement = {
   difficulty: "easy" | "medium" | "hard" | "elite" | "legendary";
 };
 
+type FilterMode = "all" | "unlocked" | "locked";
+
 export default function AchievementsScreen() {
   const { session } = useAuth();
   const userId = session?.user?.id;
@@ -33,6 +35,7 @@ export default function AchievementsScreen() {
   const [loading, setLoading] = useState(true);
   const [list, setList] = useState<Achievement[]>([]);
   const [unlockedIds, setUnlockedIds] = useState<Set<string>>(new Set());
+  const [mode, setMode] = useState<FilterMode>("all");
 
   useEffect(() => {
     if (!userId) return;
@@ -64,12 +67,39 @@ export default function AchievementsScreen() {
   const counts = useMemo(() => {
     const total = list.length;
     const unlocked = list.filter((a) => unlockedIds.has(a.id)).length;
+    const locked = total - unlocked;
     return {
       total,
       unlocked,
+      locked,
       pct: total ? Math.round((unlocked / total) * 100) : 0,
     };
   }, [list, unlockedIds]);
+
+  const filtered = useMemo(() => {
+    const base =
+      mode === "unlocked"
+        ? list.filter((a) => unlockedIds.has(a.id))
+        : mode === "locked"
+        ? list.filter((a) => !unlockedIds.has(a.id))
+        : list.slice();
+
+    // stable sort: by difficulty (easy→legendary), then category, then title
+    const diffRank: Record<Achievement["difficulty"], number> = {
+      easy: 1,
+      medium: 2,
+      hard: 3,
+      elite: 4,
+      legendary: 5,
+    };
+    return base.sort((a, b) => {
+      const d = diffRank[a.difficulty] - diffRank[b.difficulty];
+      if (d !== 0) return d;
+      const c = a.category.localeCompare(b.category);
+      if (c !== 0) return c;
+      return a.title.localeCompare(b.title);
+    });
+  }, [list, unlockedIds, mode]);
 
   if (!userId) {
     return (
@@ -99,14 +129,37 @@ export default function AchievementsScreen() {
           <Text style={s.header}>Achievements</Text>
           <View style={{ width: 52 }} />
         </View>
+
         <Text style={s.subtle}>
           Unlocked {counts.unlocked} of {counts.total} ({counts.pct}%)
         </Text>
+
+        {/* Filter pills */}
+        <View style={s.filterRow}>
+          <FilterPill
+            label={`All (${counts.total})`}
+            active={mode === "all"}
+            onPress={() => setMode("all")}
+            colors={colors}
+          />
+          <FilterPill
+            label={`Unlocked (${counts.unlocked})`}
+            active={mode === "unlocked"}
+            onPress={() => setMode("unlocked")}
+            colors={colors}
+          />
+          <FilterPill
+            label={`Locked (${counts.locked})`}
+            active={mode === "locked"}
+            onPress={() => setMode("locked")}
+            colors={colors}
+          />
+        </View>
       </SafeAreaView>
 
       <FlatList
         contentContainerStyle={{ padding: 16 }}
-        data={list}
+        data={filtered}
         keyExtractor={(a) => a.id}
         renderItem={({ item }) => {
           const unlocked = unlockedIds.has(item.id);
@@ -115,6 +168,46 @@ export default function AchievementsScreen() {
         ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
       />
     </View>
+  );
+}
+
+function FilterPill({
+  label,
+  active,
+  onPress,
+  colors,
+}: {
+  label: string;
+  active: boolean;
+  onPress: () => void;
+  colors: any;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
+        {
+          paddingVertical: 6,
+          paddingHorizontal: 10,
+          borderRadius: 999,
+          borderWidth: StyleSheet.hairlineWidth,
+          marginRight: 8,
+          backgroundColor: active ? colors.primaryBg : "transparent",
+          borderColor: active ? colors.primary : colors.border,
+          opacity: pressed ? 0.9 : 1,
+        },
+      ]}
+    >
+      <Text
+        style={{
+          color: active ? colors.primaryText : colors.text,
+          fontWeight: "800",
+          fontSize: 12,
+        }}
+      >
+        {label}
+      </Text>
+    </Pressable>
   );
 }
 
@@ -155,6 +248,12 @@ const makeStyles = (colors: any) =>
     header: { fontSize: 20, fontWeight: "800", color: colors.text },
     subtle: { color: colors.subtle, marginTop: 6 },
     link: { color: colors.primaryText, fontWeight: "700", width: 52 },
+
+    filterRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      marginTop: 10,
+    },
 
     card: {
       flex: 1,
@@ -200,7 +299,6 @@ function diffBadge(
     case "elite":
       return { bg: `${colors.danger}22`, fg: colors.danger, label: "ELITE" };
     case "legendary":
-      // purple-ish using primary as base; tweak if you add a dedicated "purple" to theme
       return { bg: `${colors.notification}22`, fg: colors.notification, label: "LEGEND" };
     default:
       return { bg: colors.surface, fg: colors.text, label: "—" };
