@@ -101,12 +101,20 @@ function fmtDurationMin(sec?: number | null) {
   return `${m}min`;
 }
 
-// --- Axis helpers ---
 const SCREEN_W = Dimensions.get("window").width;
-// near chart helpers
-const CHART_PAD = { left: 64, right: 28, top: 28, bottom: 44 }; // more room for labels
-const AXIS_LABEL_STYLE = { axisLabel: { padding: 36, fontSize: 12 } };
-const AXIS_LABEL_STYLE_Y = { axisLabel: { padding: 46, fontSize: 12 } }; // y needs more
+
+// --- Shared chart padding & axis styles ---
+// Give *plenty* of bottom padding so X-axis labels never get clipped
+const CHART_PAD = { left: 64, right: 32, top: 28, bottom: 64 };
+const AXIS_LABEL_STYLE = { axisLabel: { padding: 40, fontSize: 12 } };
+const AXIS_LABEL_STYLE_Y = { axisLabel: { padding: 54, fontSize: 12 } };
+
+// Integer tick list: 1..n (optionally step k)
+function intTicks(n: number, step = 1) {
+  const arr: number[] = [];
+  for (let i = 1; i <= n; i += step) arr.push(i);
+  return arr;
+}
 
 function niceBounds(minRaw: number, maxRaw: number, targetTicks = 5) {
   if (!isFinite(minRaw) || !isFinite(maxRaw))
@@ -130,13 +138,6 @@ function niceBounds(minRaw: number, maxRaw: number, targetTicks = 5) {
   for (let t = min; t <= max + 1e-9; t += step)
     ticks.push(Number(t.toFixed(6)));
   return { min, max, ticks };
-}
-
-// Integer tick list: 1..n (optionally step k)
-function intTicks(n: number, step = 1) {
-  const arr: number[] = [];
-  for (let i = 1; i <= n; i += step) arr.push(i);
-  return arr;
 }
 
 function makeBins(values: number[], binWidth: number) {
@@ -253,6 +254,8 @@ function InfoButton({
     </>
   );
 }
+
+// === Progress Screen =================================================================
 
 export default function ProgressScreen() {
   const router = useRouter();
@@ -669,7 +672,7 @@ export default function ProgressScreen() {
         )}
       </View>
 
-      {/* ===== Selected Exercise Stats ===== */}
+      {/* ===== Selected Exercise Stats + Charts ===== */}
       <View style={s.card}>
         {loadingSelected ? (
           <ActivityIndicator />
@@ -688,7 +691,7 @@ export default function ProgressScreen() {
             />
             <ScatterIso1RM rows={selectedExerciseRows} colors={colors} />
             <WaterfallSets rows={selectedExerciseRows} colors={colors} />
-            <Histograms rows={selectedExerciseRows} colors={colors} />
+            {/*<Histograms rows={selectedExerciseRows} colors={colors} />*/}
           </>
         )}
       </View>
@@ -869,10 +872,8 @@ function TimeSeriesWithForecast({
       <VictoryChart
         width={SCREEN_W - 32}
         theme={themeMaterial}
-        height={230}
-        // more bottom padding so the X-axis title isn't cut off
-        padding={{ left: 56, right: 28, top: 24, bottom: 56 }}
-        // give extra space on the right so forecast endpoint and labels breathe
+        height={240}
+        padding={{ left: 56, right: 32, top: 24, bottom: 64 }} // more bottom room
         domainPadding={{ x: [0, 6] }}
         domain={{ x: [0, maxX], y: [yN.min, yN.max] }}
       >
@@ -882,10 +883,10 @@ function TimeSeriesWithForecast({
           tickFormat={(t: number) => `${t | 0}`}
           style={{
             axisLabel: {
-              padding: 36,
+              padding: 40,
               fill: colors.text,
               fontSize: 12,
-              fontWeight: 700,
+              fontWeight: "700",
             },
             tickLabels: { fill: colors.subtle, fontSize: 10 },
             grid: {
@@ -902,10 +903,10 @@ function TimeSeriesWithForecast({
           tickFormat={(t: number) => `${Math.round(t)}`}
           style={{
             axisLabel: {
-              padding: 44,
+              padding: 40,
               fill: colors.text,
               fontSize: 12,
-              fontWeight: 700,
+              fontWeight: "700",
             },
             tickLabels: { fill: colors.subtle, fontSize: 10 },
             grid: {
@@ -923,10 +924,13 @@ function TimeSeriesWithForecast({
           gutter={16}
           data={[
             { name: "Top Weight", symbol: { fill: colors.primary } },
-            { name: "Est. 1RM", symbol: { fill: colors.warning ?? "#f39c12" } },
-            { name: "Forecast", symbol: { fill: colors.subtle } },
+            {
+              name: "Est. 1RM",
+              symbol: { fill: colors.warning ?? "#f59e0b" },
+            },
+            { name: "Forecast", symbol: { fill: colors.text } },
           ]}
-          style={{ labels: { fill: colors.text } }}
+          style={{ labels: { fill: colors.text, fontSize: 10 } }}
         />
 
         <VictoryGroup>
@@ -938,7 +942,10 @@ function TimeSeriesWithForecast({
           <VictoryLine
             data={rmSeries}
             style={{
-              data: { stroke: colors.warning ?? "#f39c12", strokeWidth: 3 },
+              data: {
+                stroke: colors.warning ?? "#f59e0b",
+                strokeWidth: 3,
+              },
             }}
           />
           {/* thinner dashed forecast starting at last observed x */}
@@ -946,9 +953,10 @@ function TimeSeriesWithForecast({
             data={forecastW}
             style={{
               data: {
-                stroke: colors.subtle,
+                stroke: colors.text,
                 strokeDasharray: "6,4",
                 strokeWidth: 2,
+                opacity: 0.8,
               },
             }}
           />
@@ -956,9 +964,10 @@ function TimeSeriesWithForecast({
             data={forecastRM}
             style={{
               data: {
-                stroke: colors.subtle,
+                stroke: colors.text,
                 strokeDasharray: "6,4",
                 strokeWidth: 2,
+                opacity: 0.8,
               },
             }}
           />
@@ -974,6 +983,14 @@ function ScatterIso1RM({ rows, colors }: { rows: SetStatsRow[]; colors: any }) {
     .filter((r) => r.weight != null && r.reps != null)
     .map((r) => ({ x: Number(r.reps), y: Number(r.weight) }));
 
+  if (!pts.length) {
+    return (
+      <Text style={{ color: colors.subtle, marginTop: 8 }}>
+        No sets recorded yet.
+      </Text>
+    );
+  }
+
   const minW = Math.min(...pts.map((p) => p.y));
   const maxW = Math.max(...pts.map((p) => p.y));
   const yN = niceBounds(minW, maxW, 6);
@@ -982,18 +999,28 @@ function ScatterIso1RM({ rows, colors }: { rows: SetStatsRow[]; colors: any }) {
   const ests = rows
     .filter((r) => r.weight != null && r.reps != null)
     .map((r) => epley1RM(Number(r.weight), Number(r.reps)));
+
   const minRM = Math.floor(Math.min(...ests));
   const maxRM = Math.ceil(Math.max(...ests));
   const step = Math.max(5, Math.round((maxRM - minRM) / 4));
-  const curves = [];
+
+  type Curve = { rm: number; curve: { x: number; y: number }[] };
+  const curves: Curve[] = [];
+
   for (let rm = minRM; rm <= maxRM; rm += step) {
-    const curve = [];
+    const curve: { x: number; y: number }[] = [];
     for (let reps = 1; reps <= 15; reps++) {
       const w = rm / (1 + reps / 30);
       curve.push({ x: reps, y: w });
     }
     curves.push({ rm, curve });
   }
+
+  // points where we'll place the "XXX 1RM" labels (right end of each curve)
+  const labelPoints = curves.map((c) => {
+    const last = c.curve[c.curve.length - 1]; // x = 15
+    return { x: last.x, y: last.y, rm: c.rm };
+  });
 
   return (
     <View style={{ marginTop: 16 }}>
@@ -1011,7 +1038,7 @@ function ScatterIso1RM({ rows, colors }: { rows: SetStatsRow[]; colors: any }) {
         <InfoButton title="Weight vs Reps" colors={colors}>
           <Text style={{ color: colors.text }}>
             Each dot is a set (reps on X, weight on Y). Dashed lines are iso-1RM
-            curves— points on the same line have the same estimated 1RM.
+            curves — points on the same line have the same estimated 1RM.
           </Text>
           <View style={{ height: 8 }} />
           <Text style={{ color: colors.text, fontWeight: "700" }}>
@@ -1036,40 +1063,87 @@ function ScatterIso1RM({ rows, colors }: { rows: SetStatsRow[]; colors: any }) {
         width={SCREEN_W - 32}
         theme={themeMaterial}
         height={240}
-        padding={CHART_PAD}
+        // extra bottom padding so "Reps" label isn't clipped
+        padding={{ ...CHART_PAD, bottom: 56 }}
         domain={{ x: [1, maxReps], y: [yN.min, yN.max] }}
       >
         <VictoryAxis
           label="Reps"
-          style={AXIS_LABEL_STYLE}
+          style={{
+            axisLabel: {
+              ...(AXIS_LABEL_STYLE.axisLabel as any),
+              fill: colors.text,
+              fontSize: 12,
+              fontWeight: "700",
+            },
+            tickLabels: { fill: colors.subtle, fontSize: 10 },
+            grid: {
+              stroke: colors.border,
+              strokeDasharray: "4,4",
+              opacity: 0.5,
+            },
+          }}
           tickValues={intTicks(maxReps, maxReps > 12 ? 2 : 1)}
           tickFormat={(t: number) => `${t | 0}`}
         />
         <VictoryAxis
           dependentAxis
           label="Kg"
-          style={AXIS_LABEL_STYLE_Y}
+          style={{
+            axisLabel: {
+              ...(AXIS_LABEL_STYLE_Y.axisLabel as any),
+              fill: colors.text,
+              fontSize: 12,
+              fontWeight: "700",
+            },
+            tickLabels: { fill: colors.subtle, fontSize: 10 },
+            grid: {
+              stroke: colors.border,
+              strokeDasharray: "4,4",
+              opacity: 0.6,
+            },
+          }}
           tickValues={yN.ticks}
           tickFormat={(t: number) => `${Math.round(t)}`}
         />
-        {/* iso-1RM curves (reuse yN for consistent y scaling) */}
+
+        {/* iso-1RM curves */}
         {curves.map((c, i) => (
           <VictoryLine
             key={i}
             data={c.curve}
             style={{
               data: {
-                stroke: colors.subtle,
+                stroke: colors.text,
                 strokeDasharray: "4,4",
-                opacity: 0.7,
+                opacity: 0.35, // visible in light & dark
               },
             }}
-            labels={({ datum }: { datum: any }) =>
-              datum.x === 10 ? `${c.rm.toFixed(0)} 1RM` : ""
-            }
-            labelComponent={<VictoryLabel dy={-6} />}
           />
         ))}
+
+        {/* 1RM labels at the end of each curve */}
+        <VictoryScatter
+          data={labelPoints}
+          size={3}
+          style={{
+            data: { fill: "transparent" }, // invisible dots, labels only
+          }}
+          labels={({ datum }: any) => `${datum.rm.toFixed(0)} 1RM`}
+          labelComponent={
+            <VictoryLabel
+              dx={4} // nudge right
+              dy={-4} // nudge up
+              style={{
+                fill: colors.text,
+                fontSize: 9,
+                fontWeight: "600",
+              }}
+            />
+          }
+        />
+
+        {/* actual sets */}
         <VictoryScatter
           data={pts}
           size={4}
@@ -1099,6 +1173,7 @@ function WaterfallSets({ rows, colors }: { rows: SetStatsRow[]; colors: any }) {
         No session to display.
       </Text>
     );
+
   const session = byDate
     .get(latest)!
     .filter((r) => r.weight != null && r.reps != null);
@@ -1107,6 +1182,7 @@ function WaterfallSets({ rows, colors }: { rows: SetStatsRow[]; colors: any }) {
     idx: idx + 1,
     vol: Number(r.weight) * Number(r.reps),
   }));
+
   let cum = 0;
   const bars = setVolumes.map((s) => {
     const y0 = cum;
@@ -1117,6 +1193,10 @@ function WaterfallSets({ rows, colors }: { rows: SetStatsRow[]; colors: any }) {
   const n = session.length;
   const cumMax = bars.length ? bars[bars.length - 1].y : 0;
   const yN = niceBounds(0, cumMax, 6);
+
+  // ensure bars are fully inside the frame
+  const xMin = 0.5;
+  const xMax = Math.max(1, n) + 0.5;
 
   return (
     <View style={{ marginTop: 16 }}>
@@ -1159,35 +1239,58 @@ function WaterfallSets({ rows, colors }: { rows: SetStatsRow[]; colors: any }) {
         width={SCREEN_W - 32}
         theme={themeMaterial}
         height={220}
-        padding={CHART_PAD}
-        domain={{ x: [1, Math.max(1, n)], y: [yN.min, yN.max] }}
+        padding={{ ...CHART_PAD, bottom: 56 }}
+        domain={{ x: [xMin, xMax], y: [yN.min, yN.max] }}
       >
         <VictoryAxis
           label="Set #"
-          style={AXIS_LABEL_STYLE}
-          tickValues={intTicks(n, n > 10 ? 2 : 1)} // show every set or every 2nd if long
+          style={{
+            axisLabel: {
+              ...(AXIS_LABEL_STYLE.axisLabel as any),
+              fill: colors.text,
+              fontSize: 12,
+              fontWeight: "700",
+            },
+            tickLabels: { fill: colors.subtle, fontSize: 10 },
+          }}
+          tickValues={intTicks(n, n > 10 ? 2 : 1)}
           tickFormat={(t: number) => `${t | 0}`}
         />
         <VictoryAxis
           dependentAxis
           label="Cumulative Volume"
-          style={AXIS_LABEL_STYLE_Y}
+          style={{
+            axisLabel: {
+              ...(AXIS_LABEL_STYLE_Y.axisLabel as any),
+              fill: colors.text,
+              fontSize: 12,
+              fontWeight: "700",
+            },
+            tickLabels: { fill: colors.subtle, fontSize: 10 },
+          }}
           tickValues={yN.ticks}
           tickFormat={(t: number) => `${Math.round(t)}`}
         />
+
         <VictoryBar
           data={bars}
           x="x"
           y="y"
           y0={(d: any) => (d as any).y0}
+          barRatio={0.6} // slightly narrower so they sit nicely inside the domain
           labels={({ datum }: { datum: any }) => datum.label as string}
-          style={{ data: { fill: colors.primary, opacity: 0.85 } }}
+          style={{
+            data: { fill: colors.primary, opacity: 0.9 },
+            labels: { fill: colors.text, fontSize: 11, fontWeight: "600" },
+          }}
         />
       </VictoryChart>
     </View>
   );
 }
 
+{
+  /* 
 // 3.4 Histograms: weights & reps
 function Histograms({ rows, colors }: { rows: SetStatsRow[]; colors: any }) {
   const weights = rows
@@ -1250,17 +1353,26 @@ function Histograms({ rows, colors }: { rows: SetStatsRow[]; colors: any }) {
         padding={CHART_PAD}
         domain={{ x: [w.xN.min, w.xN.max], y: [yW.min, yW.max] }}
       >
-        <VictoryAxis label="Weight (kg)" style={AXIS_LABEL_STYLE} />
+        <VictoryAxis
+          label="Weight (kg)"
+          style={{
+            ...AXIS_LABEL_STYLE,
+            tickLabels: { fill: colors.subtle, fontSize: 10 },
+          }}
+        />
         <VictoryAxis
           dependentAxis
           tickValues={yW.ticks}
-          style={AXIS_LABEL_STYLE_Y}
+          style={{
+            ...AXIS_LABEL_STYLE_Y,
+            tickLabels: { fill: colors.subtle, fontSize: 10 },
+          }}
         />
         <VictoryBar
           data={w.bins}
           x="x"
           y="y"
-          style={{ data: { fill: colors.primary, opacity: 0.85 } }}
+          style={{ data: { fill: colors.primary, opacity: 0.9 } }}
         />
       </VictoryChart>
 
@@ -1273,23 +1385,31 @@ function Histograms({ rows, colors }: { rows: SetStatsRow[]; colors: any }) {
       >
         <VictoryAxis
           label="Reps"
-          style={AXIS_LABEL_STYLE}
+          style={{
+            ...AXIS_LABEL_STYLE,
+            tickLabels: { fill: colors.subtle, fontSize: 10 },
+          }}
           tickValues={intTicks(r.xN.max, 1)}
         />
         <VictoryAxis
           dependentAxis
           tickValues={yR.ticks}
-          style={AXIS_LABEL_STYLE_Y}
+          style={{
+            ...AXIS_LABEL_STYLE_Y,
+            tickLabels: { fill: colors.subtle, fontSize: 10 },
+          }}
         />
         <VictoryBar
           data={r.bins}
           x="x"
           y="y"
-          style={{ data: { fill: colors.primary, opacity: 0.85 } }}
+          style={{ data: { fill: colors.primary, opacity: 0.9 } }}
         />
       </VictoryChart>
     </View>
   );
+}
+  */
 }
 
 function ExerciseStatCard({
@@ -1313,7 +1433,7 @@ function ExerciseStatCard({
         </View>
         <View style={[s.kpi]}>
           <Text style={s.kpiLabel}>Best Set</Text>
-          <Text style={[s.kpiValue, { color: colors.success ?? "#2ecc71" }]}>
+          <Text style={[s.kpiValue, { color: colors.success ?? "#22c55e" }]}>
             {stat.bestSet
               ? `${stat.bestSet.weight}kg × ${stat.bestSet.reps}`
               : "—"}
@@ -1321,7 +1441,7 @@ function ExerciseStatCard({
         </View>
         <View style={[s.kpi]}>
           <Text style={s.kpiLabel}>Est. 1RM</Text>
-          <Text style={[s.kpiValue, { color: colors.warning ?? "#f39c12" }]}>
+          <Text style={[s.kpiValue, { color: colors.warning ?? "#f59e0b" }]}>
             {stat.est1RM != null ? `${stat.est1RM}kg` : "—"}
           </Text>
         </View>
@@ -1349,9 +1469,31 @@ function ExerciseStatCard({
           ) : (
             stat.volumes.map((v, _i, arr) => {
               const max = Math.max(...arr.map((a) => a.volume));
-              const h = max > 0 ? Math.round((v.volume / max) * 140) : 0;
+              // slightly smaller so we have room for the value label above
+              const h = max > 0 ? Math.round((v.volume / max) * 120) : 0;
+
+              // simple formatter: show "1.2k" for large volumes
+              const volLabel =
+                v.volume >= 1000
+                  ? `${(v.volume / 1000).toFixed(3)}k`
+                  : v.volume.toFixed(0);
+
               return (
                 <View key={v.date} style={{ alignItems: "center" }}>
+                  {/* volume value */}
+                  <Text
+                    style={[
+                      s.muted,
+                      {
+                        fontSize: 11,
+                        marginBottom: 4,
+                      },
+                    ]}
+                  >
+                    {volLabel}
+                  </Text>
+
+                  {/* bar */}
                   <View
                     style={{
                       width: 28,
@@ -1360,6 +1502,8 @@ function ExerciseStatCard({
                       backgroundColor: colors.primary,
                     }}
                   />
+
+                  {/* date label */}
                   <Text style={[s.muted, { marginTop: 4, fontSize: 12 }]}>
                     {new Date(v.date).toLocaleDateString("en-US", {
                       month: "short",

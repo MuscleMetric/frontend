@@ -27,6 +27,7 @@ import {
   SettingRow,
 } from "../_components";
 import { useAppTheme } from "../../lib/useAppTheme";
+import { usePlanGoals } from "../features/goals/hooks/usePlanGoals";
 
 type PlanRowType = {
   id: string;
@@ -71,6 +72,36 @@ async function fetchWeeklyWorkoutStreak(userId: string) {
   return streak;
 }
 
+function parseStart(notes?: string | null): number | null {
+  if (!notes) return null;
+  try {
+    const obj = JSON.parse(notes);
+    if (typeof obj?.start === "number") return obj.start;
+  } catch {}
+  return null;
+}
+
+function coerceUnitRound(
+  value: number,
+  type: "exercise_weight" | "exercise_reps" | "distance" | "time"
+): number {
+  const roundQuarter = (n: number) => Math.round(n * 4) / 4;
+  const roundTime = (s: number) => Math.round(s / 5) * 5;
+  const roundDistance = (d: number) => Math.round(d * 10) / 10;
+
+  switch (type) {
+    case "exercise_weight":
+    case "exercise_reps":
+      return roundQuarter(value);
+    case "distance":
+      return roundDistance(value);
+    case "time":
+      return roundTime(value);
+    default:
+      return value;
+  }
+}
+
 export default function UserScreen() {
   const { session } = useAuth();
   const userId = session?.user?.id;
@@ -81,6 +112,14 @@ export default function UserScreen() {
   const { colors, dark } = useAppTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
+  // NEW: use plan goals hook
+  const { plan, goals } = usePlanGoals(userId);
+
+  // NEW: ring state
+  const [goalsRingProgress, setGoalsRingProgress] = useState(0); // 0–1
+  const [goalsRingLabel, setGoalsRingLabel] = useState("0%");
+  const [goalsRingLoading, setGoalsRingLoading] = useState(true);
+
   // DB-backed state
   const [profile, setProfile] = useState<{
     name: string | null;
@@ -90,7 +129,6 @@ export default function UserScreen() {
   } | null>(null);
 
   const [workoutsCompleted, setWorkoutsCompleted] = useState<number>(0);
-  const [dayStreak, setDayStreak] = useState<number>(0);
   const [weeklyStreak, setWeeklyStreak] = useState<number>(0);
 
   const [achievementsTotal, setAchievementsTotal] = useState<number>(0);
@@ -100,9 +138,6 @@ export default function UserScreen() {
 
   // NEW step stats UI state
   const [stepsStreak, setStepsStreak] = useState<number>(0);
-  const [stepsBest, setStepsBest] = useState<number>(0);
-  const [stepsDaysMet30, setStepsDaysMet30] = useState<number>(0);
-  const [stepsDaysMet90, setStepsDaysMet90] = useState<number>(0);
   const [stepsDaysMetTotal, setStepsDaysMetTotal] = useState<number>(0);
   const [profileTz, setProfileTz] = useState<string>("UTC");
   const appState = useRef(AppState.currentState);
@@ -116,9 +151,216 @@ export default function UserScreen() {
     new Date().toISOString();
   const joinedText = useMemo(() => formatMonthYear(joinedAt), [joinedAt]);
 
+  const ringModeLabel = plan && goals && goals.length > 0 ? "Plan" : "Weekly";
+
+  const ringColor =
+    goalsRingProgress < 1 / 3
+      ? "#ef4444"
+      : goalsRingProgress < 2 / 3
+      ? "#eab308"
+      : colors.successBg ?? colors.primary;
+
   useEffect(() => {
     if (userId) fetchProfile();
   }, [userId]);
+
+  useEffect(() => {
+    if (!userId) {
+      setGoalsRingProgress(0);
+      setGoalsRingLabel("0%");
+      setGoalsRingLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    async function load() {
+      setGoalsRingLoading(true);
+      try {
+        // ---- CASE 1: user has a plan with goals -> average progress over up to 3 exercises ----
+        if (plan && goals && goals.length > 0) {
+          const exerciseGoals = goals
+            .filter((g: any) => g.exercises?.id)
+            .slice(0, 3);
+
+          if (!exerciseGoals.length) {
+            throw new Error("No exercise-based plan goals.");
+          }
+
+          const exerciseIds = exerciseGoals.map(
+            (g: any) => g.exercises!.id as string
+          );
+
+          const goalByExerciseId: Record<string, any> = {};
+          exerciseGoals.forEach((g: any) => {
+            if (g.exercises?.id) {
+              goalByExerciseId[g.exercises.id] = g;
+            }
+          });
+
+          // get all history for those exercises in the plan date range
+          const { data, error } = await supabase
+            .from("workout_history")
+            .select(
+              `
+            id,
+            completed_at,
+            workout_exercise_history!inner(
+              exercise_id,
+              workout_set_history (
+                reps,
+                weight,
+                time_seconds,
+                distance
+              )
+            )
+          `
+            )
+            .eq("user_id", userId)
+            .gte("completed_at", plan.start_date)
+            .lte("completed_at", plan.end_date)
+            .order("completed_at", { ascending: true });
+
+          if (error) throw error;
+
+          // latest actual value per exercise
+          const latestByExercise: Record<string, number> = {};
+
+          (data ?? []).forEach((row: any) => {
+            const histories = row.workout_exercise_history ?? [];
+            histories.forEach((eh: any) => {
+              const exId = eh.exercise_id as string;
+              if (!exerciseIds.includes(exId)) return;
+
+              const g = goalByExerciseId[exId];
+              if (!g) return;
+
+              const sets = eh.workout_set_history ?? [];
+              if (!sets.length) return;
+
+              let rawVal = 0;
+              switch (g.type) {
+                case "exercise_weight":
+                  rawVal = Math.max(
+                    ...sets.map((s: any) => Number(s.weight ?? 0))
+                  );
+                  break;
+                case "exercise_reps":
+                  rawVal = Math.max(
+                    ...sets.map((s: any) => Number(s.reps ?? 0))
+                  );
+                  break;
+                case "distance":
+                  rawVal = sets.reduce(
+                    (sum: number, s: any) => sum + Number(s.distance ?? 0),
+                    0
+                  );
+                  break;
+                case "time":
+                  rawVal = sets.reduce(
+                    (sum: number, s: any) => sum + Number(s.time_seconds ?? 0),
+                    0
+                  );
+                  break;
+                default:
+                  rawVal = 0;
+              }
+
+              const val = coerceUnitRound(rawVal, g.type);
+              latestByExercise[exId] = val; // rows ordered asc, so this ends up as latest
+            });
+          });
+
+          // compute per-goal progress and average
+          const progresses: number[] = [];
+          exerciseGoals.forEach((g: any) => {
+            const exId = g.exercises!.id as string;
+            const target = Number(g.target_number);
+            const startParsed = parseStart(g.notes);
+            const start = typeof startParsed === "number" ? startParsed : 0;
+
+            const actual =
+              latestByExercise[exId] !== undefined
+                ? latestByExercise[exId]
+                : start;
+
+            if (target <= start) {
+              // weird config; treat as done if we're at/above target
+              progresses.push(actual >= target ? 1 : 0);
+            } else {
+              const frac = (actual - start) / (target - start);
+              const clamped = Math.max(0, Math.min(1, frac));
+              progresses.push(clamped);
+            }
+          });
+
+          const avg =
+            progresses.length > 0
+              ? progresses.reduce((a, b) => a + b, 0) / progresses.length
+              : 0;
+
+          if (!cancelled) {
+            setGoalsRingProgress(avg);
+            setGoalsRingLabel(`${Math.round(avg * 100)}%`);
+          }
+          return;
+        }
+
+        // ---- CASE 2: no plan/goals -> weekly workouts vs goal ----
+        const now = new Date();
+        const wk = weekKeySundayLocal(now);
+
+        const { data: weekly, error: weeklyErr } = await supabase
+          .from("user_weekly_workout_stats")
+          .select("goal, completed")
+          .eq("user_id", userId)
+          .eq("week_key", wk)
+          .maybeSingle();
+
+        if (weeklyErr) throw weeklyErr;
+
+        let goalNum = Number(weekly?.goal ?? 0);
+        let completedNum = Number(weekly?.completed ?? 0);
+
+        // fallback to profile weekly_workout_goal if no row yet
+        if (!weekly) {
+          const { data: prof, error: profErr } = await supabase
+            .from("profiles")
+            .select("weekly_workout_goal")
+            .eq("id", userId)
+            .maybeSingle();
+          if (profErr) throw profErr;
+          goalNum =
+            prof?.weekly_workout_goal != null
+              ? Number(prof.weekly_workout_goal)
+              : 3;
+          completedNum = 0;
+        }
+
+        const frac =
+          goalNum > 0 ? Math.max(0, Math.min(1, completedNum / goalNum)) : 0;
+
+        if (!cancelled) {
+          setGoalsRingProgress(frac);
+          setGoalsRingLabel(`${completedNum}/${goalNum || "?"}`);
+        }
+      } catch (e) {
+        console.warn("Goals ring load error:", e);
+        if (!cancelled) {
+          setGoalsRingProgress(0);
+          setGoalsRingLabel("0%");
+        }
+      } finally {
+        if (!cancelled) setGoalsRingLoading(false);
+      }
+    }
+
+    load();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [userId, plan?.id, goals]);
 
   async function rolloverWeeklyIfNeeded(userId: string) {
     // 1) read goal + current week_key from profile.settings
@@ -232,15 +474,9 @@ export default function UserScreen() {
 
     if (!error && data) {
       setStepsStreak(data.streak_current ?? 0);
-      setStepsBest(data.streak_best ?? 0);
-      setStepsDaysMet30(data.days_met_30 ?? 0);
-      setStepsDaysMet90(data.days_met_90 ?? 0);
       setStepsDaysMetTotal(data.days_met_total ?? 0);
     } else {
       setStepsStreak(0);
-      setStepsBest(0);
-      setStepsDaysMet30(0);
-      setStepsDaysMet90(0);
       setStepsDaysMetTotal(0);
     }
   }
@@ -292,8 +528,6 @@ export default function UserScreen() {
         .eq("user_id", userId)
         .order("completed_at", { ascending: false })
         .limit(365);
-      if (history)
-        setDayStreak(computeDayStreak(history.map((d) => d.completed_at)));
 
       // 4) Achievements
       const [{ count: totalCount }, { count: unlockedCount }] =
@@ -472,13 +706,18 @@ export default function UserScreen() {
             </SectionCard>
 
             {/* Goals */}
+            {/* Goals */}
             <SectionCard tint={colors.primaryBg}>
               <Text style={[styles.sectionTitle, { color: colors.primary }]}>
                 Goals
               </Text>
+
               <Text style={[styles.body, { marginBottom: 8 }]}>
-                Personal and plan goals will appear here once configured.
+                {plan && goals && goals.length > 0
+                  ? "Average progress towards your current plan exercise goals."
+                  : "Weekly workout goal progress."}
               </Text>
+
               <View style={styles.rowBetween}>
                 <Pressable
                   style={[styles.button, { backgroundColor: colors.primaryBg }]}
@@ -488,7 +727,25 @@ export default function UserScreen() {
                     Manage Goals
                   </Text>
                 </Pressable>
-                <RingProgress size={64} stroke={8} progress={0} label="0%" />
+
+                <View style={{ alignItems: "center" }}>
+                  {goalsRingLoading ? (
+                    <RingProgress size={64} stroke={8} progress={0} label="…" />
+                  ) : (
+                    <>
+                      {/* If your RingProgress supports a color/tint prop, use it */}
+                      <RingProgress
+                        size={64}
+                        stroke={8}
+                        progress={goalsRingProgress}
+                        label={goalsRingLabel}
+                        // tweak this prop name to match your RingProgress implementation
+                        color={ringColor}
+                      />
+                      <Text style={styles.ringModeLabel}>{ringModeLabel}</Text>
+                    </>
+                  )}
+                </View>
               </View>
             </SectionCard>
 
@@ -598,6 +855,12 @@ const makeStyles = (colors: any) =>
     primaryButtonText: {
       fontWeight: "700",
       fontSize: 20,
+      textAlign: "center",
+    },
+    ringModeLabel: {
+      marginTop: 2,
+      fontSize: 11,
+      color: colors.subtle,
       textAlign: "center",
     },
   });

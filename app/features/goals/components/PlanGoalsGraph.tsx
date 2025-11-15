@@ -564,7 +564,7 @@ export default function PlanGoalsGraph({
 
   // COLORS: match your spec
   const goalColor = "#38bdf8"; // light blue
-  const actualColor = "#000000"; // black
+  const actualColor = colors.text; // black/white
   const trendColor = "#f97316"; // orange
   const axis = colors.subtle;
 
