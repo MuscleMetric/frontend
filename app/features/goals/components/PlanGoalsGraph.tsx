@@ -27,7 +27,7 @@ export type GoalRow = {
   deadline: string | null;
   is_active: boolean | null;
   notes: string | null; // { start?: number }
-  exercises: { id: string; name: string | null } | null;
+  exercises: { id: string | null; name: string | null } | null;
   created_at?: string | null;
 };
 
@@ -111,6 +111,53 @@ type SessionPoint = {
   workoutTitle: string | null;
 };
 
+/** simple linear regression on x,y points */
+function linearRegressionXY(points: { x: number; y: number }[]): {
+  m: number;
+  b: number;
+} | null {
+  const n = points.length;
+  if (n < 2) return null;
+
+  let sumX = 0;
+  let sumY = 0;
+  let sumXY = 0;
+  let sumXX = 0;
+
+  for (const p of points) {
+    sumX += p.x;
+    sumY += p.y;
+    sumXY += p.x * p.y;
+    sumXX += p.x * p.x;
+  }
+
+  const denom = n * sumXX - sumX * sumX;
+  if (denom === 0) return null;
+
+  const m = (n * sumXY - sumX * sumY) / denom;
+  const b = (sumY - m * sumX) / n;
+  return { m, b };
+}
+
+/** 3-point moving average (uses current + previous points) */
+function smoothActualsForRegression(points: SessionPoint[]): {
+  x: number;
+  y: number;
+}[] {
+  if (points.length === 0) return [];
+  const sorted = [...points].sort((a, b) => a.x.getTime() - b.x.getTime());
+  const out: { x: number; y: number }[] = [];
+
+  for (let i = 0; i < sorted.length; i++) {
+    const windowStart = Math.max(0, i - 2);
+    const window = sorted.slice(windowStart, i + 1);
+    const avgY =
+      window.reduce((sum, p) => sum + p.y, 0) / window.length;
+    out.push({ x: sorted[i].x.getTime(), y: avgY });
+  }
+  return out;
+}
+
 /* ---------- component ---------- */
 
 export default function PlanGoalsGraph({
@@ -127,7 +174,7 @@ export default function PlanGoalsGraph({
   >([]);
   const [actualRaw, setActualRaw] = useState<SessionPoint[]>([]);
 
-  // NEW: only workouts in this plan that actually contain the goal exercise
+  // only workouts in this plan that actually contain the goal exercise
   const [exerciseWorkouts, setExerciseWorkouts] = useState<
     { workout_id: string; title: string | null }[]
   >([]);
@@ -159,6 +206,7 @@ export default function PlanGoalsGraph({
     };
   }, [plan?.id]);
 
+  // filter to plan workouts that actually contain this exercise
   useEffect(() => {
     let alive = true;
 
@@ -178,7 +226,6 @@ export default function PlanGoalsGraph({
       }
 
       try {
-        // Find only workouts in this plan that actually contain this exercise
         const { data, error } = await supabase
           .from("workout_exercises")
           .select("workout_id")
@@ -379,9 +426,11 @@ export default function PlanGoalsGraph({
     const allActual: SessionPoint[] = actualRaw.slice();
 
     const now = new Date();
-    const TEN_DAYS_MS = 10 * 24 * 60 * 60 * 1000;
-    const windowStart = new Date(now.getTime() - TEN_DAYS_MS);
-    const windowEnd = new Date(now.getTime() + TEN_DAYS_MS);
+
+    // "month" view = 2 weeks before and 2 weeks into the future
+    const TWO_WEEKS_MS = 14 * 24 * 60 * 60 * 1000;
+    const windowStart = new Date(now.getTime() - TWO_WEEKS_MS);
+    const windowEnd = new Date(now.getTime() + TWO_WEEKS_MS);
 
     let idealPoints = allIdeal;
     if (viewMode === "twoWeeks") {
@@ -404,7 +453,7 @@ export default function PlanGoalsGraph({
     const yActual = actualPoints.map((p) => p.y);
 
     const xAll = xIdeal.concat(xActual);
-    const yAll = yIdeal.concat(yActual);
+    let yAll = yIdeal.concat(yActual);
 
     const fallbackXDomain: [number, number] = [
       startDate.getTime(),
@@ -412,7 +461,26 @@ export default function PlanGoalsGraph({
     ];
     const fallbackYDomain: [number, number] = [startVal, targetVal];
 
+    // --- regression on SMOOTHED actuals (current progression) ---
+    let reg: { m: number; b: number } | null = null;
+    if (allActual.length >= 2) {
+      const smoothed = smoothActualsForRegression(allActual);
+      reg = linearRegressionXY(smoothed);
+    }
+
     if (!xAll.length || !yAll.length) {
+      // still compute trend line if regression exists
+      let trendLine: { x: number; y: number }[] | null = null;
+      if (reg) {
+        const { m, b } = reg;
+        const x1 = fallbackXDomain[0];
+        const x2 = fallbackXDomain[1];
+        trendLine = [
+          { x: x1, y: m * x1 + b },
+          { x: x2, y: m * x2 + b },
+        ];
+      }
+
       return {
         idealPoints,
         actualPoints,
@@ -420,6 +488,7 @@ export default function PlanGoalsGraph({
         yDomain: fallbackYDomain,
         xTicks: [fallbackXDomain[0], fallbackXDomain[1]],
         idealYAt,
+        trendLine,
       };
     }
 
@@ -435,6 +504,19 @@ export default function PlanGoalsGraph({
         ? Math.max(windowEnd.getTime(), xMaxData)
         : xMaxData;
 
+    // build trend line across the WHOLE visible domain [xMin, xMax]
+    let trendLine: { x: number; y: number }[] | null = null;
+    if (reg) {
+      const { m, b } = reg;
+      const y1 = m * xMin + b;
+      const y2 = m * xMax + b;
+      trendLine = [
+        { x: xMin, y: y1 },
+        { x: xMax, y: y2 },
+      ];
+      yAll = yAll.concat([y1, y2]);
+    }
+
     const yMin = Math.min(...yAll);
     const yMax = Math.max(...yAll);
     const yPad = Math.max(1, (yMax - yMin) * 0.1);
@@ -448,6 +530,7 @@ export default function PlanGoalsGraph({
       yDomain: [yMin - yPad, yMax + yPad] as [number, number],
       xTicks,
       idealYAt,
+      trendLine,
     };
   }, [
     plan?.start_date,
@@ -476,23 +559,17 @@ export default function PlanGoalsGraph({
   const { width } = Dimensions.get("window");
   const chartWidth = width - 75;
 
-  const { idealPoints, actualPoints, xDomain, yDomain, xTicks, idealYAt } =
+  const { idealPoints, actualPoints, xDomain, yDomain, xTicks, idealYAt, trendLine } =
     graph;
 
-  const goalColor = colors.success ?? "#000080";
-  const aheadColor = colors.success ?? "#16a34a";
-  const behindColor = colors.danger ?? "#ef4444";
+  // COLORS: match your spec
+  const goalColor = "#38bdf8"; // light blue
+  const actualColor = "#000000"; // black
+  const trendColor = "#f97316"; // orange
   const axis = colors.subtle;
 
   const goalLineData = idealPoints.map((p) => ({ x: +p.x, y: p.y }));
   const actualLineData = actualPoints.map((p) => ({ x: +p.x, y: p.y }));
-
-  // decide if we are ahead or behind based on latest actual point
-  let ahead = false;
-  if (actualPoints.length) {
-    const last = actualPoints[actualPoints.length - 1];
-    ahead = last.y >= idealYAt(last.x);
-  }
 
   // helper to find the closest actual point to a given date (for goal dots)
   const findClosestActual = (d: Date): SessionPoint | null => {
@@ -513,7 +590,7 @@ export default function PlanGoalsGraph({
   return (
     <View
       style={{
-        height: 320,
+        height: 340,
         padding: 1,
         overflow: "hidden",
       }}
@@ -524,7 +601,7 @@ export default function PlanGoalsGraph({
         domainPadding={{ y: 2 }}
         domain={{ x: xDomain as any, y: yDomain as any }}
         width={chartWidth}
-        height={320}
+        height={300}
       >
         <VictoryAxis
           tickValues={xTicks}
@@ -545,26 +622,41 @@ export default function PlanGoalsGraph({
           axisLabelComponent={<VictoryLabel dy={-28} />}
         />
 
-        {/* dashed ideal goal trajectory */}
+        {/* dotted ideal goal trajectory (light blue) */}
         <VictoryLine
           data={goalLineData}
           style={{
             data: {
               stroke: goalColor,
-              strokeDasharray: "6,6",
+              strokeDasharray: "3,5", // dotted-ish
               strokeWidth: 2,
             },
           }}
         />
 
-        {/* solid actual trajectory, green if ahead, red if behind */}
+        {/* solid actual trajectory (black) */}
         {actualLineData.length > 0 && (
           <VictoryLine
             data={actualLineData}
             style={{
               data: {
-                stroke: ahead ? aheadColor : behindColor,
+                stroke: actualColor,
                 strokeWidth: 2.5,
+              },
+            }}
+          />
+        )}
+
+        {/* current progression regression line (orange, dashed) */}
+        {trendLine && (
+          <VictoryLine
+            data={trendLine}
+            style={{
+              data: {
+                stroke: trendColor,
+                strokeWidth: 2,
+                strokeDasharray: "6,4",
+                opacity: 0.9,
               },
             }}
           />
@@ -627,7 +719,7 @@ export default function PlanGoalsGraph({
             }))}
             size={5}
             style={{
-              data: { fill: ahead ? aheadColor : behindColor },
+              data: { fill: actualColor },
             }}
             events={[
               {
@@ -663,6 +755,55 @@ export default function PlanGoalsGraph({
           />
         )}
       </VictoryChart>
+
+      {/* Tiny legend under the chart */}
+      <View
+        style={{
+          flexDirection: "row",
+          justifyContent: "center",
+          alignItems: "center",
+          gap: 16,
+          marginTop: 4,
+        }}
+      >
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+          <View
+            style={{
+              width: 10,
+              height: 10,
+              borderRadius: 5,
+              borderWidth: 2,
+              borderColor: goalColor,
+            }}
+          />
+          <Text style={{ fontSize: 11, color: colors.subtle }}>Goal</Text>
+        </View>
+
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+          <View
+            style={{
+              width: 10,
+              height: 10,
+              borderRadius: 5,
+              backgroundColor: actualColor,
+            }}
+          />
+          <Text style={{ fontSize: 11, color: colors.subtle }}>Actual</Text>
+        </View>
+
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+          <View
+            style={{
+              width: 18,
+              height: 0,
+              borderTopWidth: 2,
+              borderStyle: "dashed",
+              borderColor: trendColor,
+            }}
+          />
+          <Text style={{ fontSize: 11, color: colors.subtle }}>Trend</Text>
+        </View>
+      </View>
     </View>
   );
 }

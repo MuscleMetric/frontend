@@ -78,6 +78,8 @@ export default function PlanGoalsCard({ userId, colors }: Props) {
     setSelectedPoint(null);
   }, [viewMode, selectedGoalId]);
 
+  const now = new Date();
+
   return (
     <View style={styles.card}>
       <View style={styles.headerRow}>
@@ -174,36 +176,91 @@ export default function PlanGoalsCard({ userId, colors }: Props) {
                 />
                 {/* Big nicely styled info card */}
                 {selectedPoint && viewMode === "twoWeeks" && (
-                  <View style={styles.pointBubble}>
-                    <Text style={styles.pointBubbleTitle}>
-                      {selectedPoint.workoutTitle || "Workout"}
-                    </Text>
+                  (() => {
+                    const isFuture =
+                      selectedPoint.date.getTime() >
+                      now.getTime() + 60 * 1000; // tiny buffer
 
-                    <Text style={styles.pointBubbleDate}>
-                      {selectedPoint.date.toLocaleDateString("en-US", {
-                        month: "short",
-                        day: "numeric",
-                      })}
-                    </Text>
+                    if (isFuture) {
+                      // FUTURE SESSION – planned only
+                      return (
+                        <View
+                          style={[
+                            styles.pointBubble,
+                            styles.pointBubbleFuture,
+                          ]}
+                        >
+                          <View style={styles.pointBubbleHeaderRow}>
+                            <Text style={styles.pointBubbleTitle}>
+                              {selectedPoint.workoutTitle || "Workout"}
+                            </Text>
+                            <View style={styles.plannedPill}>
+                              <Text style={styles.plannedPillText}>
+                                Planned
+                              </Text>
+                            </View>
+                          </View>
 
-                    {/* Actual on top */}
-                    <Text style={styles.pointBubbleActual}>
-                      Actual:{" "}
-                      {selectedPoint.actualValue != null
-                        ? `${selectedPoint.actualValue}${
-                            selectedGoal.unit ? ` ${selectedGoal.unit}` : ""
-                          }`
-                        : "—"}
-                    </Text>
+                          <Text style={styles.pointBubbleDate}>
+                            {selectedPoint.date.toLocaleDateString("en-US", {
+                              month: "short",
+                              day: "numeric",
+                            })}
+                          </Text>
 
-                    {/* Goal underneath */}
-                    <Text style={styles.pointBubbleGoal}>
-                      Goal:{" "}
-                      {`${selectedPoint.goalValue}${
-                        selectedGoal.unit ? ` ${selectedGoal.unit}` : ""
-                      }`}
-                    </Text>
-                  </View>
+                          <Text style={styles.pointBubbleGoal}>
+                            Goal for this session:{" "}
+                            {`${selectedPoint.goalValue}${
+                              selectedGoal.unit
+                                ? ` ${selectedGoal.unit}`
+                                : ""
+                            }`}
+                          </Text>
+                        </View>
+                      );
+                    }
+
+                    // PAST / COMPLETED SESSION – left: name+date, right: weights
+                    return (
+                      <View style={styles.pointBubble}>
+                        <View style={styles.pointBubbleRow}>
+                          {/* Left side: name + date */}
+                          <View style={styles.pointBubbleLeft}>
+                            <Text style={styles.pointBubbleTitle}>
+                              {selectedPoint.workoutTitle || "Workout"}
+                            </Text>
+                            <Text style={styles.pointBubbleDate}>
+                              {selectedPoint.date.toLocaleDateString("en-US", {
+                                month: "short",
+                                day: "numeric",
+                              })}
+                            </Text>
+                          </View>
+
+                          {/* Right side: Actual + Goal */}
+                          <View style={styles.pointBubbleRight}>
+                            <Text style={styles.pointBubbleActual}>
+                              {selectedPoint.actualValue != null
+                                ? `${selectedPoint.actualValue}${
+                                    selectedGoal.unit
+                                      ? ` ${selectedGoal.unit}`
+                                      : ""
+                                  }`
+                                : "—"}
+                            </Text>
+                            <Text style={styles.pointBubbleGoal}>
+                              Goal:{" "}
+                              {`${selectedPoint.goalValue}${
+                                selectedGoal.unit
+                                  ? ` ${selectedGoal.unit}`
+                                  : ""
+                              }`}
+                            </Text>
+                          </View>
+                        </View>
+                      </View>
+                    );
+                  })()
                 )}
               </>
             ) : (
@@ -325,7 +382,32 @@ const makeStyles = (colors: any) =>
       shadowRadius: 8,
       shadowOffset: { width: 0, height: 3 },
       elevation: 3,
-      gap: 2,
+      gap: 4,
+    },
+    pointBubbleFuture: {
+      backgroundColor: colors.surface,
+      borderColor: colors.primary,
+    },
+    pointBubbleHeaderRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      marginBottom: 2,
+    },
+    pointBubbleRow: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "flex-start",
+      gap: 12,
+    },
+    pointBubbleLeft: {
+      flexShrink: 1,
+      flexGrow: 1,
+      paddingRight: 8,
+    },
+    pointBubbleRight: {
+      alignItems: "flex-end",
+      flexShrink: 0,
     },
     pointBubbleTitle: {
       fontSize: 14,
@@ -336,17 +418,34 @@ const makeStyles = (colors: any) =>
       fontSize: 11,
       fontWeight: "500",
       color: colors.subtle,
-      marginBottom: 4,
+      marginTop: 2,
     },
     pointBubbleActual: {
-      fontSize: 13,
-      fontWeight: "700",
+      fontSize: 14,
+      fontWeight: "800",
       color: colors.text,
+      textAlign: "right",
     },
     pointBubbleGoal: {
       fontSize: 12,
       fontWeight: "500",
       color: colors.subtle,
+      textAlign: "right",
+      marginTop: 2,
+    },
+
+    plannedPill: {
+      paddingHorizontal: 8,
+      paddingVertical: 3,
+      borderRadius: 999,
+      backgroundColor: colors.primary,
+    },
+    plannedPillText: {
+      fontSize: 10,
+      fontWeight: "700",
+      color: colors.onPrimary ?? "#fff",
+      textTransform: "uppercase",
+      letterSpacing: 0.5,
     },
 
     // range switch
