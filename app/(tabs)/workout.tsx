@@ -46,6 +46,13 @@ type Workout = {
   notes: string | null;
 };
 
+type StandaloneWorkoutRow = {
+  id: string;
+  title: string | null;
+  notes: string | null;
+  plan_workouts?: { id: string }[] | null;
+};
+
 /* ---------- utils ---------- */
 function weeksBetween(startIso?: string | null, endIso?: string | null) {
   if (!startIso || !endIso) return 1;
@@ -135,6 +142,67 @@ export default function WorkoutScreen() {
   const [planWorkouts, setPlanWorkouts] = useState<PlanWorkoutRow[]>([]);
   const [looseWorkouts, setLooseWorkouts] = useState<Workout[]>([]);
   const [completedCount, setCompletedCount] = useState<number>(0);
+
+  const [standaloneWorkouts, setStandaloneWorkouts] = useState<
+    StandaloneWorkoutRow[]
+  >([]);
+  const [loadingStandalone, setLoadingStandalone] = useState(false);
+  const [standaloneError, setStandaloneError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!userId) {
+      setStandaloneWorkouts([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    (async () => {
+      setLoadingStandalone(true);
+      setStandaloneError(null);
+
+      try {
+        const { data, error } = await supabase
+          .from("workouts")
+          .select(
+            `
+          id,
+          title,
+          notes,
+          plan_workouts:plan_workouts!left(
+            id
+          )
+        `
+          )
+          .eq("user_id", userId)
+          .order("created_at", { ascending: false }); // change/remove if you don't have created_at
+
+        if (error) throw error;
+        if (cancelled) return;
+
+        const all = (data ?? []) as StandaloneWorkoutRow[];
+
+        // Keep only workouts that have NO plan_workouts rows
+        const standalone = all.filter(
+          (w) => !w.plan_workouts || w.plan_workouts.length === 0
+        );
+
+        setStandaloneWorkouts(standalone);
+      } catch (e: any) {
+        if (!cancelled) {
+          console.warn("load standalone workouts error", e);
+          setStandaloneError(e?.message ?? "Could not load workouts.");
+          setStandaloneWorkouts([]);
+        }
+      } finally {
+        if (!cancelled) setLoadingStandalone(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
 
   const endText = useMemo(() => {
     if (!plan?.end_date) return null;
@@ -452,7 +520,10 @@ export default function WorkoutScreen() {
                   } else {
                     router.push({
                       pathname: "/features/workouts/view",
-                      params: { workoutId: pw.workout_id, planWorkoutId: pw.id  },
+                      params: {
+                        workoutId: pw.workout_id,
+                        planWorkoutId: pw.id,
+                      },
                     });
                   }
                 }}
@@ -475,27 +546,40 @@ export default function WorkoutScreen() {
             <PillButton
               label="Create Workout"
               tone="primary"
-              onPress={() =>
-                Alert.alert("Create Workout", "Workout creator coming soon.")
-              }
+              onPress={() => router.push("/features/workouts/create")}
             />
           }
         />
-        <View style={{ gap: 12 }}>
-          {looseWorkouts.map((w) => (
-            <WorkoutCard
-              key={w.id}
-              title={w.title ?? "Untitled Workout"}
-              notes={w.notes ?? null}
-              onPress={() => Alert.alert("Open Workout", w.title ?? "Workout")}
-            />
-          ))}
-          {looseWorkouts.length === 0 && (
-            <View style={styles.card}>
-              <Text style={styles.muted}>No standalone workouts yet.</Text>
-            </View>
-          )}
-        </View>
+
+        {loadingStandalone ? (
+          <ActivityIndicator />
+        ) : standaloneError ? (
+          <View style={styles.card}>
+            <Text style={[styles.muted, { color: colors.danger ?? "#ef4444" }]}>
+              {standaloneError}
+            </Text>
+          </View>
+        ) : standaloneWorkouts.length === 0 ? (
+          <View style={styles.card}>
+            <Text style={styles.muted}>No standalone workouts yet.</Text>
+          </View>
+        ) : (
+          <View style={{ gap: 12 }}>
+            {standaloneWorkouts.map((w) => (
+              <WorkoutCard
+                key={w.id}
+                title={w.title ?? "Untitled Workout"}
+                notes={w.notes ?? null}
+                onPress={() =>
+                  router.push({
+                    pathname: "/features/workouts/use",
+                    params: { workoutId: w.id },
+                  })
+                }
+              />
+            ))}
+          </View>
+        )}
       </View>
     </ScrollView>
   );

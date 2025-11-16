@@ -13,6 +13,7 @@ import { LightTheme, DarkTheme } from "./theme";
 import { StatusBar } from "expo-status-bar";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../lib/useAuth";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 
 export default function RootLayout() {
   const router = useRouter();
@@ -59,24 +60,26 @@ export default function RootLayout() {
   }, [navReady, loading, session, segments, router]);
 
   return (
-    <ThemeProvider value={theme}>
-      {/* Status bar adapts to theme */}
-      <StatusBar style={scheme === "dark" ? "light" : "dark"} />
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <ThemeProvider value={theme}>
+        {/* Status bar adapts to theme */}
+        <StatusBar style={scheme === "dark" ? "light" : "dark"} />
 
-      <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="(auth)" />
-        <Stack.Screen name="(tabs)" />
-        <Stack.Screen
-          name="features"
-          options={{
-            headerShown: false, // keep child stacks in /features controlling their own headers
-            headerTitle: "",
-            headerBackTitle: "",
-            headerShadowVisible: false,
-            gestureEnabled: true,
-          }}
-        />
-      </Stack>
-    </ThemeProvider>
+        <Stack screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="(auth)" />
+          <Stack.Screen name="(tabs)" />
+          <Stack.Screen
+            name="features"
+            options={{
+              headerShown: false, // keep child stacks in /features controlling their own headers
+              headerTitle: "",
+              headerBackTitle: "",
+              headerShadowVisible: false,
+              gestureEnabled: true,
+            }}
+          />
+        </Stack>
+      </ThemeProvider>
+    </GestureHandlerRootView>
   );
 }
