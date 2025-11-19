@@ -17,7 +17,6 @@ import {
 import DateTimePicker, {
   DateTimePickerEvent,
 } from "@react-native-community/datetimepicker";
-import { Picker } from "@react-native-picker/picker";
 import { supabase } from "../../lib/supabase";
 import { router } from "expo-router";
 import { useAppTheme } from "../../lib/useAppTheme";
@@ -26,6 +25,12 @@ import { toISODateUTC } from "../utils/dates";
 type Level = "beginner" | "intermediate" | "advanced";
 type Goal = "build_muscle" | "lose_fat" | "get_stronger" | "improve_endurance";
 type Gender = "male" | "female" | "other";
+
+// realistic bounds
+const MIN_HEIGHT_CM = 100;
+const MAX_HEIGHT_CM = 250;
+const MIN_WEIGHT_KG = 30;
+const MAX_WEIGHT_KG = 300;
 
 export default function Signup() {
   const { colors } = useAppTheme();
@@ -116,10 +121,29 @@ export default function Signup() {
       return false;
     }
 
-    if (Number(height) <= 0 || Number(weight) <= 0) {
+    const h = Number(height);
+    const w = Number(weight);
+
+    if (!Number.isFinite(h) || !Number.isFinite(w) || h <= 0 || w <= 0) {
       Alert.alert(
         "Check your details",
         "Height and weight must be positive numbers."
+      );
+      return false;
+    }
+
+    if (h < MIN_HEIGHT_CM || h > MAX_HEIGHT_CM) {
+      Alert.alert(
+        "Check your height",
+        `Please enter a height between ${MIN_HEIGHT_CM}cm and ${MAX_HEIGHT_CM}cm.`
+      );
+      return false;
+    }
+
+    if (w < MIN_WEIGHT_KG || w > MAX_WEIGHT_KG) {
+      Alert.alert(
+        "Check your weight",
+        `Please enter a weight between ${MIN_WEIGHT_KG}kg and ${MAX_WEIGHT_KG}kg.`
       );
       return false;
     }
@@ -143,7 +167,6 @@ export default function Signup() {
     Keyboard.dismiss();
 
     if (!validateStep1() || !validateStep2()) {
-      // Guard against somehow skipping validation
       return;
     }
 
@@ -213,12 +236,12 @@ export default function Signup() {
       behavior={Platform.select({ ios: "padding", android: undefined })}
       style={{ flex: 1 }}
     >
-      <View style={styles.centerWrap}>
-        <ScrollView
-          style={{ flex: 1, backgroundColor: colors.background }}
-          contentContainerStyle={styles.centerContent}
-          keyboardShouldPersistTaps="handled"
-        >
+      <ScrollView
+        style={{ flex: 1, backgroundColor: colors.background }}
+        contentContainerStyle={styles.fullScroll}
+        keyboardShouldPersistTaps="handled"
+      >
+        <View style={styles.centerWrap}>
           <Header
             title="Create Account"
             subtitle={
@@ -321,9 +344,7 @@ export default function Signup() {
                         >
                           <Text
                             style={{
-                              color: active
-                                ? colors.primary ?? "#fff"
-                                : colors.text,
+                              color: active ? "#fff" : colors.text,
                               fontWeight: "700",
                               textTransform: "capitalize",
                             }}
@@ -346,6 +367,9 @@ export default function Signup() {
                     value={height}
                     onChangeText={setHeight}
                   />
+                  <Text style={styles.helper}>
+                    {MIN_HEIGHT_CM}–{MAX_HEIGHT_CM} cm
+                  </Text>
                 </Field>
 
                 <Field label="Weight (kg)">
@@ -357,6 +381,9 @@ export default function Signup() {
                     value={weight}
                     onChangeText={setWeight}
                   />
+                  <Text style={styles.helper}>
+                    {MIN_WEIGHT_KG}–{MAX_WEIGHT_KG} kg
+                  </Text>
                 </Field>
 
                 <View style={{ flexDirection: "row", gap: 12 }}>
@@ -375,52 +402,203 @@ export default function Signup() {
 
             {step === 3 && (
               <>
+                {/* Level – card options instead of wheel picker */}
                 <Field label="Current Fitness Level">
-                  <View style={styles.pickerWrap}>
-                    <Picker
-                      selectedValue={level}
-                      onValueChange={(v: Level) => setLevel(v)}
-                    >
-                      <Picker.Item label="Beginner" value="beginner" />
-                      <Picker.Item label="Intermediate" value="intermediate" />
-                      <Picker.Item
-                        label="Advanced - 2+ years"
-                        value="advanced"
-                      />
-                    </Picker>
+                  <View style={styles.optionList}>
+                    {(
+                      [
+                        {
+                          value: "beginner" as Level,
+                          label: "Beginner",
+                          desc: "New to training or back after a break",
+                        },
+                        {
+                          value: "intermediate" as Level,
+                          label: "Intermediate",
+                          desc: "Training consistently 6–24 months",
+                        },
+                        {
+                          value: "advanced" as Level,
+                          label: "Advanced",
+                          desc: "Training hard for 2+ years",
+                        },
+                      ] as const
+                    ).map((opt) => {
+                      const active = level === opt.value;
+                      return (
+                        <Pressable
+                          key={opt.value}
+                          onPress={() => setLevel(opt.value)}
+                          style={[
+                            styles.optionCard,
+                            active && styles.optionCardActive,
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.optionTitle,
+                              active && styles.optionTitleActive,
+                            ]}
+                          >
+                            {opt.label}
+                          </Text>
+                          <Text
+                            style={[
+                              styles.optionDesc,
+                              active && styles.optionDescActive,
+                            ]}
+                          >
+                            {opt.desc}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
                   </View>
                 </Field>
 
+                {/* Primary goal – card options */}
                 <Field label="Primary Fitness Goal">
-                  <View style={styles.pickerWrap}>
-                    <Picker
-                      selectedValue={primaryGoal}
-                      onValueChange={(v: Goal) => setPrimaryGoal(v)}
-                    >
-                      <Picker.Item label="Build Muscle" value="build_muscle" />
-                      <Picker.Item label="Lose Fat" value="lose_fat" />
-                      <Picker.Item label="Get Stronger" value="get_stronger" />
-                      <Picker.Item
-                        label="Improve Endurance"
-                        value="improve_endurance"
-                      />
-                    </Picker>
+                  <View style={styles.optionList}>
+                    {(
+                      [
+                        {
+                          value: "build_muscle" as Goal,
+                          label: "Build Muscle",
+                          desc: "Add size and shape to your physique",
+                        },
+                        {
+                          value: "lose_fat" as Goal,
+                          label: "Lose Fat",
+                          desc: "Reduce body fat and look leaner",
+                        },
+                        {
+                          value: "get_stronger" as Goal,
+                          label: "Get Stronger",
+                          desc: "Focus on performance and heavy lifts",
+                        },
+                        {
+                          value: "improve_endurance" as Goal,
+                          label: "Improve Endurance",
+                          desc: "Improve fitness for sport or life",
+                        },
+                      ] as const
+                    ).map((opt) => {
+                      const active = primaryGoal === opt.value;
+                      return (
+                        <Pressable
+                          key={opt.value}
+                          onPress={() => setPrimaryGoal(opt.value)}
+                          style={[
+                            styles.optionCard,
+                            active && styles.optionCardActive,
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.optionTitle,
+                              active && styles.optionTitleActive,
+                            ]}
+                          >
+                            {opt.label}
+                          </Text>
+                          <Text
+                            style={[
+                              styles.optionDesc,
+                              active && styles.optionDescActive,
+                            ]}
+                          >
+                            {opt.desc}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
                   </View>
                 </Field>
 
+                {/* Workouts per week – small set of options */}
                 <Field label="Workouts Per Week">
-                  <View style={styles.pickerWrap}>
-                    <Picker
-                      selectedValue={workoutsPerWeek}
-                      onValueChange={(v) => setWorkoutsPerWeek(Number(v))}
-                    >
-                      <Picker.Item label="3 workouts" value={3} />
-                      <Picker.Item label="4 workouts" value={4} />
-                      <Picker.Item label="5 workouts" value={5} />
-                    </Picker>
+                  <View style={{ gap: 8 }}>
+                    {/* Row 1: 1–3 */}
+                    <View style={styles.optionRow}>
+                      {[1, 2, 3].map((n) => {
+                        const active = workoutsPerWeek === n;
+                        return (
+                          <Pressable
+                            key={n}
+                            onPress={() => setWorkoutsPerWeek(n)}
+                            style={[
+                              styles.smallOption,
+                              active && styles.smallOptionActive,
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.smallOptionText,
+                                active && styles.smallOptionTextActive,
+                              ]}
+                            >
+                              {n} workout{n > 1 ? "s" : ""}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+
+                    {/* Row 2: 4–5 */}
+                    <View style={styles.optionRow}>
+                      {[4, 5].map((n) => {
+                        const active = workoutsPerWeek === n;
+                        return (
+                          <Pressable
+                            key={n}
+                            onPress={() => setWorkoutsPerWeek(n)}
+                            style={[
+                              styles.smallOption,
+                              active && styles.smallOptionActive,
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.smallOptionText,
+                                active && styles.smallOptionTextActive,
+                              ]}
+                            >
+                              {n} workouts
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+
+                    {/* Row 3: 6–7 */}
+                    <View style={styles.optionRow}>
+                      {[6, 7].map((n) => {
+                        const active = workoutsPerWeek === n;
+                        return (
+                          <Pressable
+                            key={n}
+                            onPress={() => setWorkoutsPerWeek(n)}
+                            style={[
+                              styles.smallOption,
+                              active && styles.smallOptionActive,
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.smallOptionText,
+                                active && styles.smallOptionTextActive,
+                              ]}
+                            >
+                              {n} workouts
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
                   </View>
                 </Field>
 
+                {/* Steps goal */}
                 <Field label="Daily Steps Goal">
                   <View style={{ gap: 8 }}>
                     <TextInput
@@ -432,7 +610,6 @@ export default function Signup() {
                       onChangeText={setStepsGoal}
                     />
 
-                    {/* Optional quick chips */}
                     <View style={{ flexDirection: "row", gap: 8 }}>
                       {[8000, 10000, 12000].map((n) => {
                         const match = stepsGoal === String(n);
@@ -451,9 +628,7 @@ export default function Signup() {
                             <Text
                               style={{
                                 fontWeight: "700",
-                                color: match
-                                  ? colors.primary ?? "#fff"
-                                  : colors.text,
+                                color: match ? "#fff" : colors.text,
                               }}
                             >
                               {n.toLocaleString()}
@@ -495,8 +670,8 @@ export default function Signup() {
               </Text>
             </Text>
           </Pressable>
-        </ScrollView>
-      </View>
+        </View>
+      </ScrollView>
 
       {/* DOB picker – only while editing */}
       {showDobPicker &&
@@ -555,7 +730,7 @@ function Header({
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
   return (
-    <View style={{ alignItems: "center", marginTop: 8, marginBottom: 16 }}>
+    <View style={{ alignItems: "center", marginBottom: 16 }}>
       <View style={styles.logoBox}>
         <Text style={styles.logoEmoji}>🏋️</Text>
       </View>
@@ -578,7 +753,7 @@ function Header({
             >
               <Text
                 style={{
-                  color: active ? colors.primary ?? "#fff" : colors.text,
+                  color: active ? "#fff" : colors.text,
                   fontSize: 12,
                   fontWeight: "700",
                 }}
@@ -696,9 +871,7 @@ function PrimaryButton({
       {loading ? (
         <ActivityIndicator />
       ) : (
-        <Text style={{ color: colors.subtle ?? "#fff", fontWeight: "700" }}>
-          {title}
-        </Text>
+        <Text style={{ color: "#fff", fontWeight: "700" }}>{title}</Text>
       )}
     </Pressable>
   );
@@ -734,13 +907,25 @@ function SecondaryButton({
 /* ---------- themed styles ---------- */
 const makeStyles = (colors: any) =>
   StyleSheet.create({
+    fullScroll: {
+      flexGrow: 1,
+    },
+    centerWrap: {
+      flexGrow: 1,
+      alignItems: "center",
+      justifyContent: "center",
+      paddingHorizontal: 20,
+      paddingVertical: 24,
+    },
+
     card: {
       backgroundColor: colors.card,
       borderRadius: 16,
       padding: 16,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.border,
-      // subtle shadow for a more "app" feel
+      width: "100%",
+      maxWidth: 420,
       shadowColor: "#000",
       shadowOffset: { width: 0, height: 4 },
       shadowOpacity: 0.08,
@@ -755,6 +940,12 @@ const makeStyles = (colors: any) =>
       backgroundColor: colors.card,
       color: colors.text,
     },
+    helper: {
+      marginTop: 4,
+      fontSize: 12,
+      color: colors.subtle,
+    },
+
     pickerWrap: {
       borderWidth: 1,
       borderColor: colors.border,
@@ -771,6 +962,70 @@ const makeStyles = (colors: any) =>
       borderColor: colors.border,
     },
 
+    // option cards (step 3)
+    optionList: {
+      gap: 8,
+    },
+    optionCard: {
+      paddingVertical: 12,
+      paddingHorizontal: 14,
+      borderRadius: 12,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+    },
+    optionCardActive: {
+      backgroundColor: colors.primary,
+      borderColor: colors.primary,
+    },
+    optionTitle: {
+      fontWeight: "700",
+      fontSize: 16,
+      color: colors.text,
+    },
+    optionTitleActive: {
+      color: "#fff",
+    },
+    optionDesc: {
+      marginTop: 2,
+      fontSize: 13,
+      color: colors.subtle,
+    },
+    optionDescActive: {
+      color: "#f3f4f6",
+    },
+
+    optionRow: {
+      flexDirection: "row",
+      justifyContent: "center",
+      alignItems: "center",
+      gap: 8,
+    },
+
+    smallOption: {
+      paddingVertical: 8,
+      paddingHorizontal: 12,
+      borderRadius: 999,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+    },
+
+    smallOptionActive: {
+      backgroundColor: colors.primary,
+      borderColor: colors.primary,
+    },
+
+    smallOptionText: {
+      color: colors.text,
+      fontWeight: "600",
+      fontSize: 14,
+    },
+
+    smallOptionTextActive: {
+      color: "#fff",
+    },
+
     // Header styles
     logoBox: {
       width: 64,
@@ -781,7 +1036,7 @@ const makeStyles = (colors: any) =>
       justifyContent: "center",
       marginBottom: 8,
     },
-    logoEmoji: { color: colors.onPrimary ?? "#fff", fontSize: 28 },
+    logoEmoji: { color: "#fff", fontSize: 28 },
     headerTitle: { fontSize: 22, fontWeight: "800", color: colors.text },
     headerSub: {
       color: colors.subtle,
@@ -836,20 +1091,5 @@ const makeStyles = (colors: any) =>
       alignItems: "center",
       justifyContent: "center",
       minWidth: 200,
-    },
-
-    centerWrap: {
-      flex: 1,
-      paddingTop: "28%",
-      justifyContent: "center",
-      alignItems: "center",
-    },
-
-    centerContent: {
-      width: "100%",
-      maxWidth: 1000, 
-      alignSelf: "center",
-      padding: 20,
-      paddingBottom: 40,
     },
   });
