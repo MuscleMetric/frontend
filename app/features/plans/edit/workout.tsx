@@ -18,6 +18,10 @@ import { useAppTheme } from "../../../../lib/useAppTheme";
 import { supabase } from "../../../../lib/supabase";
 import { Modal } from "react-native";
 
+import DraggableFlatList, {
+  RenderItemParams,
+} from "react-native-draggable-flatlist";
+
 const TYPE_CHIPS: Array<"all" | "strength" | "cardio" | "mobility"> = [
   "all",
   "strength",
@@ -73,7 +77,7 @@ export default function WorkoutPage() {
   const [muscleFilter, setMuscleFilter] = useState<string | null>(null);
   const [search, setSearch] = useState("");
 
-  const { items: all, setItems } = useExercisesCache(); // make sure setItems is exported
+  const { items: all, setItems } = useExercisesCache();
 
   useEffect(() => {
     let cancelled = false;
@@ -123,13 +127,16 @@ export default function WorkoutPage() {
     return out;
   }
 
-  // Superset selection
+  // Superset selection (now based on exercise.id instead of row index)
   const [selecting, setSelecting] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const rowKey = (i: number) => `${exercises[i]?.exercise.id ?? "NA"}-${i}`;
-  function toggleSelect(key: string) {
+
+  function toggleSelect(exerciseId: string | null | undefined) {
+    if (!exerciseId) return;
     setSelectedIds((prev) =>
-      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
+      prev.includes(exerciseId)
+        ? prev.filter((k) => k !== exerciseId)
+        : [...prev, exerciseId]
     );
   }
 
@@ -137,7 +144,7 @@ export default function WorkoutPage() {
   const hasExercise = useCallback(
     (exerciseId: string) =>
       draft.exercises.some((e) => e.exercise.id === exerciseId),
-    [exercises]
+    [draft.exercises]
   );
 
   function makeSuperset() {
@@ -146,8 +153,10 @@ export default function WorkoutPage() {
       return;
     }
     const groupId = `ss-${nanoid(6)}`;
-    const updated = draft.exercises.map((ex, i) =>
-      selectedIds.includes(rowKey(i)) ? { ...ex, supersetGroup: groupId } : ex
+    const updated = draft.exercises.map((ex) =>
+      selectedIds.includes(ex.exercise.id)
+        ? { ...ex, supersetGroup: groupId }
+        : ex
     );
     setWorkout(index, { ...draft, exercises: updated });
     setSelecting(false);
@@ -156,8 +165,8 @@ export default function WorkoutPage() {
 
   function clearSupersetForSelected() {
     if (selectedIds.length === 0) return;
-    const updated = draft.exercises.map((ex, i) =>
-      selectedIds.includes(rowKey(i)) ? { ...ex, supersetGroup: null } : ex
+    const updated = draft.exercises.map((ex) =>
+      selectedIds.includes(ex.exercise.id) ? { ...ex, supersetGroup: null } : ex
     );
     setWorkout(index, { ...draft, exercises: updated });
     setSelecting(false);
@@ -220,9 +229,8 @@ export default function WorkoutPage() {
       Alert.alert("Add at least one exercise");
       return;
     }
-    // draft is already saved in store via setWorkout calls above.
     Alert.alert("Updated", "Workout changes saved.");
-    router.back(); // or router.replace('/features/plans/edit/review') if you have a review page
+    router.back();
   }
 
   const SUPERSET_COLORS = [
@@ -241,10 +249,23 @@ export default function WorkoutPage() {
     [exercises]
   );
 
+  // --- DRAG HANDLER: keep order_index in sync with new order ---
+  const handleDragEnd = useCallback(
+    ({ data }: { data: typeof draft.exercises }) => {
+      const reindexed = data.map((ex, i) => ({
+        ...ex,
+        order_index: i,
+      }));
+      setWorkout(index, { ...draft, exercises: reindexed });
+    },
+    [draft, index, setWorkout]
+  );
+
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: colors.background }}
       contentContainerStyle={{ padding: 16 }}
+      keyboardShouldPersistTaps="handled"
     >
       <Text style={s.h2}>
         Update Workout {index + 1} of {workoutsPerWeek}
@@ -282,123 +303,186 @@ export default function WorkoutPage() {
         </View>
       )}
 
-      {draft.exercises.map((e, i) => {
-        const key = rowKey(i);
-        const isSelected = selectedIds.includes(key);
-        const group = e.supersetGroup ?? null;
+      {/* DRAGGABLE EXERCISE LIST */}
+      {draft.exercises.length > 0 && (
+        <View style={{ maxHeight: 420, marginBottom: 8 }}>
+          <View style={{ marginBottom: 8 }}>
+            <DraggableFlatList
+              data={draft.exercises}
+              keyExtractor={(item, idx) => item.exercise.id ?? `ex-${idx}`}
+              scrollEnabled={false} // outer ScrollView does the scrolling
+              onDragEnd={handleDragEnd}
+              renderItem={({
+                item,
+                drag,
+                isActive,
+              }: RenderItemParams<(typeof draft.exercises)[number]>) => {
+                // ... rest of renderItem unchanged ...
+                const displayIndex =
+                  typeof item.order_index === "number"
+                    ? item.order_index + 1
+                    : 1;
 
-        const groupIndex = group ? supersetGroups.indexOf(group) : -1;
-        const groupLabel =
-          groupIndex >= 0 ? String.fromCharCode(65 + groupIndex) : null;
-        const groupColor =
-          groupIndex >= 0
-            ? SUPERSET_COLORS[groupIndex % SUPERSET_COLORS.length]
-            : null;
+                const exId = item.exercise.id;
+                const isSelected = exId ? selectedIds.includes(exId) : false;
+                const group = item.supersetGroup ?? null;
 
-        return (
-          <View
-            key={key}
-            style={[
-              s.item,
-              groupColor && { borderColor: groupColor, borderWidth: 2 },
-              isSelected && { borderColor: colors.primary, borderWidth: 3 },
-            ]}
-          >
-            <Pressable
-              onLongPress={() => {
-                setSelecting(true);
-                toggleSelect(key);
-              }}
-              onPress={() => {
-                if (selecting) toggleSelect(key);
-              }}
-              style={{ flex: 1 }}
-            >
-              <View
-                style={{
-                  flexDirection: "row",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                }}
-              >
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontWeight: "700", color: colors.text }}>
-                    {i + 1}. {e.exercise.name}
-                    {groupLabel ? (
-                      <Text
+                const groupIndex = group ? supersetGroups.indexOf(group) : -1;
+                const groupLabel =
+                  groupIndex >= 0 ? String.fromCharCode(65 + groupIndex) : null;
+                const groupColor =
+                  groupIndex >= 0
+                    ? SUPERSET_COLORS[groupIndex % SUPERSET_COLORS.length]
+                    : null;
+
+                const findIndexInDraft = () =>
+                  draft.exercises.findIndex(
+                    (ex) =>
+                      ex.exercise.id === item.exercise.id &&
+                      ex.order_index === item.order_index
+                  );
+
+                return (
+                  <View
+                    style={[
+                      s.item,
+                      groupColor && { borderColor: groupColor, borderWidth: 2 },
+                      isSelected && {
+                        borderColor: colors.primary,
+                        borderWidth: 3,
+                      },
+                    ]}
+                  >
+                    <Pressable
+                      onLongPress={() => {
+                        if (selecting) {
+                          toggleSelect(exId);
+                        } else {
+                          drag();
+                        }
+                      }}
+                      delayLongPress={120}
+                      onPress={() => {
+                        if (selecting) toggleSelect(exId);
+                      }}
+                      style={{ flex: 1, opacity: isActive ? 0.8 : 1 }}
+                    >
+                      <View
                         style={{
-                          fontWeight: "800",
-                          color: groupColor ?? colors.text,
+                          flexDirection: "row",
+                          justifyContent: "space-between",
+                          alignItems: "center",
                         }}
                       >
-                        {`  •  Superset ${groupLabel}`}
-                      </Text>
-                    ) : null}
-                  </Text>
+                        <View style={{ flex: 1 }}>
+                          <Text
+                            style={{ fontWeight: "700", color: colors.text }}
+                          >
+                            {displayIndex}. {item.exercise.name}
+                            {groupLabel ? (
+                              <Text
+                                style={{
+                                  fontWeight: "800",
+                                  color: groupColor ?? colors.text,
+                                }}
+                              >
+                                {`  •  Superset ${groupLabel}`}
+                              </Text>
+                            ) : null}
+                          </Text>
 
-                  <View
-                    style={{
-                      flexDirection: "row",
-                      gap: 8,
-                      marginTop: 4,
-                      flexWrap: "wrap",
-                    }}
-                  >
-                    {!!e.exercise.type && (
-                      <Text style={{ color: colors.subtle }}>
-                        {e.exercise.type}
-                      </Text>
-                    )}
-                    {e.isDropset && (
-                      <Text
-                        style={{ color: colors.primaryText, fontWeight: "700" }}
-                      >
-                        • Dropset
-                      </Text>
-                    )}
+                          <View
+                            style={{
+                              flexDirection: "row",
+                              gap: 8,
+                              marginTop: 4,
+                              flexWrap: "wrap",
+                            }}
+                          >
+                            {!!item.exercise.type && (
+                              <Text style={{ color: colors.subtle }}>
+                                {item.exercise.type}
+                              </Text>
+                            )}
+                            {item.isDropset && (
+                              <Text
+                                style={{
+                                  color: colors.primaryText,
+                                  fontWeight: "700",
+                                }}
+                              >
+                                • Dropset
+                              </Text>
+                            )}
+                          </View>
+
+                          <Text style={{ color: colors.subtle, marginTop: 4 }}>
+                            Exercise selected
+                          </Text>
+                        </View>
+
+                        <View style={{ gap: 6, alignItems: "flex-end" }}>
+                          <Pressable
+                            onPress={() => {
+                              const idx = findIndexInDraft();
+                              if (idx < 0) return;
+                              const copy = [...draft.exercises];
+                              copy[idx] = {
+                                ...copy[idx],
+                                isDropset: !copy[idx].isDropset,
+                              };
+                              setWorkout(index, { ...draft, exercises: copy });
+                            }}
+                          >
+                            <Text
+                              style={{
+                                color: colors.primary,
+                                fontWeight: "700",
+                              }}
+                            >
+                              {item.isDropset
+                                ? "Remove Dropset"
+                                : "Mark as Dropset"}
+                            </Text>
+                          </Pressable>
+
+                          <Pressable
+                            onPress={() => {
+                              const idx = findIndexInDraft();
+                              if (idx < 0) return;
+                              const copy = [...draft.exercises];
+                              copy.splice(idx, 1);
+                              const reindexed = copy.map((x, j) => ({
+                                ...x,
+                                order_index: j,
+                              }));
+                              setWorkout(index, {
+                                ...draft,
+                                exercises: reindexed,
+                              });
+                            }}
+                          >
+                            <Text
+                              style={{
+                                color: colors.danger,
+                                fontWeight: "700",
+                              }}
+                            >
+                              Remove
+                            </Text>
+                          </Pressable>
+                        </View>
+                      </View>
+                    </Pressable>
                   </View>
-
-                  <Text style={{ color: colors.subtle, marginTop: 4 }}>
-                    Exercise selected
-                  </Text>
-                </View>
-
-                <View style={{ gap: 6, alignItems: "flex-end" }}>
-                  <Pressable
-                    onPress={() => {
-                      const copy = [...draft.exercises];
-                      copy[i] = { ...copy[i], isDropset: !copy[i].isDropset };
-                      setWorkout(index, { ...draft, exercises: copy });
-                    }}
-                  >
-                    <Text style={{ color: colors.primary, fontWeight: "700" }}>
-                      {e.isDropset ? "Remove Dropset" : "Mark as Dropset"}
-                    </Text>
-                  </Pressable>
-
-                  <Pressable
-                    onPress={() => {
-                      const copy = [...draft.exercises];
-                      copy.splice(i, 1);
-                      setWorkout(index, {
-                        ...draft,
-                        exercises: copy.map((x, j) => ({
-                          ...x,
-                          order_index: j,
-                        })),
-                      });
-                    }}
-                  >
-                    <Text style={{ color: colors.danger, fontWeight: "700" }}>
-                      Remove
-                    </Text>
-                  </Pressable>
-                </View>
-              </View>
-            </Pressable>
+                );
+              }}
+            />
           </View>
-        );
-      })}
+        </View>
+      )}
+
+      {/*  */}
 
       {/* Controls */}
       <View style={{ flexDirection: "row", gap: 12, marginTop: 12 }}>
@@ -425,7 +509,7 @@ export default function WorkoutPage() {
       <Modal
         visible={showPicker}
         animationType="slide"
-        presentationStyle="pageSheet" // works well on iOS
+        presentationStyle="pageSheet"
         onRequestClose={() => setShowPicker(false)}
       >
         <View
@@ -461,9 +545,7 @@ export default function WorkoutPage() {
                     <Text
                       style={{
                         fontWeight: "700",
-                        color: active
-                          ? colors.primary ?? "#fff"
-                          : colors.text,
+                        color: active ? colors.primary ?? "#fff" : colors.text,
                         textTransform: "capitalize",
                       }}
                     >

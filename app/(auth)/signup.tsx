@@ -75,36 +75,89 @@ export default function Signup() {
     if (date) setDob(date);
   }
 
+  function validateStep1(): boolean {
+    const name = fullName.trim();
+    const mail = email.trim();
+    const okEmail = /\S+@\S+\.\S+/.test(mail);
+
+    if (!name) {
+      Alert.alert("Add your name", "Please enter your full name.");
+      return false;
+    }
+    if (!okEmail) {
+      Alert.alert("Invalid email", "Please enter a valid email address.");
+      return false;
+    }
+    if (password.length < 6) {
+      Alert.alert(
+        "Password too short",
+        "Your password must be at least 6 characters long."
+      );
+      return false;
+    }
+    return true;
+  }
+
+  function validateStep2(): boolean {
+    if (!dob || !gender || !height || !weight) {
+      Alert.alert(
+        "Almost there",
+        "Please select your date of birth, gender, height, and weight."
+      );
+      return false;
+    }
+
+    const ageVal = calcAge(dob);
+    if (ageVal != null && ageVal < 13) {
+      Alert.alert(
+        "Too young",
+        "You must be at least 13 years old to use this app."
+      );
+      return false;
+    }
+
+    if (Number(height) <= 0 || Number(weight) <= 0) {
+      Alert.alert(
+        "Check your details",
+        "Height and weight must be positive numbers."
+      );
+      return false;
+    }
+
+    return true;
+  }
+
   function next() {
+    Keyboard.dismiss();
+
     if (step === 1) {
-      const okEmail = /\S+@\S+\.\S+/.test(email);
-      if (!fullName || !okEmail || password.length < 6) {
-        Alert.alert(
-          "Please fill your name, a valid email, and a 6+ character password."
-        );
-        return;
-      }
+      if (!validateStep1()) return;
       setStep(2);
     } else if (step === 2) {
-      if (!dob || !gender || !height || !weight) {
-        Alert.alert(
-          "Please select your date of birth, gender, height, and weight."
-        );
-        return;
-      }
+      if (!validateStep2()) return;
       setStep(3);
     }
   }
 
   async function complete() {
+    Keyboard.dismiss();
+
+    if (!validateStep1() || !validateStep2()) {
+      // Guard against somehow skipping validation
+      return;
+    }
+
     try {
       setLoading(true);
 
+      const trimmedEmail = email.trim();
+      const trimmedName = fullName.trim();
+
       const { data: signUpData, error: signUpErr } = await supabase.auth.signUp(
         {
-          email,
+          email: trimmedEmail,
           password,
-          options: { data: { name: fullName, gender } },
+          options: { data: { name: trimmedName, gender } },
         }
       );
       if (signUpErr) throw signUpErr;
@@ -114,8 +167,8 @@ export default function Signup() {
       if (userId) {
         const profilePayload: any = {
           id: userId,
-          name: fullName,
-          email,
+          name: trimmedName,
+          email: trimmedEmail,
           height: height ? Number(height) : null,
           weight: weight ? Number(weight) : null,
           date_of_birth: dob ? toISODateUTC(dob) : null,
@@ -145,7 +198,11 @@ export default function Signup() {
       if (signUpData.session) router.replace("/(tabs)");
       else router.replace("/(auth)/login");
     } catch (e: any) {
-      Alert.alert("Sign up failed", e.message ?? String(e));
+      console.warn("Sign up failed:", e);
+      const msg =
+        e?.message ??
+        "Something went wrong while creating your account. Please try again.";
+      Alert.alert("Sign up failed", msg);
     } finally {
       setLoading(false);
     }
@@ -156,270 +213,290 @@ export default function Signup() {
       behavior={Platform.select({ ios: "padding", android: undefined })}
       style={{ flex: 1 }}
     >
-      <ScrollView
-        style={{ flex: 1, backgroundColor: colors.background }}
-        contentContainerStyle={{ padding: 20, paddingBottom: 40 }}
-        keyboardShouldPersistTaps="handled"
-      >
-        <Header
-          title="Create Account"
-          subtitle={
-            step === 1
-              ? "Let's get started with your fitness journey"
-              : step === 2
-              ? "Tell us about yourself"
-              : "Set your fitness goals"
-          }
-          step={step}
-        />
+      <View style={styles.centerWrap}>
+        <ScrollView
+          style={{ flex: 1, backgroundColor: colors.background }}
+          contentContainerStyle={styles.centerContent}
+          keyboardShouldPersistTaps="handled"
+        >
+          <Header
+            title="Create Account"
+            subtitle={
+              step === 1
+                ? "Let’s get started with your fitness journey"
+                : step === 2
+                ? "Tell us a bit about yourself"
+                : "Set up your goals so we can guide you"
+            }
+            step={step}
+          />
 
-        {/* CARD */}
-        <View style={styles.card}>
-          {step === 1 && (
-            <>
-              <Field label="Full Name">
-                <TextInput
-                  style={styles.input}
-                  placeholder="John Doe"
-                  placeholderTextColor={colors.subtle}
-                  value={fullName}
-                  onChangeText={setFullName}
-                />
-              </Field>
-              <Field label="Email">
-                <TextInput
-                  style={styles.input}
-                  placeholder="your.email@example.com"
-                  placeholderTextColor={colors.subtle}
-                  autoCapitalize="none"
-                  keyboardType="email-address"
-                  value={email}
-                  onChangeText={setEmail}
-                />
-              </Field>
-              <Field label="Password">
-                <TextInput
-                  style={styles.input}
-                  placeholder="Create a password (min 6 characters)"
-                  placeholderTextColor={colors.subtle}
-                  secureTextEntry
-                  value={password}
-                  onChangeText={setPassword}
-                />
-              </Field>
-
-              <PrimaryButton title="Next  →" onPress={next} />
-            </>
-          )}
-
-          {step === 2 && (
-            <>
-              {/* DOB */}
-              <Field label="Date of Birth">
-                <Pressable
-                  style={[styles.input, { justifyContent: "center" }]}
-                  onPress={openDobPicker}
-                >
-                  <Text style={{ color: colors.text }}>
-                    {dob
-                      ? dob.toDateString()
-                      : "Tap to select your date of birth"}
-                  </Text>
-                </Pressable>
-
-                {age != null && (
-                  <Text style={{ marginTop: 6, color: colors.subtle }}>
-                    Age:{" "}
-                    <Text style={{ fontWeight: "700", color: colors.text }}>
-                      {age}
-                    </Text>
-                  </Text>
-                )}
-              </Field>
-
-              {/* Gender chips */}
-              <Field label="Gender">
-                <View style={{ flexDirection: "row", gap: 8 }}>
-                  {(["male", "female", "other"] as Gender[]).map((g) => {
-                    const active = gender === g;
-                    return (
-                      <Pressable
-                        key={g}
-                        onPress={() => setGender(g)}
-                        style={[
-                          styles.chip,
-                          active && {
-                            backgroundColor: colors.primary,
-                            borderColor: colors.primary,
-                          },
-                        ]}
-                      >
-                        <Text
-                          style={{
-                            color: active
-                              ? colors.primary ?? "#fff"
-                              : colors.text,
-                            fontWeight: "700",
-                            textTransform: "capitalize",
-                          }}
-                        >
-                          {g}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
-                </View>
-              </Field>
-
-              {/* Height & Weight */}
-              <Field label="Height (cm)">
-                <TextInput
-                  style={styles.input}
-                  placeholder="e.g. 175"
-                  placeholderTextColor={colors.subtle}
-                  keyboardType="decimal-pad"
-                  value={height}
-                  onChangeText={setHeight}
-                />
-              </Field>
-
-              <Field label="Weight (kg)">
-                <TextInput
-                  style={styles.input}
-                  placeholder="e.g. 70"
-                  placeholderTextColor={colors.subtle}
-                  keyboardType="decimal-pad"
-                  value={weight}
-                  onChangeText={setWeight}
-                />
-              </Field>
-
-              <View style={{ flexDirection: "row", gap: 12 }}>
-                <View style={{ flex: 1 }}>
-                  <SecondaryButton title="←  Back" onPress={() => setStep(1)} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <PrimaryButton title="Next  →" onPress={next} />
-                </View>
-              </View>
-            </>
-          )}
-
-          {step === 3 && (
-            <>
-              <Field label="Current Fitness Level">
-                <View style={styles.pickerWrap}>
-                  <Picker
-                    selectedValue={level}
-                    onValueChange={(v: Level) => setLevel(v)}
-                  >
-                    <Picker.Item label="Beginner" value="beginner" />
-                    <Picker.Item label="Intermediate" value="intermediate" />
-                    <Picker.Item label="Advanced - 2+ years" value="advanced" />
-                  </Picker>
-                </View>
-              </Field>
-
-              <Field label="Primary Fitness Goal">
-                <View style={styles.pickerWrap}>
-                  <Picker
-                    selectedValue={primaryGoal}
-                    onValueChange={(v: Goal) => setPrimaryGoal(v)}
-                  >
-                    <Picker.Item label="Build Muscle" value="build_muscle" />
-                    <Picker.Item label="Lose Fat" value="lose_fat" />
-                    <Picker.Item label="Get Stronger" value="get_stronger" />
-                    <Picker.Item
-                      label="Improve Endurance"
-                      value="improve_endurance"
-                    />
-                  </Picker>
-                </View>
-              </Field>
-
-              <Field label="Workouts Per Week">
-                <View style={styles.pickerWrap}>
-                  <Picker
-                    selectedValue={workoutsPerWeek}
-                    onValueChange={(v) => setWorkoutsPerWeek(Number(v))}
-                  >
-                    <Picker.Item label="3 workouts" value={3} />
-                    <Picker.Item label="4 workouts" value={4} />
-                    <Picker.Item label="5 workouts" value={5} />
-                  </Picker>
-                </View>
-              </Field>
-
-              <Field label="Daily Steps Goal">
-                <View style={{ gap: 8 }}>
+          {/* CARD */}
+          <View style={styles.card}>
+            {step === 1 && (
+              <>
+                <Field label="Full Name">
                   <TextInput
                     style={styles.input}
-                    placeholder="e.g. 10000"
+                    placeholder="John Doe"
                     placeholderTextColor={colors.subtle}
-                    keyboardType="number-pad"
-                    value={stepsGoal}
-                    onChangeText={setStepsGoal}
+                    value={fullName}
+                    onChangeText={setFullName}
+                    returnKeyType="next"
                   />
+                </Field>
+                <Field label="Email">
+                  <TextInput
+                    style={styles.input}
+                    placeholder="your.email@example.com"
+                    placeholderTextColor={colors.subtle}
+                    autoCapitalize="none"
+                    keyboardType="email-address"
+                    value={email}
+                    onChangeText={setEmail}
+                    returnKeyType="next"
+                  />
+                </Field>
+                <Field label="Password">
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Create a password (min 6 characters)"
+                    placeholderTextColor={colors.subtle}
+                    secureTextEntry
+                    value={password}
+                    onChangeText={setPassword}
+                    returnKeyType="done"
+                  />
+                </Field>
 
-                  {/* Optional quick chips */}
+                <PrimaryButton title="Next  →" onPress={next} />
+              </>
+            )}
+
+            {step === 2 && (
+              <>
+                {/* DOB */}
+                <Field label="Date of Birth">
+                  <Pressable
+                    style={[styles.input, { justifyContent: "center" }]}
+                    onPress={openDobPicker}
+                  >
+                    <Text
+                      style={{
+                        color: dob ? colors.text : colors.subtle,
+                      }}
+                    >
+                      {dob
+                        ? dob.toDateString()
+                        : "Tap to select your date of birth"}
+                    </Text>
+                  </Pressable>
+
+                  {age != null && (
+                    <Text style={{ marginTop: 6, color: colors.subtle }}>
+                      Age:{" "}
+                      <Text style={{ fontWeight: "700", color: colors.text }}>
+                        {age}
+                      </Text>
+                    </Text>
+                  )}
+                </Field>
+
+                {/* Gender chips */}
+                <Field label="Gender">
                   <View style={{ flexDirection: "row", gap: 8 }}>
-                    {[8000, 10000, 12000].map((n) => (
-                      <Pressable
-                        key={n}
-                        style={[
-                          styles.chip,
-                          stepsGoal === String(n) && {
-                            backgroundColor: colors.primary,
-                            borderColor: colors.primary,
-                          },
-                        ]}
-                        onPress={() => setStepsGoal(String(n))}
-                      >
-                        <Text
-                          style={{
-                            fontWeight: "700",
-                            color:
-                              stepsGoal === String(n)
+                    {(["male", "female", "other"] as Gender[]).map((g) => {
+                      const active = gender === g;
+                      return (
+                        <Pressable
+                          key={g}
+                          onPress={() => setGender(g)}
+                          style={[
+                            styles.chip,
+                            active && {
+                              backgroundColor: colors.primary,
+                              borderColor: colors.primary,
+                            },
+                          ]}
+                        >
+                          <Text
+                            style={{
+                              color: active
                                 ? colors.primary ?? "#fff"
                                 : colors.text,
-                          }}
-                        >
-                          {n.toLocaleString()}
-                        </Text>
-                      </Pressable>
-                    ))}
+                              fontWeight: "700",
+                              textTransform: "capitalize",
+                            }}
+                          >
+                            {g}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </Field>
+
+                {/* Height & Weight */}
+                <Field label="Height (cm)">
+                  <TextInput
+                    style={styles.input}
+                    placeholder="e.g. 175"
+                    placeholderTextColor={colors.subtle}
+                    keyboardType="decimal-pad"
+                    value={height}
+                    onChangeText={setHeight}
+                  />
+                </Field>
+
+                <Field label="Weight (kg)">
+                  <TextInput
+                    style={styles.input}
+                    placeholder="e.g. 70"
+                    placeholderTextColor={colors.subtle}
+                    keyboardType="decimal-pad"
+                    value={weight}
+                    onChangeText={setWeight}
+                  />
+                </Field>
+
+                <View style={{ flexDirection: "row", gap: 12 }}>
+                  <View style={{ flex: 1 }}>
+                    <SecondaryButton
+                      title="←  Back"
+                      onPress={() => setStep(1)}
+                    />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <PrimaryButton title="Next  →" onPress={next} />
                   </View>
                 </View>
-              </Field>
+              </>
+            )}
 
-              <View style={{ flexDirection: "row", gap: 12 }}>
-                <View style={{ flex: 1 }}>
-                  <SecondaryButton title="←  Back" onPress={() => setStep(2)} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <PrimaryButton
-                    title={loading ? "Creating..." : "Complete  ✓"}
-                    onPress={complete}
-                    loading={loading}
-                  />
-                </View>
-              </View>
-            </>
-          )}
-        </View>
+            {step === 3 && (
+              <>
+                <Field label="Current Fitness Level">
+                  <View style={styles.pickerWrap}>
+                    <Picker
+                      selectedValue={level}
+                      onValueChange={(v: Level) => setLevel(v)}
+                    >
+                      <Picker.Item label="Beginner" value="beginner" />
+                      <Picker.Item label="Intermediate" value="intermediate" />
+                      <Picker.Item
+                        label="Advanced - 2+ years"
+                        value="advanced"
+                      />
+                    </Picker>
+                  </View>
+                </Field>
 
-        <Pressable
-          onPress={() => router.replace("/(auth)/login")}
-          style={{ alignSelf: "center", marginTop: 16 }}
-        >
-          <Text style={{ color: colors.text }}>
-            Already have an account?{" "}
-            <Text style={{ color: colors.primaryText, fontWeight: "700" }}>
-              Sign in
+                <Field label="Primary Fitness Goal">
+                  <View style={styles.pickerWrap}>
+                    <Picker
+                      selectedValue={primaryGoal}
+                      onValueChange={(v: Goal) => setPrimaryGoal(v)}
+                    >
+                      <Picker.Item label="Build Muscle" value="build_muscle" />
+                      <Picker.Item label="Lose Fat" value="lose_fat" />
+                      <Picker.Item label="Get Stronger" value="get_stronger" />
+                      <Picker.Item
+                        label="Improve Endurance"
+                        value="improve_endurance"
+                      />
+                    </Picker>
+                  </View>
+                </Field>
+
+                <Field label="Workouts Per Week">
+                  <View style={styles.pickerWrap}>
+                    <Picker
+                      selectedValue={workoutsPerWeek}
+                      onValueChange={(v) => setWorkoutsPerWeek(Number(v))}
+                    >
+                      <Picker.Item label="3 workouts" value={3} />
+                      <Picker.Item label="4 workouts" value={4} />
+                      <Picker.Item label="5 workouts" value={5} />
+                    </Picker>
+                  </View>
+                </Field>
+
+                <Field label="Daily Steps Goal">
+                  <View style={{ gap: 8 }}>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="e.g. 10,000"
+                      placeholderTextColor={colors.subtle}
+                      keyboardType="number-pad"
+                      value={stepsGoal}
+                      onChangeText={setStepsGoal}
+                    />
+
+                    {/* Optional quick chips */}
+                    <View style={{ flexDirection: "row", gap: 8 }}>
+                      {[8000, 10000, 12000].map((n) => {
+                        const match = stepsGoal === String(n);
+                        return (
+                          <Pressable
+                            key={n}
+                            style={[
+                              styles.chip,
+                              match && {
+                                backgroundColor: colors.primary,
+                                borderColor: colors.primary,
+                              },
+                            ]}
+                            onPress={() => setStepsGoal(String(n))}
+                          >
+                            <Text
+                              style={{
+                                fontWeight: "700",
+                                color: match
+                                  ? colors.primary ?? "#fff"
+                                  : colors.text,
+                              }}
+                            >
+                              {n.toLocaleString()}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                  </View>
+                </Field>
+
+                <View style={{ flexDirection: "row", gap: 12 }}>
+                  <View style={{ flex: 1 }}>
+                    <SecondaryButton
+                      title="←  Back"
+                      onPress={() => setStep(2)}
+                    />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <PrimaryButton
+                      title={loading ? "Creating..." : "Complete  ✓"}
+                      onPress={complete}
+                      loading={loading}
+                    />
+                  </View>
+                </View>
+              </>
+            )}
+          </View>
+
+          <Pressable
+            onPress={() => router.replace("/(auth)/login")}
+            style={{ alignSelf: "center", marginTop: 16 }}
+          >
+            <Text style={{ color: colors.text }}>
+              Already have an account?{" "}
+              <Text style={{ color: colors.primaryText, fontWeight: "700" }}>
+                Sign in
+              </Text>
             </Text>
-          </Text>
-        </Pressable>
-      </ScrollView>
+          </Pressable>
+        </ScrollView>
+      </View>
 
       {/* DOB picker – only while editing */}
       {showDobPicker &&
@@ -441,6 +518,24 @@ export default function Signup() {
             }}
           />
         ))}
+
+      {/* Full-screen loading overlay while creating account */}
+      {loading && (
+        <View style={styles.loadingOverlay}>
+          <View style={styles.loadingCard}>
+            <ActivityIndicator />
+            <Text
+              style={{
+                marginTop: 8,
+                color: colors.text,
+                fontWeight: "600",
+              }}
+            >
+              Creating your account…
+            </Text>
+          </View>
+        </View>
+      )}
     </KeyboardAvoidingView>
   );
 }
@@ -485,6 +580,7 @@ function Header({
                 style={{
                   color: active ? colors.primary ?? "#fff" : colors.text,
                   fontSize: 12,
+                  fontWeight: "700",
                 }}
               >
                 {n}
@@ -600,7 +696,7 @@ function PrimaryButton({
       {loading ? (
         <ActivityIndicator />
       ) : (
-        <Text style={{ color: colors.primary ?? "#fff", fontWeight: "700" }}>
+        <Text style={{ color: colors.subtle ?? "#fff", fontWeight: "700" }}>
           {title}
         </Text>
       )}
@@ -644,6 +740,12 @@ const makeStyles = (colors: any) =>
       padding: 16,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.border,
+      // subtle shadow for a more "app" feel
+      shadowColor: "#000",
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.08,
+      shadowRadius: 10,
+      elevation: 3,
     },
     input: {
       borderWidth: 1,
@@ -680,13 +782,18 @@ const makeStyles = (colors: any) =>
       marginBottom: 8,
     },
     logoEmoji: { color: colors.onPrimary ?? "#fff", fontSize: 28 },
-    headerTitle: { fontSize: 20, fontWeight: "800", color: colors.text },
-    headerSub: { color: colors.subtle, marginTop: 4, textAlign: "center" },
+    headerTitle: { fontSize: 22, fontWeight: "800", color: colors.text },
+    headerSub: {
+      color: colors.subtle,
+      marginTop: 4,
+      textAlign: "center",
+      fontSize: 14,
+    },
 
     stepDot: {
-      width: 22,
-      height: 22,
-      borderRadius: 11,
+      width: 24,
+      height: 24,
+      borderRadius: 12,
       alignItems: "center",
       justifyContent: "center",
       borderWidth: StyleSheet.hairlineWidth,
@@ -712,4 +819,37 @@ const makeStyles = (colors: any) =>
     toolbarTitle: { fontWeight: "700", color: colors.text },
     cancel: { color: colors.subtle, fontWeight: "600" },
     done: { color: colors.primaryText, fontWeight: "700" },
+
+    // loading overlay
+    loadingOverlay: {
+      ...StyleSheet.absoluteFillObject,
+      backgroundColor: "rgba(0,0,0,0.3)",
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    loadingCard: {
+      backgroundColor: colors.card,
+      padding: 20,
+      borderRadius: 14,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      alignItems: "center",
+      justifyContent: "center",
+      minWidth: 200,
+    },
+
+    centerWrap: {
+      flex: 1,
+      paddingTop: "28%",
+      justifyContent: "center",
+      alignItems: "center",
+    },
+
+    centerContent: {
+      width: "100%",
+      maxWidth: 1000, 
+      alignSelf: "center",
+      padding: 20,
+      paddingBottom: 40,
+    },
   });
