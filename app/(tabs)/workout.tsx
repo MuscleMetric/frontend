@@ -51,6 +51,12 @@ type StandaloneWorkoutRow = {
   title: string | null;
   notes: string | null;
   plan_workouts?: { id: string }[] | null;
+  workout_exercises?:
+    | {
+        order_index: number | null;
+        exercises: { name: string | null } | null;
+      }[]
+    | null;
 };
 
 /* ---------- utils ---------- */
@@ -149,60 +155,80 @@ export default function WorkoutScreen() {
   const [loadingStandalone, setLoadingStandalone] = useState(false);
   const [standaloneError, setStandaloneError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const loadStandalone = useCallback(async () => {
     if (!userId) {
       setStandaloneWorkouts([]);
       return;
     }
 
     let cancelled = false;
+    setLoadingStandalone(true);
+    setStandaloneError(null);
 
-    (async () => {
-      setLoadingStandalone(true);
-      setStandaloneError(null);
-
-      try {
-        const { data, error } = await supabase
-          .from("workouts")
-          .select(
-            `
-          id,
-          title,
-          notes,
-          plan_workouts:plan_workouts!left(
-            id
+    try {
+      const { data, error } = await supabase
+        .from("workouts")
+        .select(
+          `
+        id,
+        title,
+        notes,
+        plan_workouts:plan_workouts!left(
+          id
+        ),
+        workout_exercises(
+          order_index,
+          exercises (
+            name
           )
-        `
-          )
-          .eq("user_id", userId)
-          .order("created_at", { ascending: false }); // change/remove if you don't have created_at
+        )
+      `
+        )
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false });
 
-        if (error) throw error;
-        if (cancelled) return;
+      if (error) throw error;
+      if (cancelled) return;
 
-        const all = (data ?? []) as StandaloneWorkoutRow[];
+      const all = (data ?? []).map(
+        (row: any): StandaloneWorkoutRow => ({
+          id: String(row.id),
+          title: row.title ?? null,
+          notes: row.notes ?? null,
+          plan_workouts: row.plan_workouts ?? [],
+          workout_exercises: (row.workout_exercises ?? []).map((we: any) => ({
+            order_index: we?.order_index ?? null,
+            exercises: we?.exercises
+              ? { name: we.exercises.name ?? null }
+              : null,
+          })),
+        })
+      );
 
-        // Keep only workouts that have NO plan_workouts rows
-        const standalone = all.filter(
-          (w) => !w.plan_workouts || w.plan_workouts.length === 0
-        );
+      // keep only workouts NOT tied to any plan
+      const standalone = all.filter(
+        (w) => !w.plan_workouts || w.plan_workouts.length === 0
+      );
 
-        setStandaloneWorkouts(standalone);
-      } catch (e: any) {
-        if (!cancelled) {
-          console.warn("load standalone workouts error", e);
-          setStandaloneError(e?.message ?? "Could not load workouts.");
-          setStandaloneWorkouts([]);
-        }
-      } finally {
-        if (!cancelled) setLoadingStandalone(false);
+      setStandaloneWorkouts(standalone);
+    } catch (e: any) {
+      if (!cancelled) {
+        console.warn("load standalone workouts error", e);
+        setStandaloneError(e?.message ?? "Could not load workouts.");
+        setStandaloneWorkouts([]);
       }
-    })();
+    } finally {
+      if (!cancelled) setLoadingStandalone(false);
+    }
 
     return () => {
       cancelled = true;
     };
   }, [userId]);
+
+  useEffect(() => {
+    loadStandalone();
+  }, [loadStandalone]);
 
   const endText = useMemo(() => {
     if (!plan?.end_date) return null;
@@ -365,11 +391,11 @@ export default function WorkoutScreen() {
     load();
   }, [load]);
 
-  // refresh when tab/screen regains focus
   useFocusEffect(
     useCallback(() => {
-      load();
-    }, [load])
+      load(); // existing plan + loose logic
+      loadStandalone(); // NEW: refresh standalone list as well
+    }, [load, loadStandalone])
   );
 
   const buildHighlights = useCallback((row: PlanWorkoutRow): string => {
@@ -381,6 +407,20 @@ export default function WorkoutScreen() {
         .filter(Boolean) ?? [];
     return exs.slice(0, 4).join(", ");
   }, []);
+
+  const buildStandaloneHighlights = useCallback(
+    (row: StandaloneWorkoutRow): string => {
+      const exs =
+        row.workout_exercises
+          ?.slice()
+          .sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0))
+          .map((we) => we.exercises?.name || "")
+          .filter(Boolean) ?? [];
+
+      return exs.slice(0, 4).join(", ");
+    },
+    []
+  );
 
   /* ---------- states ---------- */
   if (!userId) {
@@ -565,19 +605,23 @@ export default function WorkoutScreen() {
           </View>
         ) : (
           <View style={{ gap: 12 }}>
-            {standaloneWorkouts.map((w) => (
-              <WorkoutCard
-                key={w.id}
-                title={w.title ?? "Untitled Workout"}
-                notes={w.notes ?? null}
-                onPress={() =>
-                  router.push({
-                    pathname: "/features/workouts/use",
-                    params: { workoutId: w.id },
-                  })
-                }
-              />
-            ))}
+            {standaloneWorkouts.map((w) => {
+              const highlights = buildStandaloneHighlights(w);
+              return (
+                <WorkoutCard
+                  key={w.id}
+                  title={w.title ?? "Untitled Workout"}
+                  notes={w.notes ?? null}
+                  highlights={highlights}
+                  onPress={() =>
+                    router.push({
+                      pathname: "/features/workouts/use",
+                      params: { workoutId: w.id },
+                    })
+                  }
+                />
+              );
+            })}
           </View>
         )}
       </View>
@@ -662,29 +706,28 @@ function PlanWorkoutItem({
 
 function WorkoutCard({
   title,
-  notes,
+  highlights,
   onPress,
 }: {
   title: string;
   notes: string | null;
+  highlights?: string;
   onPress: () => void;
 }) {
   const { colors } = useAppTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
+
   return (
-    <Pressable onPress={onPress} style={styles.card}>
-      <View
-        style={{
-          flexDirection: "row",
-          justifyContent: "space-between",
-          alignItems: "center",
-        }}
-      >
-        <Text style={styles.h3}>{title}</Text>
-      </View>
-      <Text style={styles.muted}>
-        {notes ? (notes.length > 80 ? notes.slice(0, 80) + "…" : notes) : "—"}
-      </Text>
+    <Pressable
+      onPress={onPress}
+      style={[styles.card, { position: "relative" }]}
+    >
+      <Text style={styles.h3}>{title}</Text>
+
+      {/* Exercise list */}
+      {highlights ? (
+        <Text style={[styles.muted, { marginTop: 4 }]}>{highlights}</Text>
+      ) : null}
     </Pressable>
   );
 }
