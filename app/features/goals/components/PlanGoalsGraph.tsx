@@ -111,53 +111,6 @@ type SessionPoint = {
   workoutTitle: string | null;
 };
 
-/** simple linear regression on x,y points */
-function linearRegressionXY(points: { x: number; y: number }[]): {
-  m: number;
-  b: number;
-} | null {
-  const n = points.length;
-  if (n < 2) return null;
-
-  let sumX = 0;
-  let sumY = 0;
-  let sumXY = 0;
-  let sumXX = 0;
-
-  for (const p of points) {
-    sumX += p.x;
-    sumY += p.y;
-    sumXY += p.x * p.y;
-    sumXX += p.x * p.x;
-  }
-
-  const denom = n * sumXX - sumX * sumX;
-  if (denom === 0) return null;
-
-  const m = (n * sumXY - sumX * sumY) / denom;
-  const b = (sumY - m * sumX) / n;
-  return { m, b };
-}
-
-/** 3-point moving average (uses current + previous points) */
-function smoothActualsForRegression(points: SessionPoint[]): {
-  x: number;
-  y: number;
-}[] {
-  if (points.length === 0) return [];
-  const sorted = [...points].sort((a, b) => a.x.getTime() - b.x.getTime());
-  const out: { x: number; y: number }[] = [];
-
-  for (let i = 0; i < sorted.length; i++) {
-    const windowStart = Math.max(0, i - 2);
-    const window = sorted.slice(windowStart, i + 1);
-    const avgY =
-      window.reduce((sum, p) => sum + p.y, 0) / window.length;
-    out.push({ x: sorted[i].x.getTime(), y: avgY });
-  }
-  return out;
-}
-
 /* ---------- component ---------- */
 
 export default function PlanGoalsGraph({
@@ -321,27 +274,38 @@ export default function PlanGoalsGraph({
           if (!sets.length) return;
 
           let rawVal = 0;
+
           switch (goal.type) {
-            case "exercise_weight":
+            case "exercise_weight": {
+              // Use best weight in this session (what the user actually sees).
               rawVal = Math.max(...sets.map((s: any) => Number(s.weight ?? 0)));
               break;
-            case "exercise_reps":
+            }
+
+            case "exercise_reps": {
               rawVal = Math.max(...sets.map((s: any) => Number(s.reps ?? 0)));
               break;
-            case "distance":
+            }
+
+            case "distance": {
               rawVal = sets.reduce(
                 (sum: number, s: any) => sum + Number(s.distance ?? 0),
                 0
               );
               break;
-            case "time":
+            }
+
+            case "time": {
               rawVal = sets.reduce(
                 (sum: number, s: any) => sum + Number(s.time_seconds ?? 0),
                 0
               );
               break;
-            default:
+            }
+
+            default: {
               rawVal = 0;
+            }
           }
 
           const workout = planWorkouts.find(
@@ -461,26 +425,7 @@ export default function PlanGoalsGraph({
     ];
     const fallbackYDomain: [number, number] = [startVal, targetVal];
 
-    // --- regression on SMOOTHED actuals (current progression) ---
-    let reg: { m: number; b: number } | null = null;
-    if (allActual.length >= 2) {
-      const smoothed = smoothActualsForRegression(allActual);
-      reg = linearRegressionXY(smoothed);
-    }
-
     if (!xAll.length || !yAll.length) {
-      // still compute trend line if regression exists
-      let trendLine: { x: number; y: number }[] | null = null;
-      if (reg) {
-        const { m, b } = reg;
-        const x1 = fallbackXDomain[0];
-        const x2 = fallbackXDomain[1];
-        trendLine = [
-          { x: x1, y: m * x1 + b },
-          { x: x2, y: m * x2 + b },
-        ];
-      }
-
       return {
         idealPoints,
         actualPoints,
@@ -488,7 +433,6 @@ export default function PlanGoalsGraph({
         yDomain: fallbackYDomain,
         xTicks: [fallbackXDomain[0], fallbackXDomain[1]],
         idealYAt,
-        trendLine,
       };
     }
 
@@ -504,19 +448,6 @@ export default function PlanGoalsGraph({
         ? Math.max(windowEnd.getTime(), xMaxData)
         : xMaxData;
 
-    // build trend line across the WHOLE visible domain [xMin, xMax]
-    let trendLine: { x: number; y: number }[] | null = null;
-    if (reg) {
-      const { m, b } = reg;
-      const y1 = m * xMin + b;
-      const y2 = m * xMax + b;
-      trendLine = [
-        { x: xMin, y: y1 },
-        { x: xMax, y: y2 },
-      ];
-      yAll = yAll.concat([y1, y2]);
-    }
-
     const yMin = Math.min(...yAll);
     const yMax = Math.max(...yAll);
     const yPad = Math.max(1, (yMax - yMin) * 0.1);
@@ -530,7 +461,6 @@ export default function PlanGoalsGraph({
       yDomain: [yMin - yPad, yMax + yPad] as [number, number],
       xTicks,
       idealYAt,
-      trendLine,
     };
   }, [
     plan?.start_date,
@@ -559,13 +489,12 @@ export default function PlanGoalsGraph({
   const { width } = Dimensions.get("window");
   const chartWidth = width - 75;
 
-  const { idealPoints, actualPoints, xDomain, yDomain, xTicks, idealYAt, trendLine } =
+  const { idealPoints, actualPoints, xDomain, yDomain, xTicks, idealYAt } =
     graph;
 
-  // COLORS: match your spec
+  // COLORS
   const goalColor = "#38bdf8"; // light blue
   const actualColor = colors.text; // black/white
-  const trendColor = "#f97316"; // orange
   const axis = colors.subtle;
 
   const goalLineData = idealPoints.map((p) => ({ x: +p.x, y: p.y }));
@@ -628,7 +557,7 @@ export default function PlanGoalsGraph({
           style={{
             data: {
               stroke: goalColor,
-              strokeDasharray: "3,5", // dotted-ish
+              strokeDasharray: "3,5",
               strokeWidth: 2,
             },
           }}
@@ -642,21 +571,6 @@ export default function PlanGoalsGraph({
               data: {
                 stroke: actualColor,
                 strokeWidth: 2.5,
-              },
-            }}
-          />
-        )}
-
-        {/* current progression regression line (orange, dashed) */}
-        {trendLine && (
-          <VictoryLine
-            data={trendLine}
-            style={{
-              data: {
-                stroke: trendColor,
-                strokeWidth: 2,
-                strokeDasharray: "6,4",
-                opacity: 0.9,
               },
             }}
           />
@@ -684,14 +598,6 @@ export default function PlanGoalsGraph({
                     const p = idealPoints[idx];
 
                     const closestActual = findClosestActual(p.x);
-
-                    console.log("GOAL DOT PRESSED:", {
-                      index: idx,
-                      date: p.x,
-                      goalValue: p.y,
-                      actualValue: closestActual?.y ?? null,
-                      workoutTitle: p.workoutTitle,
-                    });
 
                     onPointPress?.({
                       date: p.x,
@@ -730,14 +636,6 @@ export default function PlanGoalsGraph({
                     const idx = props.datum.i as number;
                     const p = actualPoints[idx];
                     const goalAtDate = idealYAt(p.x);
-
-                    console.log("ACTUAL DOT PRESSED:", {
-                      index: idx,
-                      date: p.x,
-                      goalValue: goalAtDate,
-                      actualValue: p.y,
-                      workoutTitle: p.workoutTitle,
-                    });
 
                     onPointPress?.({
                       date: p.x,
@@ -789,19 +687,6 @@ export default function PlanGoalsGraph({
             }}
           />
           <Text style={{ fontSize: 11, color: colors.subtle }}>Actual</Text>
-        </View>
-
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-          <View
-            style={{
-              width: 18,
-              height: 0,
-              borderTopWidth: 2,
-              borderStyle: "dashed",
-              borderColor: trendColor,
-            }}
-          />
-          <Text style={{ fontSize: 11, color: colors.subtle }}>Trend</Text>
         </View>
       </View>
     </View>
