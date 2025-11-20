@@ -8,6 +8,7 @@ import {
   ScrollView,
   Pressable,
   Alert,
+  Modal,
 } from "react-native";
 import Svg, { Circle } from "react-native-svg";
 import { supabase } from "../../lib/supabase";
@@ -135,6 +136,71 @@ function ProgressRing({
   );
 }
 
+function WorkoutCreateOptionsModal({
+  visible,
+  onClose,
+}: {
+  visible: boolean;
+  onClose: () => void;
+}) {
+  const { colors } = useAppTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
+
+  const goManual = () => {
+    onClose();
+    router.push("/features/workouts/create");
+  };
+
+  const goAuto = () => {
+    onClose();
+    router.push("/features/workouts/create/auto-create");
+  };
+
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      onRequestClose={onClose}
+    >
+      <Pressable style={styles.backdrop} onPress={onClose}>
+        <Pressable
+          style={styles.sheet}
+          onPress={(e) => e.stopPropagation()} // prevent closing when tapping content
+        >
+          <Text style={styles.sheetTitle}>How do you want to create it?</Text>
+          <Text style={styles.sheetSub}>
+            You can build a workout from scratch or let MuscleMetric guide you.
+          </Text>
+
+          <Pressable
+            style={[styles.sheetBtn, styles.sheetBtnPrimary]}
+            onPress={goAuto}
+          >
+            <Text style={styles.sheetBtnPrimaryText}>
+              Generate a workout for me
+            </Text>
+            <Text style={styles.sheetBtnCaption}>
+              Answer a few questions and we’ll build a workout.
+            </Text>
+          </Pressable>
+
+          <Pressable style={styles.sheetBtn} onPress={goManual}>
+            <Text style={styles.sheetBtnText}>Build my own workout</Text>
+            <Text style={styles.sheetBtnCaption}>
+              Choose exercises and structure everything yourself.
+            </Text>
+          </Pressable>
+
+          <Pressable style={styles.closeLink} onPress={onClose}>
+            <Text style={styles.closeLinkText}>Cancel</Text>
+          </Pressable>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
 /* ---------- Screen ---------- */
 export default function WorkoutScreen() {
   const { session } = useAuth();
@@ -154,6 +220,8 @@ export default function WorkoutScreen() {
   >([]);
   const [loadingStandalone, setLoadingStandalone] = useState(false);
   const [standaloneError, setStandaloneError] = useState<string | null>(null);
+
+  const [showCreateOptions, setShowCreateOptions] = useState(false);
 
   const loadStandalone = useCallback(async () => {
     if (!userId) {
@@ -586,9 +654,16 @@ export default function WorkoutScreen() {
             <PillButton
               label="Create Workout"
               tone="primary"
-              onPress={() => router.push("/features/workouts/create")}
+              onPress={() => setShowCreateOptions(true)}
             />
           }
+        />
+
+        {/* ...your existing list / content... */}
+
+        <WorkoutCreateOptionsModal
+          visible={showCreateOptions}
+          onClose={() => setShowCreateOptions(false)}
         />
 
         {loadingStandalone ? (
@@ -802,4 +877,70 @@ const makeStyles = (colors: any) =>
     h3: { fontSize: 15, fontWeight: "700", color: colors.text },
 
     pill: { paddingVertical: 6, paddingHorizontal: 12, borderRadius: 999 },
+
+    backdrop: {
+      flex: 1,
+      backgroundColor: "rgba(0,0,0,0.35)",
+      justifyContent: "center",
+      alignItems: "center",
+      padding: 24,
+    },
+    sheet: {
+      width: "100%",
+      maxWidth: 420,
+      backgroundColor: colors.card,
+      borderRadius: 16,
+      padding: 18,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+    },
+    sheetTitle: {
+      fontSize: 18,
+      fontWeight: "800",
+      color: colors.text,
+      marginBottom: 4,
+    },
+    sheetSub: {
+      fontSize: 13,
+      color: colors.subtle,
+      marginBottom: 14,
+    },
+    sheetBtn: {
+      paddingVertical: 12,
+      paddingHorizontal: 12,
+      borderRadius: 12,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+      marginBottom: 10,
+    },
+    sheetBtnPrimary: {
+      backgroundColor: colors.primary,
+      borderColor: colors.primary,
+    },
+    sheetBtnText: {
+      fontWeight: "700",
+      color: colors.text,
+      fontSize: 15,
+    },
+    sheetBtnPrimaryText: {
+      fontWeight: "800",
+      color: "#fff",
+      fontSize: 15,
+    },
+    sheetBtnCaption: {
+      marginTop: 4,
+      fontSize: 12,
+      color: colors.subtle,
+    },
+    closeLink: {
+      marginTop: 6,
+      alignSelf: "center",
+      paddingVertical: 4,
+      paddingHorizontal: 8,
+    },
+    closeLinkText: {
+      color: colors.subtle,
+      fontWeight: "600",
+    },
   });
