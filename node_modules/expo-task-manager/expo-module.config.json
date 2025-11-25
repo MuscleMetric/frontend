@@ -1,0 +1,12 @@
+{
+  "platforms": ["apple", "android"],
+  "android": {
+    "modules": ["expo.modules.taskManager.TaskManagerModule"],
+    "publication": {
+      "groupId": "host.exp.exponent",
+      "artifactId": "expo.modules.taskmanager",
+      "version": "14.0.8",
+      "repository": "local-maven-repo"
+    }
+  }
+}

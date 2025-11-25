@@ -1,0 +1,110 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "host.exp.exponent",
+    "module": "expo.modules.taskmanager",
+    "version": "14.0.8",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "8.14.3"
+    }
+  },
+  "variants": [
+    {
+      "name": "releaseVariantReleaseApiPublication",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.libraryelements": "aar",
+        "org.gradle.usage": "java-api"
+      },
+      "dependencies": [
+        {
+          "group": "androidx.core",
+          "module": "core",
+          "version": {
+            "requires": "1.0.0"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "expo.modules.taskmanager-14.0.8.aar",
+          "url": "expo.modules.taskmanager-14.0.8.aar",
+          "size": 65083,
+          "sha512": "354613085043268f282b8b81dd79881aa4b1f92876b307f216d899fe0f323673c0fb404aaf6a7a2329d38185268596ab3c4be6807e4a6d4bf5c65a69e34a165d",
+          "sha256": "cd0d6a6104da82cecef4d6ab0cfa4a6c4e72cc3232b340ffce0fb0547579ff05",
+          "sha1": "852c7fdbfc10f71240a84a215277f0eef8967fbe",
+          "md5": "1f0781ac1126aeb43cf75d3c619928e4"
+        }
+      ]
+    },
+    {
+      "name": "releaseVariantReleaseRuntimePublication",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.libraryelements": "aar",
+        "org.gradle.usage": "java-runtime"
+      },
+      "dependencies": [
+        {
+          "group": "org.jetbrains.kotlin",
+          "module": "kotlin-stdlib-jdk7",
+          "version": {
+            "requires": "2.1.20"
+          }
+        },
+        {
+          "group": "host.exp.exponent",
+          "module": "org.unimodules.apploader",
+          "version": {
+            "requires": "6.0.7"
+          }
+        },
+        {
+          "group": "androidx.core",
+          "module": "core",
+          "version": {
+            "requires": "1.0.0"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "expo.modules.taskmanager-14.0.8.aar",
+          "url": "expo.modules.taskmanager-14.0.8.aar",
+          "size": 65083,
+          "sha512": "354613085043268f282b8b81dd79881aa4b1f92876b307f216d899fe0f323673c0fb404aaf6a7a2329d38185268596ab3c4be6807e4a6d4bf5c65a69e34a165d",
+          "sha256": "cd0d6a6104da82cecef4d6ab0cfa4a6c4e72cc3232b340ffce0fb0547579ff05",
+          "sha1": "852c7fdbfc10f71240a84a215277f0eef8967fbe",
+          "md5": "1f0781ac1126aeb43cf75d3c619928e4"
+        }
+      ]
+    },
+    {
+      "name": "releaseVariantReleaseSourcePublication",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "expo.modules.taskmanager-14.0.8-sources.jar",
+          "url": "expo.modules.taskmanager-14.0.8-sources.jar",
+          "size": 22851,
+          "sha512": "8b736d920f293730c6e21c622e290b98572a20da941a55cc2115d2557f75f1336ddc016e74c2490da6f28db1324ad47a31002f55a1a003129c0e084de554c38b",
+          "sha256": "835897e4e38b3abc2084054d950204a7a812dee7c650c6665f7ed3e10ada565e",
+          "sha1": "7ef651ce45f55ed6ccbc443d5c1b47dec40f640c",
+          "md5": "c56a4cba148e230ef3f14439d3afd694"
+        }
+      ]
+    }
+  ]
+}
