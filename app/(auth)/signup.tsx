@@ -1,5 +1,5 @@
 // app/(auth)/signup.tsx
-import React, { useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -17,10 +17,12 @@ import {
 import DateTimePicker, {
   DateTimePickerEvent,
 } from "@react-native-community/datetimepicker";
+import * as Linking from "expo-linking";
 import { supabase } from "../../lib/supabase";
 import { router } from "expo-router";
 import { useAppTheme } from "../../lib/useAppTheme";
 import { toISODateUTC } from "../utils/dates";
+import { useAuth } from "../../lib/useAuth";
 
 type Level = "beginner" | "intermediate" | "advanced";
 type Goal = "build_muscle" | "lose_fat" | "get_stronger" | "improve_endurance";
@@ -36,12 +38,13 @@ export default function Signup() {
   const { colors } = useAppTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
+  const { session } = useAuth(); // ⬅️ session from Google / Apple
+
   const [step, setStep] = useState<1 | 2 | 3>(1);
 
   // step 1
   const [fullName, setFullName] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [email, setEmail] = useState(""); // just for profile, NOT for auth
 
   // step 2
   const [dob, setDob] = useState<Date | null>(null);
@@ -57,6 +60,23 @@ export default function Signup() {
   const [stepsGoal, setStepsGoal] = useState<string>("10000");
 
   const [loading, setLoading] = useState(false);
+
+  // Prefill name/email from provider metadata when we get a session
+  useEffect(() => {
+    if (!session) return;
+    const u = session.user;
+    const meta = (u.user_metadata || {}) as any;
+
+    if (!email) {
+      setEmail(u.email ?? meta.email ?? "");
+    }
+
+    if (!fullName) {
+      const metaName =
+        meta.name ?? meta.full_name ?? meta.given_name ?? meta.preferred_username;
+      if (metaName) setFullName(metaName);
+    }
+  }, [session]);
 
   function calcAge(d: Date | null) {
     if (!d) return null;
@@ -80,24 +100,18 @@ export default function Signup() {
     if (date) setDob(date);
   }
 
+  // Step 1: they MUST have connected Google/Apple and given a name
   function validateStep1(): boolean {
     const name = fullName.trim();
-    const mail = email.trim();
-    const okEmail = /\S+@\S+\.\S+/.test(mail);
-
+    if (!session) {
+      Alert.alert(
+        "Connect your account",
+        "Please continue with Google or Apple first."
+      );
+      return false;
+    }
     if (!name) {
       Alert.alert("Add your name", "Please enter your full name.");
-      return false;
-    }
-    if (!okEmail) {
-      Alert.alert("Invalid email", "Please enter a valid email address.");
-      return false;
-    }
-    if (password.length < 6) {
-      Alert.alert(
-        "Password too short",
-        "Your password must be at least 6 characters long."
-      );
       return false;
     }
     return true;
@@ -163,65 +177,96 @@ export default function Signup() {
     }
   }
 
+  // Start Google / Apple OAuth
+  async function signInWithProvider(provider: "google" | "apple") {
+    try {
+      setLoading(true);
+
+      // expo-router deep link back into the app – adjust path if needed
+      const redirectTo = Linking.createURL("/callback");
+
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider,
+        options: {
+          redirectTo,
+        },
+      });
+
+      if (error) throw error;
+
+      // After this, browser opens → user signs in → Supabase stores session.
+      // useAuth() should pick up the new session automatically.
+    } catch (e: any) {
+      console.warn("OAuth sign-in failed:", e);
+      Alert.alert(
+        "Sign in failed",
+        e?.message ?? "Could not sign in. Please try again."
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function complete() {
     Keyboard.dismiss();
 
-    if (!validateStep1() || !validateStep2()) {
+    if (!validateStep1() || !validateStep2()) return;
+
+    if (!session) {
+      Alert.alert(
+        "No account connected",
+        "Please connect Google or Apple again."
+      );
       return;
     }
 
     try {
       setLoading(true);
 
-      const trimmedEmail = email.trim();
-      const trimmedName = fullName.trim();
+      const u = session.user;
+      const meta = (u.user_metadata || {}) as any;
 
-      const { data: signUpData, error: signUpErr } = await supabase.auth.signUp(
-        {
-          email: trimmedEmail,
-          password,
-          options: { data: { name: trimmedName, gender } },
-        }
-      );
-      if (signUpErr) throw signUpErr;
+      const trimmedName =
+        fullName.trim() ||
+        meta.name ||
+        meta.full_name ||
+        meta.given_name ||
+        u.email ||
+        null;
 
-      const userId = signUpData.user?.id || signUpData.session?.user.id;
+      const trimmedEmail =
+        email.trim() || u.email || (meta.email as string | undefined) || null;
 
-      if (userId) {
-        const profilePayload: any = {
-          id: userId,
-          name: trimmedName,
-          email: trimmedEmail,
-          height: height ? Number(height) : null,
-          weight: weight ? Number(weight) : null,
-          date_of_birth: dob ? toISODateUTC(dob) : null,
-          steps_goal: Math.max(0, Number(stepsGoal) || 0),
-          weekly_workout_goal: workoutsPerWeek,
-          settings: {
-            gender,
-            level,
-            primaryGoal,
-            workoutsPerWeek,
-            unit_weight: "kg",
-            unit_height: "cm",
-          },
-        };
+      const userId = u.id;
 
-        const { error: upsertErr } = await supabase
-          .from("profiles")
-          .upsert(profilePayload);
-        if (upsertErr) throw upsertErr;
-      } else {
-        Alert.alert(
-          "Confirm your email",
-          "We’ve sent a confirmation link. After confirming, sign in and your profile will be finalized."
-        );
-      }
+      const profilePayload: any = {
+        id: userId,
+        name: trimmedName,
+        email: trimmedEmail,
+        height: height ? Number(height) : null,
+        weight: weight ? Number(weight) : null,
+        date_of_birth: dob ? toISODateUTC(dob) : null,
+        steps_goal: Math.max(0, Number(stepsGoal) || 0),
+        weekly_workout_goal: workoutsPerWeek,
+        settings: {
+          gender,
+          level,
+          primaryGoal,
+          workoutsPerWeek,
+          unit_weight: "kg",
+          unit_height: "cm",
+        },
+      };
 
-      if (signUpData.session) router.replace("/(tabs)");
-      else router.replace("/(auth)/login");
+      const { error: upsertErr } = await supabase
+        .from("profiles")
+        .upsert(profilePayload);
+
+      if (upsertErr) throw upsertErr;
+
+      router.replace("/(tabs)");
     } catch (e: any) {
-      console.warn("Sign up failed:", e);
+      console.warn("Profile completion failed:", e);
       const msg =
         e?.message ??
         "Something went wrong while creating your account. Please try again.";
@@ -246,7 +291,7 @@ export default function Signup() {
             title="Create Account"
             subtitle={
               step === 1
-                ? "Let’s get started with your fitness journey"
+                ? "Sign up with Google or Apple to get started"
                 : step === 2
                 ? "Tell us a bit about yourself"
                 : "Set up your goals so we can guide you"
@@ -258,6 +303,28 @@ export default function Signup() {
           <View style={styles.card}>
             {step === 1 && (
               <>
+                <PrimaryButton
+                  title="Continue with Google"
+                  onPress={() => signInWithProvider("google")}
+                  loading={loading}
+                />
+                <SecondaryButton
+                  title="Continue with Apple"
+                  onPress={() => signInWithProvider("apple")}
+                />
+
+                <View style={{ height: 16 }} />
+
+                <Field label="Connected account">
+                  <Text style={{ color: colors.text }}>
+                    {session
+                      ? session.user.email ??
+                        ((session.user.user_metadata || {}) as any).email ??
+                        "Connected"
+                      : "Not connected yet"}
+                  </Text>
+                </Field>
+
                 <Field label="Full Name">
                   <TextInput
                     style={styles.input}
@@ -267,29 +334,9 @@ export default function Signup() {
                     onChangeText={setFullName}
                     returnKeyType="next"
                   />
-                </Field>
-                <Field label="Email">
-                  <TextInput
-                    style={styles.input}
-                    placeholder="your.email@example.com"
-                    placeholderTextColor={colors.subtle}
-                    autoCapitalize="none"
-                    keyboardType="email-address"
-                    value={email}
-                    onChangeText={setEmail}
-                    returnKeyType="next"
-                  />
-                </Field>
-                <Field label="Password">
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Create a password (min 6 characters)"
-                    placeholderTextColor={colors.subtle}
-                    secureTextEntry
-                    value={password}
-                    onChangeText={setPassword}
-                    returnKeyType="done"
-                  />
+                  <Text style={styles.helper}>
+                    We’ll use this for your profile and greetings.
+                  </Text>
                 </Field>
 
                 <PrimaryButton title="Next  →" onPress={next} />

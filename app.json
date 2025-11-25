@@ -7,10 +7,11 @@
     "icon": "./assets/icon.png",
     "scheme": "musclemetric",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": false,
+    "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.musclemetric.app",
+      "deploymentTarget": "14.0",
       "infoPlist": {
         "NSMotionUsageDescription": "We use your motion data to show daily step counts.",
         "NSSupportsLiveActivities": true,
@@ -27,9 +28,7 @@
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "package": "com.musclemetric.app",
-      "permissions": [
-        "ACTIVITY_RECOGNITION"
-      ]
+      "permissions": ["ACTIVITY_RECOGNITION"]
     },
     "web": {
       "output": "static",
@@ -57,6 +56,8 @@
       "reactCompiler": false
     },
     "extra": {
+      "supabaseUrl": "https://cpzgnhchdpkxnebjsyyi.supabase.co",
+      "supabaseAnonKey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNwemduaGNoZHBreG5lYmpzeXlpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjAwMzU1NTYsImV4cCI6MjA3NTYxMTU1Nn0.hmDtqnRzofHJ2Zg2AMyF1jY1Et6MPocJehZAfJYHzK8",
       "eas": {
         "build": {
           "experimental": {

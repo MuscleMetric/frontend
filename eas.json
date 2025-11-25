@@ -3,6 +3,12 @@
     "version": ">= 3.0.0"
   },
   "build": {
+    "development": {
+      "developmentClient": true,
+      "ios": {
+        "distribution": "internal"
+      }
+    },
     "production": {
       "ios": {
         "distribution": "store"
@@ -12,7 +18,7 @@
   "submit": {
     "production": {
       "ios": {
-        "appleId": "cunninghamharry09@icloud.com"
+        "ascAppId": "6755702103"
       }
     }
   }

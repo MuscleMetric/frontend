@@ -3,127 +3,92 @@ import { useMemo, useState } from "react";
 import {
   View,
   Text,
-  TextInput,
   Pressable,
-  Alert,
   ActivityIndicator,
   StyleSheet,
+  Alert,
 } from "react-native";
+import * as Linking from "expo-linking";
 import { supabase } from "../../lib/supabase";
 import { router } from "expo-router";
-import * as Linking from "expo-linking";
 import { useAppTheme } from "../../lib/useAppTheme";
 
 export default function Login() {
   const { colors } = useAppTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [loadingProvider, setLoadingProvider] = useState<"google" | "apple" | null>(null);
 
-  async function ensureProfile() {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) return;
-    await supabase.from("profiles").upsert({
-      id: user.id,
-      name: user.user_metadata?.name ?? null,
-      email: user.email ?? null,
-    });
-  }
-
-  async function handleLogin() {
+  async function signInWithProvider(provider: "google" | "apple") {
     try {
-      if (!email || !password) {
-        Alert.alert("Missing info", "Please enter email and password.");
-        return;
-      }
-      setLoading(true);
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
+      setLoadingProvider(provider);
+
+      // This works in Expo Go, dev builds, and production:
+      // exp://.../--/auth/callback in Expo Go
+      // musclemetric://auth/callback in a dev/prod build
+      const redirectTo = Linking.createURL("/callback");
+
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider,
+        options: {
+          redirectTo,
+        },
       });
+
       if (error) throw error;
 
-      await ensureProfile();
-      router.replace("/(tabs)");
+      // After this, the browser opens → user signs in →
+      // Supabase stores the session and your /auth/callback route is hit.
+      // From there you can route to (tabs) or signup completion.
     } catch (err: any) {
-      Alert.alert("Login failed", err?.message ?? "Something went wrong");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleForgotPassword() {
-    if (!email) {
+      console.warn("OAuth login failed", err);
       Alert.alert(
-        "Enter your email",
-        "Type your email then tap 'Forgot password?'"
+        "Login failed",
+        err?.message ?? "Something went wrong while signing you in."
       );
-      return;
+      setLoadingProvider(null);
     }
-    const redirectTo = Linking.createURL("/(auth)/reset");
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo,
-    });
-    if (error) return Alert.alert("Error", error.message);
-    Alert.alert(
-      "Check your email",
-      "We sent you a link to reset your password."
-    );
   }
-
-  const canSubmit = email.length > 0 && password.length > 0 && !loading;
 
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Log in</Text>
-
-      <TextInput
-        placeholder="Email"
-        placeholderTextColor={colors.subtle}
-        autoCapitalize="none"
-        autoComplete="email"
-        keyboardType="email-address"
-        value={email}
-        onChangeText={setEmail}
-        style={styles.input}
-      />
-
-      <TextInput
-        placeholder="Password"
-        placeholderTextColor={colors.subtle}
-        secureTextEntry
-        autoComplete="password"
-        value={password}
-        onChangeText={setPassword}
-        style={styles.input}
-      />
+      <Text style={styles.subtitle}>
+        Continue with Google or Apple to access your MuscleMetric account.
+      </Text>
 
       <Pressable
-        onPress={handleLogin}
-        disabled={!canSubmit}
-        style={[styles.button, !canSubmit && styles.buttonDisabled]}
+        onPress={() => signInWithProvider("google")}
+        style={styles.button}
+        disabled={!!loadingProvider}
       >
-        {loading ? (
+        {loadingProvider === "google" ? (
           <ActivityIndicator />
         ) : (
-          <Text style={styles.buttonText}>Log in</Text>
+          <Text style={styles.buttonText}>Continue with Google</Text>
         )}
       </Pressable>
 
-      <Pressable onPress={handleForgotPassword} style={styles.linkRow}>
-        <Text style={styles.link}>Forgot password?</Text>
+      <Pressable
+        onPress={() => signInWithProvider("apple")}
+        style={[styles.button, styles.buttonSecondary]}
+        disabled={!!loadingProvider}
+      >
+        {loadingProvider === "apple" ? (
+          <ActivityIndicator />
+        ) : (
+          <Text style={styles.buttonTextSecondary}>Continue with Apple</Text>
+        )}
       </Pressable>
+
+      <View style={{ height: 24 }} />
 
       <Pressable
         onPress={() => router.push("/(auth)/signup")}
         style={styles.linkRow}
       >
         <Text style={styles.text}>
-          Don’t have an account? <Text style={styles.link}>Sign up</Text>
+          New to MuscleMetric? <Text style={styles.link}>Create account</Text>
         </Text>
       </Pressable>
     </View>
@@ -142,19 +107,15 @@ const makeStyles = (colors: any) =>
     title: {
       fontSize: 28,
       fontWeight: "800",
-      marginBottom: 16,
+      marginBottom: 8,
       color: colors.text,
       textAlign: "center",
     },
-    input: {
-      borderWidth: 1,
-      borderColor: colors.border,
-      backgroundColor: colors.card,
-      color: colors.text,
-      marginBottom: 12,
-      padding: 12,
-      borderRadius: 10,
-      fontSize: 16,
+    subtitle: {
+      fontSize: 14,
+      color: colors.subtle,
+      textAlign: "center",
+      marginBottom: 24,
     },
     button: {
       backgroundColor: colors.primary,
@@ -162,16 +123,24 @@ const makeStyles = (colors: any) =>
       borderRadius: 12,
       alignItems: "center",
       justifyContent: "center",
-    },
-    buttonDisabled: {
-      opacity: 0.6,
+      marginBottom: 12,
     },
     buttonText: {
       color: colors.onPrimary ?? "#fff",
       fontWeight: "700",
       fontSize: 16,
     },
-    linkRow: { alignSelf: "flex-start", marginTop: 12 },
+    buttonSecondary: {
+      backgroundColor: colors.surface,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+    },
+    buttonTextSecondary: {
+      color: colors.text,
+      fontWeight: "700",
+      fontSize: 16,
+    },
+    linkRow: { alignSelf: "center", marginTop: 8 },
     link: { color: colors.primaryText, fontWeight: "700" },
     text: { color: colors.text },
   });
