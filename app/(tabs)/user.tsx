@@ -766,7 +766,7 @@ export default function UserScreen() {
 
             <Pressable style={styles.logout} onPress={onLogout}>
               <Text style={{ color: "#ef4444", fontWeight: "700" }}>
-                Logout
+                Logout 
               </Text>
             </Pressable>
           </View>
