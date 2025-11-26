@@ -17,35 +17,39 @@ export default function Login() {
   const { colors } = useAppTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
-  const [loadingProvider, setLoadingProvider] = useState<"google" | "apple" | null>(null);
+  const [loadingProvider, setLoadingProvider] = useState<
+    "google" | "apple" | null
+  >(null);
 
   async function signInWithProvider(provider: "google" | "apple") {
     try {
       setLoadingProvider(provider);
 
-      // This works in Expo Go, dev builds, and production:
-      // exp://.../--/auth/callback in Expo Go
-      // musclemetric://auth/callback in a dev/prod build
       const redirectTo = Linking.createURL("/callback");
+      console.log("🔐 signInWithProvider called", { provider, redirectTo });
 
-      const { error } = await supabase.auth.signInWithOAuth({
+      const { data, error } = await supabase.auth.signInWithOAuth({
         provider,
         options: {
           redirectTo,
+          skipBrowserRedirect: true,
         },
       });
 
-      if (error) throw error;
+      console.log("🔐 signInWithOAuth result", { error, data });
 
-      // After this, the browser opens → user signs in →
-      // Supabase stores the session and your /auth/callback route is hit.
-      // From there you can route to (tabs) or signup completion.
+      if (error) throw error;
+      if (!data?.url) throw new Error("No OAuth URL returned from Supabase");
+
+      console.log("🌐 Opening OAuth URL in browser", data.url);
+      await Linking.openURL(data.url);
     } catch (err: any) {
       console.warn("OAuth login failed", err);
       Alert.alert(
         "Login failed",
         err?.message ?? "Something went wrong while signing you in."
       );
+    } finally {
       setLoadingProvider(null);
     }
   }
@@ -95,7 +99,6 @@ export default function Login() {
   );
 }
 
-/* ---- themed styles ---- */
 const makeStyles = (colors: any) =>
   StyleSheet.create({
     container: {

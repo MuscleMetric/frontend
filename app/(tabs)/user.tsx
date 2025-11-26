@@ -764,13 +764,6 @@ export default function UserScreen() {
           <View style={{ gap: 12, marginTop: 16 }}>
             <Text style={styles.groupTitle}>Settings</Text>
 
-            <SettingRow
-              icon="🔒"
-              title="Change Password"
-              onPress={() => router.push("/(auth)/change-password")}
-              chevron
-            />
-
             <Pressable style={styles.logout} onPress={onLogout}>
               <Text style={{ color: "#ef4444", fontWeight: "700" }}>
                 Logout

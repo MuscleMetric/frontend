@@ -7,11 +7,17 @@
       "developmentClient": true,
       "ios": {
         "distribution": "internal"
+      },
+      "env": {
+        "EXPO_NO_CAPABILITY_SYNC": "1"
       }
     },
     "production": {
       "ios": {
         "distribution": "store"
+      },
+      "env": {
+        "EXPO_NO_CAPABILITY_SYNC": "1"
       }
     }
   },

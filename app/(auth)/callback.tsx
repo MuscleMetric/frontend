@@ -1,33 +1,42 @@
-// app/callback.tsx (not inside (auth))
+// app/(auth)/callback.tsx
 import { useEffect } from "react";
 import { ActivityIndicator, View, Text } from "react-native";
 import { router } from "expo-router";
-import { supabase } from "../../lib/supabase"; 
+import { supabase } from "../../lib/supabase";
 
 export default function AuthCallback() {
   useEffect(() => {
     async function handleRedirect() {
-      await new Promise((r) => setTimeout(r, 400));
+      // tiny delay so Supabase can persist the session
+      await new Promise((r) => setTimeout(r, 200));
 
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      const [{ data: sessionData }, { data: userData }] = await Promise.all([
+        supabase.auth.getSession(),
+        supabase.auth.getUser(),
+      ]);
 
-      if (!user) {
+      const session = sessionData.session;
+      const user = userData.user;
+
+      if (!session || !user) {
         router.replace("/(auth)/login");
         return;
       }
 
-      const { data: profile } = await supabase
+      const { data: profile, error } = await supabase
         .from("profiles")
         .select("*")
         .eq("id", user.id)
         .maybeSingle();
 
+      if (error) {
+        console.warn("profiles lookup error:", error);
+      }
+
       if (profile) {
         router.replace("/(tabs)");
       } else {
-        router.replace("/(auth)/signup");
+        router.replace("/(auth)/onboarding");
       }
     }
 
