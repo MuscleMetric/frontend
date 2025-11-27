@@ -501,28 +501,32 @@ export default function AutoReviewWorkoutScreen() {
                 drag,
                 isActive,
               }: RenderItemParams<WorkoutExercise>) => (
-                <Pressable
-                  onLongPress={drag}
-                  disabled={isActive}
+                <View
                   style={[
                     s.exerciseRow,
                     isActive && { backgroundColor: colors.surface },
                   ]}
                 >
-                  <View style={{ flex: 1 }}>
+                  {/* BIG DRAG AREA: name + notes + handle */}
+                  <Pressable
+                    onLongPress={drag}
+                    disabled={isActive}
+                    style={{ flex: 1 }}
+                  >
                     <Text style={s.exerciseName}>{item.name}</Text>
                     {!!item.note && (
                       <Text style={s.exerciseNote}>{item.note}</Text>
                     )}
-                  </View>
+                  </Pressable>
+
+                  {/* SEPARATE REMOVE BUTTON – not part of drag area */}
                   <Pressable
                     onPress={() => handleRemoveExercise(item.key)}
                     hitSlop={10}
                   >
                     <Text style={s.remove}>Remove</Text>
                   </Pressable>
-                  <Text style={s.dragHandle}>≡</Text>
-                </Pressable>
+                </View>
               )}
             />
           )}

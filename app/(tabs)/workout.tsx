@@ -509,24 +509,29 @@ export default function WorkoutScreen() {
     );
   }
 
-  // Empty state
-  if (!plan && looseWorkouts.length === 0) {
+  // Empty state: no plan and no workouts yet
+  if (!plan && !loadingStandalone && standaloneWorkouts.length === 0) {
     return (
-      <ScrollView
-        style={{ flex: 1, backgroundColor: colors.background }}
-        contentContainerStyle={{ padding: 16, gap: 16 }}
-      >
-        <CalloutCard
-          title="Create your first plan"
-          subtitle="Build a routine with targeted workouts, then track your progress."
-          primary="Create Plan"
-          onPrimary={() => router.push("/features/plans/create/planInfo")}
-          secondary="Or add a single workout"
-          onSecondary={() =>
-            Alert.alert("Create Workout", "Workout creator coming soon.")
-          }
+      <>
+        <ScrollView
+          style={{ flex: 1, backgroundColor: colors.background }}
+          contentContainerStyle={{ padding: 16, gap: 16 }}
+        >
+          <CalloutCard
+            title="Start with a plan or a workout"
+            subtitle="Build a routine you can reuse, or just log a single workout to begin."
+            primary="Create a plan"
+            onPrimary={() => router.push("/features/plans/create/planInfo")}
+            secondary="Or add a single workout"
+            onSecondary={() => setShowCreateOptions(true)}
+          />
+        </ScrollView>
+
+        <WorkoutCreateOptionsModal
+          visible={showCreateOptions}
+          onClose={() => setShowCreateOptions(false)}
         />
-      </ScrollView>
+      </>
     );
   }
 
@@ -643,6 +648,20 @@ export default function WorkoutScreen() {
               </View>
             )}
           </View>
+        </View>
+      )}
+
+      {/* No plan yet, but user has standalone workouts */}
+      {!plan && standaloneWorkouts.length > 0 && (
+        <View style={styles.section}>
+          <CalloutCard
+            title="Turn these workouts into a plan"
+            subtitle="Plans help you set a weekly target, track streaks, and stay consistent."
+            primary="Create a plan"
+            onPrimary={() => router.push("/features/plans/create/planInfo")}
+            secondary="Keep using single workouts"
+            onSecondary={() => setShowCreateOptions(true)}
+          />
         </View>
       )}
 
