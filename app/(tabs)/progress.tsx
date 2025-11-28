@@ -447,7 +447,6 @@ export default function ProgressScreen() {
         if (e2) throw e2;
 
         // Condense per workout -> exercises list
-        // Condense per workout -> exercises list
         const grouped: Record<
           string,
           Record<
@@ -806,7 +805,7 @@ export default function ProgressScreen() {
       {/* ===== Selected Exercise Stats + Charts ===== */}
       <View style={s.card}>
         {loadingSelected ? (
-          <ActivityIndicator />
+          <Text style={s.muted}>Complete a workout to see exercise stats here.</Text>
         ) : !selectedExerciseStats ? (
           <Text style={s.muted}>Select an exercise to see details.</Text>
         ) : (
@@ -1721,7 +1720,7 @@ function ExerciseStatCard({
             <View style={[s.kpi]}>
               <Text style={s.kpiLabel}>Current Weight</Text>
               <Text style={s.kpiValue}>
-                stat.currentWeight != null ? `${stat.currentWeight}kg` : "—"
+                {stat.currentWeight != null ? `${stat.currentWeight}kg` : "—"}
               </Text>
             </View>
             <View style={[s.kpi]}>
