@@ -22,6 +22,7 @@ export type WorkoutExercise = {
 
 export type WorkoutDraft = {
   title: string;
+  notes: string;
   exercises: WorkoutExercise[];
 };
 
@@ -76,6 +77,7 @@ const creator: StateCreator<PlanDraftState> = (set) => ({
       workoutsPerWeek: n,
       workouts: Array.from({ length: n }, (_, i) => ({
         title: `Workout ${i + 1}`,
+        notes: "Workout Notes",
         exercises: [],
       })),
     })),

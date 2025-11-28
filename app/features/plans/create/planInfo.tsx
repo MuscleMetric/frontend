@@ -17,6 +17,7 @@ import { supabase } from "../../../../lib/supabase";
 import { useExercisesCache, CachedExercise } from "./exercisesStore";
 import { usePlanDraft } from "./store";
 import { useAppTheme } from "../../../../lib/useAppTheme";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 async function fetchAllExercises(): Promise<CachedExercise[]> {
   const pageSize = 500;
@@ -78,100 +79,96 @@ export default function PlanInfo() {
   }
 
   return (
-    <View style={s.page}>
-      <Text style={s.h2}>Plan Info</Text>
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
+      <View style={s.page}>
+        <Text style={s.h2}>Plan Info</Text>
 
-      {loadingExercises && (
-        <View style={s.loadingRow}>
-          <ActivityIndicator />
-          <Text style={s.muted}>Loading exercises…</Text>
+        {loadingExercises && (
+          <View style={s.loadingRow}>
+            <ActivityIndicator />
+            <Text style={s.muted}>Loading exercises…</Text>
+          </View>
+        )}
+
+        <Text style={s.label}>Title</Text>
+        <TextInput
+          style={s.input}
+          value={title}
+          onChangeText={(t) => setMeta({ title: t })}
+          placeholder="Push/Pull/Legs"
+          placeholderTextColor={colors.subtle}
+        />
+
+        <Text style={s.label}>End date</Text>
+        <Pressable
+          style={[s.input, s.inputPressable]}
+          onPress={() => setShow(true)}
+        >
+          <Text style={{ color: endDate ? colors.text : colors.subtle }}>
+            {endDate ? new Date(endDate).toDateString() : "Select end date"}
+          </Text>
+        </Pressable>
+
+        <Text style={s.label}>Workouts per week</Text>
+        <View style={{ flexDirection: "row", gap: 8 }}>
+          {[1, 2, 3, 4, 5, 6].map((n) => {
+            const active = workoutsPerWeek === n;
+            const textColor = active ? "#fff" : colors.text;
+            return (
+              <Pressable
+                key={n}
+                onPress={() => setMeta({ workoutsPerWeek: n })}
+                style={[s.chip, active && s.chipActive]}
+              >
+                <Text style={{ fontWeight: "700", color: textColor }}>{n}</Text>
+              </Pressable>
+            );
+          })}
         </View>
-      )}
 
-      <Text style={s.label}>Title</Text>
-      <TextInput
-        style={s.input}
-        value={title}
-        onChangeText={(t) => setMeta({ title: t })}
-        placeholder="Push/Pull/Legs"
-        placeholderTextColor={colors.subtle}
-      />
+        <Pressable style={[s.btn, s.primary]} onPress={proceed}>
+          <Text style={s.btnPrimaryText}>Next →</Text>
+        </Pressable>
 
-      <Text style={s.label}>End date</Text>
-      <Pressable
-        style={[s.input, s.inputPressable]}
-        onPress={() => setShow(true)}
-      >
-        <Text style={{ color: endDate ? colors.text : colors.subtle }}>
-          {endDate ? new Date(endDate).toDateString() : "Select end date"}
-        </Text>
-      </Pressable>
-
-      <Text style={s.label}>Workouts per week</Text>
-      <View style={{ flexDirection: "row", gap: 8 }}>
-        {[1, 2, 3, 4, 5, 6].map((n) => {
-          const active = workoutsPerWeek === n;
-          return (
-            <Pressable
-              key={n}
-              onPress={() => setMeta({ workoutsPerWeek: n })}
-              style={[s.chip, active && s.chipActive]}
-            >
-              <Text
-                style={{
-                  fontWeight: "700",
-                  color: active ? colors.primary ?? "#fff" : colors.text,
-                }}
-              >
-                {n}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </View>
-
-      <Pressable style={[s.btn, s.primary]} onPress={proceed}>
-        <Text style={s.btnPrimaryText}>Next →</Text>
-      </Pressable>
-
-      {/* end date modal */}
-      <Modal
-        visible={show}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShow(false)}
-      >
-        <View style={s.modalScrim}>
-          <View style={s.modalCard}>
-            <Text style={s.h3}>Select End Date</Text>
-            <DateTimePicker
-              value={tempDate}
-              mode="date"
-              display={Platform.OS === "ios" ? "spinner" : "default"}
-              minimumDate={new Date()}
-              onChange={(_, d) => d && setTempDate(d)}
-            />
-            <View style={{ flexDirection: "row", gap: 8, marginTop: 12 }}>
-              <Pressable
-                style={[s.btn, { flex: 1 }]}
-                onPress={() => setShow(false)}
-              >
-                <Text style={s.btnText}>Cancel</Text>
-              </Pressable>
-              <Pressable
-                style={[s.btn, s.primary, { flex: 1 }]}
-                onPress={() => {
-                  setMeta({ endDate: tempDate.toISOString().slice(0, 10) });
-                  setShow(false);
-                }}
-              >
-                <Text style={s.btnPrimaryText}>Done</Text>
-              </Pressable>
+        {/* end date modal */}
+        <Modal
+          visible={show}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setShow(false)}
+        >
+          <View style={s.modalScrim}>
+            <View style={s.modalCard}>
+              <Text style={s.h3}>Select End Date</Text>
+              <DateTimePicker
+                value={tempDate}
+                mode="date"
+                display={Platform.OS === "ios" ? "spinner" : "default"}
+                minimumDate={new Date()}
+                onChange={(_, d) => d && setTempDate(d)}
+              />
+              <View style={{ flexDirection: "row", gap: 8, marginTop: 12 }}>
+                <Pressable
+                  style={[s.btn, { flex: 1 }]}
+                  onPress={() => setShow(false)}
+                >
+                  <Text style={s.btnText}>Cancel</Text>
+                </Pressable>
+                <Pressable
+                  style={[s.btn, s.primary, { flex: 1 }]}
+                  onPress={() => {
+                    setMeta({ endDate: tempDate.toISOString().slice(0, 10) });
+                    setShow(false);
+                  }}
+                >
+                  <Text style={s.btnPrimaryText}>Done</Text>
+                </Pressable>
+              </View>
             </View>
           </View>
-        </View>
-      </Modal>
-    </View>
+        </Modal>
+      </View>
+    </SafeAreaView>
   );
 }
 
@@ -216,7 +213,7 @@ const makeStyles = (colors: any) =>
       paddingVertical: 8,
       borderRadius: 999,
       backgroundColor: colors.surface,
-      borderWidth: StyleSheet.hairlineWidth,
+      borderWidth: 4,
       borderColor: colors.border,
     },
     chipActive: {

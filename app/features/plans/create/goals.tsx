@@ -12,6 +12,7 @@ import {
 import { router } from "expo-router";
 import { usePlanDraft, type ExerciseRow, type GoalDraft } from "./store";
 import { useAppTheme } from "../../../../lib/useAppTheme";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 /** Helpers for mode <-> unit */
 const MODE_UNIT: Record<GoalDraft["mode"], string> = {
@@ -46,8 +47,9 @@ export default function Goals() {
           map.set(id, { exercise: ex.exercise, workoutTitles: [w.title] });
         } else {
           const entry = map.get(id)!;
-          if (!entry.workoutTitles.includes(w.title))
+          if (!entry.workoutTitles.includes(w.title)) {
             entry.workoutTitles.push(w.title);
+          }
         }
       }
     }
@@ -65,16 +67,29 @@ export default function Goals() {
       : ["exercise_weight", "exercise_reps"];
   }
 
+  // --- select / deselect exercises (min 1, max 3) ---
   function toggleExercise(ex: ExerciseRow) {
     const exists = findGoal(ex.id);
+
+    // Deselecting
     if (exists) {
+      if (goals.length <= 1) {
+        Alert.alert(
+          "At least one goal",
+          "You need at least one goal exercise in your plan."
+        );
+        return;
+      }
       setGoals(goals.filter((g) => g.exercise.id !== ex.id));
       return;
     }
+
+    // Adding (respect max 3)
     if (goals.length >= 3) {
       Alert.alert("Limit reached", "You can select up to 3 goals.");
       return;
     }
+
     const firstMode = modeOptionsForExercise(ex)[0];
     const newGoal: GoalDraft = {
       exercise: ex,
@@ -111,145 +126,234 @@ export default function Goals() {
     const weeks = diffMs / (1000 * 60 * 60 * 24 * 7);
     return Math.max(1, Math.round(weeks));
   }
-  function increaseRange(start: number, weeks: number, mode: GoalDraft["mode"]) {
-    const min = start * (1 + 0.01 * weeks);
-    const max = start * (1 + 0.05 * weeks);
-    const suggested = (min + max) / 2;
-    return { min: roundForMode(mode, min), max: roundForMode(mode, max), suggested: roundForMode(mode, suggested) };
-  }
-  function decreaseRange(start: number, weeks: number, mode: GoalDraft["mode"]) {
-    const max = Math.max(0, start * (1 - 0.01 * weeks));
-    const min = Math.max(0, start * (1 - 0.05 * weeks));
-    const suggested = (min + max) / 2;
-    return { min: roundForMode(mode, min), max: roundForMode(mode, max), suggested: roundForMode(mode, suggested) };
-  }
-  function calcRangeForMode(mode: GoalDraft["mode"], start: number, weeks: number) {
-    return mode === "time" ? decreaseRange(start, weeks, mode) : increaseRange(start, weeks, mode);
-  }
+
   function roundForMode(mode: GoalDraft["mode"], n: number) {
     if (!isFinite(n)) return 0;
     return mode === "time" ? Number(n.toFixed(1)) : Math.round(n);
   }
+
+  function increaseRange(
+    start: number,
+    weeks: number,
+    mode: GoalDraft["mode"]
+  ) {
+    const min = start * (1 + 0.01 * weeks);
+    const max = start * (1 + 0.05 * weeks);
+    const suggested = (min + max) / 2;
+    return {
+      min: roundForMode(mode, min),
+      max: roundForMode(mode, max),
+      suggested: roundForMode(mode, suggested),
+    };
+  }
+
+  function decreaseRange(
+    start: number,
+    weeks: number,
+    mode: GoalDraft["mode"]
+  ) {
+    const max = Math.max(0, start * (1 - 0.01 * weeks));
+    const min = Math.max(0, start * (1 - 0.05 * weeks));
+    const suggested = (min + max) / 2;
+    return {
+      min: roundForMode(mode, min),
+      max: roundForMode(mode, max),
+      suggested: roundForMode(mode, suggested),
+    };
+  }
+
+  function calcRangeForMode(
+    mode: GoalDraft["mode"],
+    start: number,
+    weeks: number
+  ) {
+    return mode === "time"
+      ? decreaseRange(start, weeks, mode)
+      : increaseRange(start, weeks, mode);
+  }
+
   function fmtForMode(mode: GoalDraft["mode"], n: number) {
     return mode === "time" ? n.toFixed(1) : String(Math.round(n));
   }
 
+  // --- validation for Next button ---
+  const hasAtLeastOneGoal = goals.length >= 1;
+  const allGoalsFilled = goals.every(
+    (g) =>
+      g.start != null && g.start !== 0 && g.target != null && g.target !== 0
+  );
+  const canContinue = hasAtLeastOneGoal && allGoalsFilled;
+
   return (
-    <ScrollView
-      style={{ flex: 1, backgroundColor: colors.background }}
-      contentContainerStyle={{ padding: 16 }}
-    >
-      <Text style={s.h2}>Set Your Plan Goals</Text>
-      <Text style={s.muted}>Select up to 3 exercises to track.</Text>
-
-      <View style={{ height: 12 }} />
-
-      {deduped.map(({ exercise, workoutTitles }) => {
-        const selected = !!findGoal(exercise.id);
-        const g = findGoal(exercise.id);
-        const contextText = workoutTitles.length > 0 ? workoutTitles.join(", ") : "—";
-        const modes = modeOptionsForExercise(exercise);
-
-        return (
-          <View key={exercise.id} style={[s.card, selected && { borderColor: colors.primary }]}>
-            <Pressable
-              onPress={() => toggleExercise(exercise)}
-              style={{ flexDirection: "row", justifyContent: "space-between" }}
-            >
-              <View style={{ flex: 1, paddingRight: 10 }}>
-                <Text style={s.h4}>{exercise.name}</Text>
-                <Text style={s.muted}>{contextText}</Text>
-              </View>
-              <Text style={[s.badge, selected ? s.badgeOn : s.badgeOff]}>
-                {selected ? "Selected" : "Select"}
-              </Text>
-            </Pressable>
-
-            {selected && g && (
-              <View style={{ marginTop: 10, gap: 10 }}>
-                {/* Mode selector */}
-                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-                  {modes.map((m) => {
-                    const active = g.mode === m;
-                    return (
-                      <Pressable
-                        key={m}
-                        onPress={() => onChangeMode(exercise, g, m)}
-                        style={[s.chip, active && s.chipActive]}
-                      >
-                        <Text style={{ color: active ? (colors.primary ?? "#fff") : colors.text, fontWeight: "700" }}>
-                          {labelForMode(m)}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
-                </View>
-
-                {/* Values */}
-                <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
-                  <View style={{ flex: 1 }}>
-                    <TextInput
-                      style={s.input}
-                      placeholder="Start"
-                      placeholderTextColor={colors.subtle}
-                      keyboardType="numeric"
-                      value={g.start != null ? String(g.start) : ""}
-                      onChangeText={(v) => {
-                        const raw = v === "" ? null : Number(v);
-                        const val = raw == null ? null : roundForMode(g.mode, raw);
-                        if (val != null && planWeeks > 0) {
-                          const { suggested } = calcRangeForMode(g.mode, val, planWeeks);
-                          updateGoal(exercise.id, { start: val, target: suggested, unit: MODE_UNIT[g.mode] });
-                        } else {
-                          updateGoal(exercise.id, { start: val, unit: MODE_UNIT[g.mode] });
-                        }
-                      }}
-                    />
-                  </View>
-                  <Text style={s.unitPill}>{MODE_UNIT[g.mode]}</Text>
-                  <View style={{ flex: 1 }}>
-                    <TextInput
-                      style={s.input}
-                      placeholder="Target"
-                      placeholderTextColor={colors.subtle}
-                      keyboardType="numeric"
-                      value={g.target != null ? String(g.target) : ""}
-                      onChangeText={(v) => {
-                        const raw = v === "" ? 0 : Number(v);
-                        const val = roundForMode(g.mode, raw);
-                        updateGoal(exercise.id, { target: val, unit: MODE_UNIT[g.mode] });
-                      }}
-                    />
-                  </View>
-                </View>
-
-                {/* Recommended range */}
-                {g.start != null && planWeeks > 0 && (
-                  <Text style={{ color: colors.primaryText, marginTop: 4 }}>
-                    {(() => {
-                      const { min, max } = calcRangeForMode(g.mode, g.start!, planWeeks);
-                      return `Recommended target range: ${fmtForMode(g.mode, min)}–${fmtForMode(
-                        g.mode,
-                        max
-                      )} ${MODE_UNIT[g.mode]}`;
-                    })()}
-                  </Text>
-                )}
-              </View>
-            )}
-          </View>
-        );
-      })}
-
-      <View style={{ height: 8 }} />
-
-      <Pressable
-        style={[s.btn, s.primary]}
-        onPress={() => router.push("/features/plans/create/review")}
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
+      <ScrollView
+        style={{ flex: 1, backgroundColor: colors.background }}
+        contentContainerStyle={{ padding: 16, paddingBottom: 32 }}
       >
-        <Text style={s.btnPrimaryText}>Next → Review Plan</Text>
-      </Pressable>
-    </ScrollView>
+        <Text style={s.h2}>Set Your Plan Goals</Text>
+        <Text style={s.muted}>Select 1–3 exercises to track.</Text>
+
+        <View style={{ height: 12 }} />
+
+        {deduped.map(({ exercise, workoutTitles }) => {
+          const selected = !!findGoal(exercise.id);
+          const g = findGoal(exercise.id);
+          const contextText =
+            workoutTitles.length > 0 ? workoutTitles.join(", ") : "—";
+          const modes = modeOptionsForExercise(exercise);
+
+          return (
+            <View
+              key={exercise.id}
+              style={[s.card, selected && { borderColor: colors.primary }]}
+            >
+              <Pressable
+                onPress={() => toggleExercise(exercise)}
+                style={{
+                  flexDirection: "row",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                }}
+              >
+                <View style={{ flex: 1, paddingRight: 10 }}>
+                  <Text style={s.h4}>{exercise.name}</Text>
+                  <Text style={s.muted}>{contextText}</Text>
+                </View>
+                <Text style={[s.badge, selected ? s.badgeOn : s.badgeOff]}>
+                  {selected ? "Selected" : "Select"}
+                </Text>
+              </Pressable>
+
+              {selected && g && (
+                <View style={{ marginTop: 10, gap: 10 }}>
+                  {/* Mode selector */}
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      flexWrap: "wrap",
+                      gap: 8,
+                    }}
+                  >
+                    {modes.map((m) => {
+                      const active = g.mode === m;
+                      return (
+                        <Pressable
+                          key={m}
+                          onPress={() => onChangeMode(exercise, g, m)}
+                          style={[s.chip, active && s.chipActive]}
+                        >
+                          <Text
+                            style={{
+                              color: active ? "#fff" : colors.text,
+                              fontWeight: "700",
+                            }}
+                          >
+                            {labelForMode(m)}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+
+                  {/* Values */}
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      gap: 8,
+                      alignItems: "center",
+                    }}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <TextInput
+                        style={s.input}
+                        placeholder="Start"
+                        placeholderTextColor={colors.subtle}
+                        keyboardType="numeric"
+                        value={g.start != null ? String(g.start) : ""}
+                        onChangeText={(v) => {
+                          const raw = v === "" ? null : Number(v);
+                          const val =
+                            raw == null ? null : roundForMode(g.mode, raw);
+                          if (val != null && planWeeks > 0) {
+                            const { suggested } = calcRangeForMode(
+                              g.mode,
+                              val,
+                              planWeeks
+                            );
+                            updateGoal(exercise.id, {
+                              start: val,
+                              target: suggested,
+                              unit: MODE_UNIT[g.mode],
+                            });
+                          } else {
+                            updateGoal(exercise.id, {
+                              start: val,
+                              unit: MODE_UNIT[g.mode],
+                            });
+                          }
+                        }}
+                      />
+                    </View>
+
+                    <Text style={s.unitPill}>{MODE_UNIT[g.mode]}</Text>
+
+                    <View style={{ flex: 1 }}>
+                      <TextInput
+                        style={s.input}
+                        placeholder="Target"
+                        placeholderTextColor={colors.subtle}
+                        keyboardType="numeric"
+                        value={g.target != null ? String(g.target) : ""}
+                        onChangeText={(v) => {
+                          const raw = v === "" ? 0 : Number(v);
+                          const val = roundForMode(g.mode, raw);
+                          updateGoal(exercise.id, {
+                            target: val,
+                            unit: MODE_UNIT[g.mode],
+                          });
+                        }}
+                      />
+                    </View>
+                  </View>
+
+                  {/* Recommended range */}
+                  {g.start != null && planWeeks > 0 && (
+                    <Text
+                      style={{
+                        color: colors.primaryText ?? colors.primary,
+                        marginTop: 4,
+                      }}
+                    >
+                      {(() => {
+                        const { min, max } = calcRangeForMode(
+                          g.mode,
+                          g.start!,
+                          planWeeks
+                        );
+                        return `Recommended target range: ${fmtForMode(
+                          g.mode,
+                          min
+                        )}–${fmtForMode(g.mode, max)} ${MODE_UNIT[g.mode]}`;
+                      })()}
+                    </Text>
+                  )}
+                </View>
+              )}
+            </View>
+          );
+        })}
+
+        <View style={{ height: 8 }} />
+
+        <Pressable
+          style={[s.btn, s.primary, !canContinue && { opacity: 0.5 }]}
+          disabled={!canContinue}
+          onPress={() => router.push("/features/plans/create/review")}
+        >
+          <Text style={s.btnPrimaryText}>Next → Review Plan</Text>
+        </Pressable>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 

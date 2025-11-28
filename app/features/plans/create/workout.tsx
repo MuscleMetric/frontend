@@ -10,111 +10,195 @@ import {
   Alert,
   ScrollView,
   ActivityIndicator,
+  Modal,
 } from "react-native";
-import { usePlanDraft, ExerciseRow } from "./store";
-import { useExercisesCache } from "./exercisesStore";
+import { usePlanDraft, type ExerciseRow, type WorkoutExercise } from "./store";
 import { nanoid } from "nanoid/non-secure";
 import { useAppTheme } from "../../../../lib/useAppTheme";
-import { Modal } from "react-native";
-
 import DraggableFlatList, {
   RenderItemParams,
 } from "react-native-draggable-flatlist";
+import { supabase } from "../../../../lib/supabase";
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 
-const TYPE_CHIPS: Array<"all" | "strength" | "cardio" | "mobility"> = [
-  "all",
-  "strength",
-  "cardio",
-  "mobility",
+/* ---------- local row types ---------- */
+
+type PlanExerciseRow = WorkoutExercise;
+
+type SupersetRow = {
+  key: string;
+  items: PlanExerciseRow[]; // either 1 (normal) or >1 (superset group)
+};
+
+/* ---------- picker types ---------- */
+
+type ExerciseOption = {
+  id: string;
+  name: string;
+  type: string | null;
+  equipment: string | null;
+};
+
+/* ---------- muscle + equipment filters (same as index.tsx) ---------- */
+
+const MUSCLE_GROUPS = [
+  {
+    id: "chest",
+    label: "Chest",
+    muscleIds: [1], // Chest
+  },
+  {
+    id: "back",
+    label: "Back",
+    muscleIds: [2, 88, 89, 90, 99, 98], // Back, Lats, Upper Back, Lower Back, Rear Delts, Traps
+  },
+  {
+    id: "shoulders",
+    label: "Shoulders",
+    muscleIds: [8],
+  },
+  {
+    id: "biceps",
+    label: "Biceps",
+    muscleIds: [6, 91], // Biceps, Forearms
+  },
+  {
+    id: "triceps",
+    label: "Triceps",
+    muscleIds: [7],
+  },
+  {
+    id: "core",
+    label: "Abs / Core",
+    muscleIds: [96, 97, 10, 100, 101], // Abs, Obliques, Core, Core Stabilizers, Serratus
+  },
+  {
+    id: "quads",
+    label: "Quads",
+    muscleIds: [3, 92], // Quads, Quadriceps
+  },
+  {
+    id: "hamstrings",
+    label: "Hamstrings",
+    muscleIds: [4],
+  },
+  {
+    id: "glutes_hips",
+    label: "Glutes & Hips",
+    muscleIds: [5, 94, 93, 95], // Glutes, Abductors, Adductors, Hip Flexors
+  },
+  {
+    id: "calves",
+    label: "Calves",
+    muscleIds: [9],
+  },
+] as const;
+
+const EQUIPMENT_OPTIONS: string[] = [
+  "ab wheel",
+  "air bike",
+  "backpack",
+  "band",
+  "barbell",
+  "battle rope",
+  "battle ropes",
+  "bench",
+  "bike",
+  "bike erg",
+  "bodyweight",
+  "cable",
+  "captain's chair",
+  "decline bench",
+  "dumbbell",
+  "dumbbells",
+  "elliptical",
+  "ez-bar",
+  "foam roller",
+  "heavy bag",
+  "jacobs ladder",
+  "kettlebell",
+  "ladder",
+  "landmine",
+  "machine",
+  "med ball",
+  "medicine ball",
+  "parallel bars",
+  "parallettes",
+  "plate",
+  "plates",
+  "plyo box",
+  "pool",
+  "pull-up bar",
+  "rope",
+  "rowing machine",
+  "ski erg",
+  "sled",
+  "slider",
+  "smith machine",
+  "stability ball",
+  "stair climber",
+  "trap bar",
+  "treadmill",
+  "wrist roller",
 ];
-const MUSCLE_CHIPS = [
-  "Chest",
-  "Back",
-  "Shoulders",
-  "Rear Delts",
-  "Traps",
-  "Biceps",
-  "Triceps",
-  "Forearms",
-  "Abs",
-  "Obliques",
-  "Quadriceps",
-  "Hamstrings",
-  "Glutes",
-  "Calves",
-  "Hip Flexors",
-  "Adductors",
-  "Abductors",
-  "Upper Back",
-  "Lower Back",
-];
+
+function normalizeExerciseType(raw: string | null): ExerciseRow["type"] {
+  if (raw === "strength" || raw === "cardio" || raw === "mobility") {
+    return raw;
+  }
+  return null;
+}
 
 export default function WorkoutPage() {
   const { colors } = useAppTheme();
   const s = useMemo(() => makeStyles(colors), [colors]);
 
+  const insets = useSafeAreaInsets();
+
   const { index: idxParam } = useLocalSearchParams<{ index: string }>();
   const index = Number(idxParam ?? 0);
 
   const { workoutsPerWeek, workouts, setWorkout } = usePlanDraft();
-  const draft = workouts?.[index];
+  const draft = workouts?.[index] ?? null;
+  const exercises: PlanExerciseRow[] = draft?.exercises ?? [];
 
-  if (!Number.isFinite(index) || !draft) {
-    return (
-      <View style={s.center}>
-        <ActivityIndicator />
-      </View>
-    );
-  }
+  /* ---------- helpers for identifying rows ---------- */
 
-  const exercises = draft?.exercises ?? [];
+  const rowKey = (ex: PlanExerciseRow, fallbackIndex: number) =>
+    `${ex.exercise.id ?? "NA"}-${
+      typeof ex.order_index === "number" ? ex.order_index : fallbackIndex
+    }`;
 
-  const [showPicker, setShowPicker] = useState(false);
-  const [typeFilter, setTypeFilter] = useState<
-    "all" | "strength" | "cardio" | "mobility"
-  >("all");
-  const [muscleFilter, setMuscleFilter] = useState<string | null>(null);
-  const [search, setSearch] = useState("");
+  const hasExercise = useCallback(
+    (exerciseId: string) => exercises.some((e) => e.exercise.id === exerciseId),
+    [exercises]
+  );
 
-  const { items: all } = useExercisesCache();
+  /* ---------- Superset selection state ---------- */
 
-  const [selectedToAdd, setSelectedToAdd] = useState<Set<string>>(new Set());
-  function togglePick(id: string) {
-    setSelectedToAdd((prev) => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
-  }
-  function clearPickerSelections() {
-    setSelectedToAdd(new Set());
-  }
-
-  // Superset selection
   const [selecting, setSelecting] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const rowKey = (i: number) => `${exercises[i]?.exercise.id ?? "NA"}-${i}`;
+
   function toggleSelect(key: string) {
     setSelectedIds((prev) =>
       prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
     );
   }
 
-  // Prevent duplicates within THIS workout
-  const hasExercise = useCallback(
-    (exerciseId: string) =>
-      draft.exercises.some((e) => e.exercise.id === exerciseId),
-    [draft.exercises]
-  );
-
   function makeSuperset() {
     if (selectedIds.length < 2) {
       Alert.alert("Pick at least 2 exercises to create a superset.");
       return;
     }
+    if (!draft) return;
     const groupId = `ss-${nanoid(6)}`;
-    const updated = draft.exercises.map((ex, i) =>
-      selectedIds.includes(rowKey(i)) ? { ...ex, supersetGroup: groupId } : ex
+    const updated = exercises.map((ex, i) =>
+      selectedIds.includes(rowKey(ex, i))
+        ? { ...ex, supersetGroup: groupId }
+        : ex
     );
     setWorkout(index, { ...draft, exercises: updated });
     setSelecting(false);
@@ -122,13 +206,31 @@ export default function WorkoutPage() {
   }
 
   function clearSupersetForSelected() {
-    if (selectedIds.length === 0) return;
-    const updated = draft.exercises.map((ex, i) =>
-      selectedIds.includes(rowKey(i)) ? { ...ex, supersetGroup: null } : ex
+    if (selectedIds.length === 0 || !draft) return;
+    const updated = exercises.map((ex, i) =>
+      selectedIds.includes(rowKey(ex, i)) ? { ...ex, supersetGroup: null } : ex
     );
     setWorkout(index, { ...draft, exercises: updated });
     setSelecting(false);
     setSelectedIds([]);
+  }
+
+  /* ---------- Dropset & remove handlers ---------- */
+
+  function toggleDropset(exerciseId: string) {
+    if (!draft) return;
+    const updated = exercises.map((ex) =>
+      ex.exercise.id === exerciseId ? { ...ex, isDropset: !ex.isDropset } : ex
+    );
+    const reindexed = updated.map((e, i) => ({ ...e, order_index: i }));
+    setWorkout(index, { ...draft, exercises: reindexed });
+  }
+
+  function removeExercise(exerciseId: string) {
+    if (!draft) return;
+    const updated = exercises.filter((ex) => ex.exercise.id !== exerciseId);
+    const reindexed = updated.map((e, i) => ({ ...e, order_index: i }));
+    setWorkout(index, { ...draft, exercises: reindexed });
   }
 
   useEffect(() => {
@@ -137,50 +239,236 @@ export default function WorkoutPage() {
     }
   }, [index, workouts]);
 
-  if (!draft) {
-    return (
-      <View style={s.center}>
-        <ActivityIndicator />
-      </View>
+  /* ---------- SUPERCARD ROWS (superset groups drag as one) ---------- */
+
+  const SUPERSET_COLORS = [
+    "#2563eb",
+    "#22c55e",
+    "#f59e0b",
+    "#ef4444",
+    "#8b5cf6",
+  ];
+
+  const supersetGroups = useMemo(
+    () => [
+      ...new Set(
+        exercises.map((x) => x.supersetGroup).filter(Boolean) as string[]
+      ),
+    ],
+    [exercises]
+  );
+
+  const supersetColorForGroup = (groupId: string | null | undefined) => {
+    if (!groupId) return null;
+    const idx = supersetGroups.indexOf(groupId);
+    if (idx < 0) return null;
+    return SUPERSET_COLORS[idx % SUPERSET_COLORS.length];
+  };
+
+  // Build draggable rows: each superset group is a block row
+  const draggableRows: SupersetRow[] = useMemo(() => {
+    const rows: SupersetRow[] = [];
+    let i = 0;
+    while (i < exercises.length) {
+      const ex = exercises[i];
+      if (ex.supersetGroup) {
+        const groupId = ex.supersetGroup;
+        const items: PlanExerciseRow[] = [ex];
+        let j = i + 1;
+        while (j < exercises.length && exercises[j].supersetGroup === groupId) {
+          items.push(exercises[j]);
+          j++;
+        }
+        rows.push({
+          key: `group-${groupId}-${i}`,
+          items,
+        });
+        i = j;
+      } else {
+        rows.push({
+          key: `single-${ex.exercise.id}-${i}`,
+          items: [ex],
+        });
+        i++;
+      }
+    }
+    return rows;
+  }, [exercises]);
+
+  /* ---------- Exercise picker modal state ---------- */
+
+  const [exerciseModalVisible, setExerciseModalVisible] = useState(false);
+  const [exerciseSearch, setExerciseSearch] = useState("");
+  const [exerciseOptions, setExerciseOptions] = useState<ExerciseOption[]>([]);
+  const [exLoading, setExLoading] = useState(false);
+  const [modalSelectedIds, setModalSelectedIds] = useState<string[]>([]);
+
+  const [selectedMuscleGroups, setSelectedMuscleGroups] = useState<string[]>(
+    []
+  );
+  const [selectedEquipment, setSelectedEquipment] = useState<string[]>([]);
+  const [muscleFilterOpen, setMuscleFilterOpen] = useState(false);
+  const [equipmentFilterOpen, setEquipmentFilterOpen] = useState(false);
+
+  const toggleMuscleGroup = (groupId: string) => {
+    setSelectedMuscleGroups((prev) =>
+      prev.includes(groupId)
+        ? prev.filter((id) => id !== groupId)
+        : [...prev, groupId]
     );
-  }
+  };
 
-  // Filter from cache
-  const results = useMemo(() => {
-    let pool = all;
+  const toggleEquipment = (eq: string) => {
+    setSelectedEquipment((prev) =>
+      prev.includes(eq) ? prev.filter((e) => e !== eq) : [...prev, eq]
+    );
+  };
 
-    if (typeFilter !== "all") pool = pool.filter((e) => e.type === typeFilter);
+  // Load picker options whenever modal is open or filters change
+  useEffect(() => {
+    let alive = true;
 
-    if (muscleFilter) {
-      const mf = muscleFilter.toLowerCase();
-      pool = pool.filter((e) => {
-        const pm = (e.primary_muscle ?? "").toLowerCase();
-        if (muscleFilter === "Back") {
-          return (
-            pm.includes("lat") ||
-            pm.includes("upper back") ||
-            pm.includes("lower back") ||
-            pm === "back"
+    if (!exerciseModalVisible) {
+      return () => {
+        alive = false;
+      };
+    }
+
+    (async () => {
+      setExLoading(true);
+      try {
+        const hasMuscleFilter = selectedMuscleGroups.length > 0;
+
+        let q = supabase
+          .from("exercises")
+          .select(
+            hasMuscleFilter
+              ? `
+              id,
+              name,
+              type,
+              equipment,
+              exercise_muscles!inner(
+                muscle_id
+              )
+            `
+              : `
+              id,
+              name,
+              type,
+              equipment
+            `
+          )
+          .order("name", { ascending: true })
+          .limit(600);
+
+        if (exerciseSearch.trim()) {
+          q = q.ilike("name", `%${exerciseSearch.trim()}%`);
+        }
+
+        if (selectedEquipment.length > 0) {
+          q = q.in("equipment", selectedEquipment);
+        }
+
+        if (hasMuscleFilter) {
+          const muscleIdSet = new Set<number>();
+          selectedMuscleGroups.forEach((gid) => {
+            const group = MUSCLE_GROUPS.find((g) => g.id === gid);
+            group?.muscleIds.forEach((mid) => muscleIdSet.add(mid));
+          });
+          const muscleIds = Array.from(muscleIdSet);
+          if (muscleIds.length > 0) {
+            q = q.in("exercise_muscles.muscle_id", muscleIds);
+          }
+        }
+
+        const { data, error } = await q;
+        if (error) {
+          console.warn("plan workout exercise picker error", error);
+          if (alive) setExerciseOptions([]);
+          return;
+        }
+
+        if (alive) {
+          setExerciseOptions(
+            (data ?? []).map((row: any) => ({
+              id: row.id,
+              name: row.name,
+              type: row.type ?? null,
+              equipment: row.equipment ?? null,
+            }))
           );
         }
-        return pm.includes(mf);
+      } finally {
+        if (alive) setExLoading(false);
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [
+    exerciseModalVisible,
+    exerciseSearch,
+    selectedMuscleGroups,
+    selectedEquipment,
+  ]);
+
+  const toggleModalSelect = (exerciseId: string) => {
+    setModalSelectedIds((prev) =>
+      prev.includes(exerciseId)
+        ? prev.filter((id) => id !== exerciseId)
+        : [...prev, exerciseId]
+    );
+  };
+
+  const handleConfirmAddExercises = () => {
+    if (!draft) return;
+    if (!modalSelectedIds.length) return;
+
+    const existingIds = new Set(exercises.map((e) => e.exercise.id));
+
+    const newRows = modalSelectedIds.reduce<PlanExerciseRow[]>((acc, id) => {
+      if (existingIds.has(id)) return acc;
+      const ex = exerciseOptions.find((er) => er.id === id);
+      if (!ex) return acc;
+
+      acc.push({
+        exercise: {
+          id: ex.id,
+          name: ex.name,
+          type: normalizeExerciseType(ex.type),
+        },
+        order_index: 0, // temporary; reindexed below
+        supersetGroup: null,
+        isDropset: false,
       });
+
+      return acc;
+    }, []);
+
+    if (!newRows.length) {
+      setModalSelectedIds([]);
+      setExerciseModalVisible(false);
+      return;
     }
 
-    if (search.trim()) {
-      const q = search.trim().toLowerCase();
-      pool = pool.filter((e) => e.name.toLowerCase().includes(q));
-    }
+    const merged = [...exercises, ...newRows].map((row, i) => ({
+      ...row,
+      order_index: i,
+    }));
 
-    pool = pool.filter((e) => !hasExercise(e.id));
+    setWorkout(index, { ...draft, exercises: merged });
+    setModalSelectedIds([]);
+    setExerciseModalVisible(false);
+  };
 
-    return pool.slice(0, 10);
-  }, [all, typeFilter, muscleFilter, search, hasExercise]);
+  /* ---------- navigation ---------- */
 
   function next() {
+    if (!draft) return;
     if (!draft.title.trim()) return Alert.alert("Add a workout title");
-    if (draft.exercises.length === 0)
-      return Alert.alert("Add at least one exercise");
+    if (exercises.length === 0) return Alert.alert("Add at least one exercise");
     if (index < workoutsPerWeek - 1) {
       router.push({
         pathname: "/features/plans/create/workout",
@@ -191,28 +479,14 @@ export default function WorkoutPage() {
     }
   }
 
-  const SUPERSET_COLORS = [
-    "#2563eb",
-    "#22c55e",
-    "#f59e0b",
-    "#ef4444",
-    "#8b5cf6",
-  ];
-  const supersetGroups = useMemo(
-    () => [
-      ...new Set(
-        exercises.map((x) => x.supersetGroup).filter(Boolean) as string[]
-      ),
-    ],
-    [exercises]
-  );
-
-  // ---- DRAGGABLE LIST HANDLERS ----
+  /* ---------- drag handler (works on grouped rows) ---------- */
 
   const handleDragEnd = useCallback(
-    ({ data }: { data: typeof draft.exercises }) => {
-      // Reindex order_index after drag
-      const reindexed = data.map((e, i) => ({
+    ({ data }: { data: SupersetRow[] }) => {
+      if (!draft) return;
+      // Flatten grouped rows back into a single exercise list
+      const flattened: PlanExerciseRow[] = data.flatMap((row) => row.items);
+      const reindexed = flattened.map((e, i) => ({
         ...e,
         order_index: i,
       }));
@@ -221,367 +495,610 @@ export default function WorkoutPage() {
     [draft, index, setWorkout]
   );
 
-  return (
-    <ScrollView
-      style={{ flex: 1, backgroundColor: colors.background }}
-      contentContainerStyle={{ padding: 16 }}
-      keyboardShouldPersistTaps="handled"
-    >
-      <Text style={s.h2}>
-        Workout {index + 1} of {workoutsPerWeek}
-      </Text>
+  /* ---------- guard AFTER all hooks ---------- */
 
-      <Text style={s.label}>Title</Text>
-      <TextInput
-        style={s.input}
-        value={draft.title}
-        onChangeText={(t) => setWorkout(index, { ...draft, title: t })}
-        placeholder="e.g. Push, Pull, Legs…"
-        placeholderTextColor={colors.subtle}
-      />
+  const invalid = !Number.isFinite(index) || !draft;
 
-      <Text style={s.label}>Exercises</Text>
-
-      {/* Superset toolbar when selecting */}
-      {selecting && (
-        <View style={{ flexDirection: "row", gap: 8, marginBottom: 8 }}>
-          <Pressable style={[s.btn, s.primary]} onPress={makeSuperset}>
-            <Text style={s.btnPrimaryText}>Create Superset</Text>
-          </Pressable>
-          <Pressable style={s.btn} onPress={clearSupersetForSelected}>
-            <Text style={s.btnText}>Ungroup</Text>
-          </Pressable>
-          <Pressable
-            style={s.btn}
-            onPress={() => {
-              setSelecting(false);
-              setSelectedIds([]);
-            }}
-          >
-            <Text style={s.btnText}>Cancel</Text>
-          </Pressable>
-        </View>
-      )}
-
-      {/* DRAGGABLE EXERCISE LIST */}
-      {draft.exercises.length > 0 && (
-        <View style={{ maxHeight: 420, marginBottom: 8 }}>
-          <DraggableFlatList
-            data={draft.exercises}
-            keyExtractor={(_, i) => rowKey(i)}
-            scrollEnabled={false}
-            onDragEnd={({ data }) => {
-              // keep order_index in sync after drag
-              const reindexed = data.map((ex, i) => ({
-                ...ex,
-                order_index: i,
-              }));
-              setWorkout(index, { ...draft, exercises: reindexed });
-            }}
-            renderItem={({
-              item,
-              drag,
-              isActive,
-            }: RenderItemParams<(typeof draft.exercises)[number]>) => {
-              // ✅ use order_index instead of index from params
-              const displayIndex =
-                typeof item.order_index === "number" ? item.order_index + 1 : 1;
-
-              const group = item.supersetGroup ?? null;
-              const groupIndex = group ? supersetGroups.indexOf(group) : -1;
-              const groupLabel =
-                groupIndex >= 0 ? String.fromCharCode(65 + groupIndex) : null;
-              const groupColor =
-                groupIndex >= 0
-                  ? SUPERSET_COLORS[groupIndex % SUPERSET_COLORS.length]
-                  : null;
-
-              return (
-                <View
-                  style={[
-                    s.item,
-                    groupColor && { borderColor: groupColor, borderWidth: 2 },
-                  ]}
-                >
-                  <Pressable
-                    onLongPress={drag}
-                    disabled={isActive}
-                    style={{ flex: 1 }}
-                  >
-                    <View
-                      style={{
-                        flexDirection: "row",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                      }}
-                    >
-                      <View style={{ flex: 1 }}>
-                        <Text style={{ fontWeight: "700", color: colors.text }}>
-                          {displayIndex}. {item.exercise.name}
-                          {groupLabel ? (
-                            <Text
-                              style={{
-                                fontWeight: "800",
-                                color: groupColor ?? colors.text,
-                              }}
-                            >
-                              {`  •  Superset ${groupLabel}`}
-                            </Text>
-                          ) : null}
-                        </Text>
-                        {/* the rest of your dropset / tags / “Exercise selected” bits */}
-                      </View>
-
-                      {/* right-side actions stay the same */}
-                    </View>
-                  </Pressable>
-                </View>
-              );
-            }}
-          />
-        </View>
-      )}
-
-      {/* Controls */}
-      <View style={{ flexDirection: "row", gap: 12, marginTop: 12 }}>
-        {!showPicker && (
-          <Pressable
-            style={[s.btn, s.primary]}
-            onPress={() => setShowPicker(true)}
-          >
-            <Text style={s.btnPrimaryText}>＋ Add Exercise</Text>
-          </Pressable>
-        )}
-        {!selecting ? (
-          <Pressable
-            style={[s.btn, draft.exercises.length < 2 && { opacity: 0.5 }]}
-            disabled={draft.exercises.length < 2}
-            onPress={() => setSelecting(true)}
-          >
-            <Text style={s.btnText}>Select for Superset</Text>
-          </Pressable>
-        ) : null}
+  if (invalid) {
+    return (
+      <View style={s.center}>
+        <ActivityIndicator />
       </View>
+    );
+  }
 
-      {/* Picker */}
-      <Modal
-        visible={showPicker}
-        animationType="slide"
-        presentationStyle="pageSheet"
-        onRequestClose={() => setShowPicker(false)}
+  /* ---------- render ---------- */
+
+  return (
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
+      <ScrollView
+        style={{ flex: 1, backgroundColor: colors.background }}
+        contentContainerStyle={{ padding: 16 }}
+        keyboardShouldPersistTaps="handled"
       >
-        <View
-          style={[s.modalContainer, { backgroundColor: colors.background }]}
-        >
-          <View style={s.modalHeader}>
-            <Text style={s.h3}>Add Exercise</Text>
-            <Pressable onPress={() => setShowPicker(false)}>
-              <Text style={{ color: colors.primary, fontWeight: "700" }}>
-                Close ✕
-              </Text>
+        <Text style={s.h2}>
+          Workout {index + 1} of {workoutsPerWeek}
+        </Text>
+
+        <Text style={s.label}>Title</Text>
+        <TextInput
+          style={s.input}
+          value={draft.title}
+          onChangeText={(t) => setWorkout(index, { ...draft, title: t })}
+          placeholder="e.g. Push, Pull, Legs…"
+          placeholderTextColor={colors.subtle}
+        />
+
+        {/* Workout-level notes */}
+        <Text style={s.label}>Notes (optional)</Text>
+        <TextInput
+          style={[s.input, { minHeight: 80, textAlignVertical: "top" }]}
+          value={draft.notes ?? ""}
+          placeholder="Any instructions, tempo, warm-up details…"
+          placeholderTextColor={colors.subtle}
+          multiline
+          onChangeText={(t) => setWorkout(index, { ...draft, notes: t })}
+        />
+
+        <Text style={s.label}>Exercises</Text>
+
+        {/* Superset toolbar */}
+        {selecting && (
+          <View style={{ flexDirection: "row", gap: 8, marginBottom: 8 }}>
+            <Pressable style={[s.btn, s.primary]} onPress={makeSuperset}>
+              <Text style={s.btnPrimaryText}>Create Superset</Text>
             </Pressable>
-          </View>
-
-          <ScrollView
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 40 }}
-            keyboardShouldPersistTaps="handled"
-          >
-            {/* Type filter */}
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ gap: 8, paddingVertical: 8 }}
-            >
-              {TYPE_CHIPS.map((t) => {
-                const active = typeFilter === t;
-                return (
-                  <Pressable
-                    key={t}
-                    style={[s.chip, active && s.chipActive]}
-                    onPress={() => setTypeFilter(t)}
-                  >
-                    <Text
-                      style={{
-                        fontWeight: "700",
-                        color: active ? colors.primary ?? "#fff" : colors.text,
-                        textTransform: "capitalize",
-                      }}
-                    >
-                      {t}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </ScrollView>
-
-            {/* Muscle filter */}
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ gap: 8, paddingVertical: 4 }}
-            >
-              <Pressable
-                style={[s.chipOutline, !muscleFilter && s.chipOutlineActive]}
-                onPress={() => setMuscleFilter(null)}
-              >
-                <Text style={{ fontWeight: "700", color: colors.text }}>
-                  All muscles
-                </Text>
-              </Pressable>
-              {MUSCLE_CHIPS.map((m) => {
-                const active = muscleFilter === m;
-                return (
-                  <Pressable
-                    key={m}
-                    style={[s.chipOutline, active && s.chipOutlineActive]}
-                    onPress={() => setMuscleFilter(m)}
-                  >
-                    <Text style={{ fontWeight: "700", color: colors.text }}>
-                      {m}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </ScrollView>
-
-            {/* Search */}
-            <TextInput
-              style={[s.input, { marginTop: 8 }]}
-              placeholder="Search within filters…"
-              placeholderTextColor={colors.subtle}
-              value={search}
-              onChangeText={setSearch}
-            />
-
-            {/* Exercise list */}
-            {all.length === 0 ? (
-              <View style={{ marginTop: 20, alignItems: "center" }}>
-                <ActivityIndicator />
-                <Text style={{ color: colors.subtle, marginTop: 6 }}>
-                  Loading exercises…
-                </Text>
-              </View>
-            ) : (
-              <View style={{ gap: 8, marginTop: 8 }}>
-                {results.map((r) => {
-                  const picked = selectedToAdd.has(r.id);
-                  return (
-                    <Pressable
-                      key={r.id}
-                      style={[
-                        s.row,
-                        picked && {
-                          borderColor: colors.primary,
-                          borderWidth: 2,
-                        },
-                      ]}
-                      onPress={() => togglePick(r.id)}
-                    >
-                      <View style={{ flex: 1 }}>
-                        <Text style={{ fontWeight: "700", color: colors.text }}>
-                          {r.name}
-                        </Text>
-                        <Text style={{ color: colors.subtle, marginTop: 2 }}>
-                          {(r.type ?? "—") +
-                            (r.primary_muscle ? ` • ${r.primary_muscle}` : "")}
-                        </Text>
-                      </View>
-                      <Text
-                        style={{
-                          color: picked ? colors.primary : colors.subtle,
-                          fontWeight: "700",
-                        }}
-                      >
-                        {picked ? "Selected" : "Select"}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-
-                {results.length === 0 && (
-                  <View style={s.empty}>
-                    <Text style={{ color: colors.subtle }}>
-                      No matches. Try a different type or muscle.
-                    </Text>
-                  </View>
-                )}
-              </View>
-            )}
-          </ScrollView>
-
-          {/* Bottom actions */}
-          <View style={s.modalActions}>
+            <Pressable style={s.btn} onPress={clearSupersetForSelected}>
+              <Text style={s.btnText}>Ungroup</Text>
+            </Pressable>
             <Pressable
-              style={[s.btn, { flex: 1 }]}
+              style={s.btn}
               onPress={() => {
-                setTypeFilter("all");
-                setMuscleFilter(null);
-                setSearch("");
-                clearPickerSelections();
-                setShowPicker(false);
+                setSelecting(false);
+                setSelectedIds([]);
               }}
             >
               <Text style={s.btnText}>Cancel</Text>
             </Pressable>
+          </View>
+        )}
 
+        {/* Draggable exercise list – superset groups move as one */}
+        {draggableRows.length > 0 && (
+          <View style={{ marginBottom: 8 }}>
+            <DraggableFlatList<SupersetRow>
+              data={draggableRows}
+              keyExtractor={(row) => row.key}
+              scrollEnabled={false}
+              activationDistance={4}
+              onDragEnd={handleDragEnd}
+              renderItem={({
+                item,
+                drag,
+                isActive,
+              }: RenderItemParams<SupersetRow>) => {
+                const firstEx = item.items[0];
+                const groupId = firstEx.supersetGroup ?? null;
+                const groupColor = supersetColorForGroup(groupId);
+                const isGroup = item.items.length > 1;
+
+                return (
+                  <View
+                    style={[
+                      s.groupCard,
+                      groupColor && {
+                        borderColor: groupColor,
+                        borderWidth: 2,
+                      },
+                      isActive && { opacity: 0.9 },
+                    ]}
+                  >
+                    {/* Header row: label + drag handle */}
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        marginBottom: isGroup ? 4 : 0,
+                      }}
+                    >
+                      {isGroup && (
+                        <Text
+                          style={{
+                            fontSize: 12,
+                            fontWeight: "700",
+                            color: groupColor ?? colors.subtle,
+                          }}
+                        >
+                          Superset
+                        </Text>
+                      )}
+
+                      {/* drag handle */}
+                      <Pressable
+                        onPressIn={drag}
+                        disabled={isActive}
+                        hitSlop={10}
+                      >
+                        <Text
+                          style={{
+                            color: colors.subtle,
+                            fontSize: 18,
+                            paddingHorizontal: 4,
+                          }}
+                        >
+                          ≡
+                        </Text>
+                      </Pressable>
+                    </View>
+
+                    {/* Exercises inside this group */}
+                    {item.items.map((exRow, idx) => {
+                      const displayIndex =
+                        typeof exRow.order_index === "number"
+                          ? exRow.order_index + 1
+                          : 1;
+
+                      const thisRowId = rowKey(exRow, idx);
+                      const isSelected = selectedIds.includes(thisRowId);
+
+                      return (
+                        <Pressable
+                          key={thisRowId}
+                          onPress={() => selecting && toggleSelect(thisRowId)}
+                          style={[
+                            s.item,
+                            idx < item.items.length - 1 && {
+                              marginBottom: 6,
+                            },
+                            selecting &&
+                              isSelected && {
+                                backgroundColor:
+                                  colors.primaryBg ?? colors.surface,
+                              },
+                          ]}
+                        >
+                          <View style={{ flex: 1 }}>
+                            <Text
+                              style={{ fontWeight: "700", color: colors.text }}
+                            >
+                              {displayIndex}. {exRow.exercise.name}
+                            </Text>
+
+                            <View
+                              style={{
+                                flexDirection: "row",
+                                flexWrap: "wrap",
+                                gap: 6,
+                                marginTop: 4,
+                              }}
+                            >
+                              {exRow.isDropset && (
+                                <Text
+                                  style={{
+                                    fontSize: 11,
+                                    fontWeight: "700",
+                                    color: colors.warnText ?? "#f59e0b",
+                                  }}
+                                >
+                                  Dropset
+                                </Text>
+                              )}
+                              {exRow.notes ? (
+                                <Text
+                                  style={{
+                                    fontSize: 11,
+                                    color: colors.subtle,
+                                    flexShrink: 1,
+                                  }}
+                                  numberOfLines={1}
+                                >
+                                  {exRow.notes}
+                                </Text>
+                              ) : null}
+                            </View>
+                          </View>
+
+                          <View
+                            style={{
+                              alignItems: "flex-end",
+                              justifyContent: "center",
+                              gap: 6,
+                            }}
+                          >
+                            {/* Dropset toggle */}
+                            <Pressable
+                              onPress={() =>
+                                toggleDropset(exRow.exercise.id as string)
+                              }
+                            >
+                              <Text
+                                style={{
+                                  fontSize: 12,
+                                  fontWeight: "700",
+                                  color: exRow.isDropset
+                                    ? colors.warnText ?? "#f59e0b"
+                                    : colors.subtle,
+                                }}
+                              >
+                                {exRow.isDropset ? "Dropset ✓" : "Make dropset"}
+                              </Text>
+                            </Pressable>
+
+                            {/* Remove exercise */}
+                            <Pressable
+                              onPress={() =>
+                                removeExercise(exRow.exercise.id as string)
+                              }
+                              hitSlop={10}
+                            >
+                              <Text
+                                style={{
+                                  fontSize: 12,
+                                  fontWeight: "700",
+                                  color: colors.danger ?? "#ef4444",
+                                }}
+                              >
+                                Remove
+                              </Text>
+                            </Pressable>
+                          </View>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                );
+              }}
+            />
+          </View>
+        )}
+
+        {/* Controls */}
+        <View style={{ flexDirection: "row", gap: 12, marginTop: 12 }}>
+          <Pressable
+            style={[s.btn, s.primary]}
+            onPress={() => setExerciseModalVisible(true)}
+          >
+            <Text style={s.btnPrimaryText}>＋ Add Exercises</Text>
+          </Pressable>
+
+          {!selecting && (
+            <Pressable
+              style={[s.btn, exercises.length < 2 && { opacity: 0.5 }]}
+              disabled={exercises.length < 2}
+              onPress={() => setSelecting(true)}
+            >
+              <Text style={s.btnText}>Select for Superset</Text>
+            </Pressable>
+          )}
+        </View>
+
+        {/* Bottom nav */}
+        <View style={{ flexDirection: "row", gap: 12, marginTop: 16 }}>
+          {index > 0 && (
+            <Pressable style={s.btn} onPress={() => router.back()}>
+              <Text style={s.btnText}>← Back</Text>
+            </Pressable>
+          )}
+          <Pressable style={[s.btn, s.primary, { flex: 1 }]} onPress={next}>
+            <Text style={s.btnPrimaryText}>
+              {index < workoutsPerWeek - 1 ? "Next Workout →" : "Next → Goals"}
+            </Text>
+          </Pressable>
+        </View>
+
+        {/* FULL-SCREEN EXERCISE PICKER WITH SAFE AREA */}
+        <Modal
+          visible={exerciseModalVisible}
+          animationType="slide"
+          presentationStyle="fullScreen"
+          onRequestClose={() => setExerciseModalVisible(false)}
+        >
+          <SafeAreaView
+            style={[
+              s.modalSafeArea,
+              {
+                paddingTop: insets.top,
+                backgroundColor: colors.background,
+              },
+            ]}
+          >
+            {/* Header */}
+            <View style={s.modalHeader}>
+              <Text style={s.modalTitle}>Select exercises</Text>
+              <Pressable
+                onPress={() => setExerciseModalVisible(false)}
+                hitSlop={10}
+              >
+                <Text style={[s.modalClose, { color: colors.primary }]}>
+                  Close
+                </Text>
+              </Pressable>
+            </View>
+
+            {/* Search */}
+            <TextInput
+              value={exerciseSearch}
+              onChangeText={setExerciseSearch}
+              placeholder="Search exercises…"
+              placeholderTextColor={colors.subtle}
+              style={[
+                s.modalSearchInput,
+                { color: colors.text, backgroundColor: colors.surface },
+              ]}
+            />
+
+            {/* FILTER BAR */}
+            <View style={{ marginTop: 8 }}>
+              <View style={s.filterBar}>
+                {/* Muscles pill */}
+                <Pressable
+                  onPress={() => setMuscleFilterOpen((open) => !open)}
+                  style={[
+                    s.filterPill,
+                    muscleFilterOpen && {
+                      backgroundColor: colors.primaryBg ?? colors.primary,
+                      borderColor: colors.primary,
+                    },
+                  ]}
+                  hitSlop={8}
+                >
+                  <Text
+                    style={[
+                      s.filterPillLabel,
+                      muscleFilterOpen && {
+                        color: colors.primaryText ?? "#fff",
+                      },
+                    ]}
+                  >
+                    Muscles
+                  </Text>
+                  {selectedMuscleGroups.length > 0 && (
+                    <Text
+                      style={[
+                        s.filterPillCount,
+                        muscleFilterOpen && {
+                          color: colors.primaryText ?? "#fff",
+                        },
+                      ]}
+                    >
+                      {selectedMuscleGroups.length}
+                    </Text>
+                  )}
+                </Pressable>
+
+                {/* Equipment pill */}
+                <Pressable
+                  onPress={() => setEquipmentFilterOpen((open) => !open)}
+                  style={[
+                    s.filterPill,
+                    equipmentFilterOpen && {
+                      backgroundColor: colors.primaryBg ?? colors.primary,
+                      borderColor: colors.primary,
+                    },
+                  ]}
+                  hitSlop={8}
+                >
+                  <Text
+                    style={[
+                      s.filterPillLabel,
+                      equipmentFilterOpen && {
+                        color: colors.primaryText ?? "#fff",
+                      },
+                    ]}
+                  >
+                    Equipment
+                  </Text>
+                  {selectedEquipment.length > 0 && (
+                    <Text
+                      style={[
+                        s.filterPillCount,
+                        equipmentFilterOpen && {
+                          color: colors.primaryText ?? "#fff",
+                        },
+                      ]}
+                    >
+                      {selectedEquipment.length}
+                    </Text>
+                  )}
+                </Pressable>
+              </View>
+
+              <Text style={s.filterSummaryText}>
+                {selectedMuscleGroups.length
+                  ? `${selectedMuscleGroups.length} muscle group${
+                      selectedMuscleGroups.length === 1 ? "" : "s"
+                    }`
+                  : "No Muscles"}
+                {" · "}
+                {selectedEquipment.length
+                  ? `${selectedEquipment.length} equipment option${
+                      selectedEquipment.length === 1 ? "" : "s"
+                    }`
+                  : "No Equipment"}{" "}
+                selected
+              </Text>
+            </View>
+
+            {/* MUSCLE CHIPS */}
+            {muscleFilterOpen && (
+              <View style={s.chipSection}>
+                <View style={s.chipGrid}>
+                  {MUSCLE_GROUPS.map((g) => {
+                    const active = selectedMuscleGroups.includes(g.id);
+                    return (
+                      <Pressable
+                        key={g.id}
+                        onPress={() => toggleMuscleGroup(g.id)}
+                        style={[
+                          s.chip,
+                          active && {
+                            backgroundColor: colors.primaryBg ?? colors.primary,
+                            borderColor: colors.primary,
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            s.chipLabel,
+                            active && {
+                              color: colors.primaryText ?? "#fff",
+                              fontWeight: "700",
+                            },
+                          ]}
+                        >
+                          {g.label}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </View>
+            )}
+
+            {/* EQUIPMENT CHIPS */}
+            {equipmentFilterOpen && (
+              <View style={s.chipSection}>
+                <View style={s.chipGrid}>
+                  {EQUIPMENT_OPTIONS.map((eq) => {
+                    const active = selectedEquipment.includes(eq);
+                    return (
+                      <Pressable
+                        key={eq}
+                        onPress={() => toggleEquipment(eq)}
+                        style={[
+                          s.chip,
+                          active && {
+                            backgroundColor: colors.primaryBg ?? colors.primary,
+                            borderColor: colors.primary,
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            s.chipLabel,
+                            active && {
+                              color: colors.primaryText ?? "#fff",
+                              fontWeight: "700",
+                            },
+                          ]}
+                        >
+                          {eq}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </View>
+            )}
+
+            {/* Options list */}
+            {exLoading ? (
+              <ActivityIndicator style={{ marginTop: 16 }} />
+            ) : (
+              <ScrollView
+                keyboardShouldPersistTaps="handled"
+                contentContainerStyle={{ paddingBottom: 12 }}
+              >
+                {exerciseOptions.map((item) => {
+                  const isSelected = modalSelectedIds.includes(item.id);
+                  return (
+                    <Pressable
+                      key={item.id}
+                      onPress={() => toggleModalSelect(item.id)}
+                      style={[
+                        s.modalRow,
+                        isSelected && {
+                          borderColor: colors.primary,
+                          backgroundColor: colors.card,
+                        },
+                      ]}
+                    >
+                      <View style={{ flex: 1 }}>
+                        <Text
+                          style={[
+                            s.modalExerciseName,
+                            isSelected && { color: colors.primary },
+                          ]}
+                        >
+                          {item.name}
+                        </Text>
+                        <Text style={s.modalExerciseMeta}>
+                          {item.type || ""}
+                          {item.equipment ? ` • ${item.equipment}` : ""}
+                        </Text>
+                      </View>
+
+                      <View
+                        style={[
+                          s.checkbox,
+                          {
+                            borderColor: isSelected
+                              ? colors.primary
+                              : colors.border,
+                            backgroundColor: isSelected
+                              ? colors.primary
+                              : "transparent",
+                          },
+                        ]}
+                      >
+                        {isSelected && (
+                          <Text
+                            style={{
+                              color: colors.subtle,
+                              fontSize: 10,
+                              fontWeight: "700",
+                            }}
+                          >
+                            ✓
+                          </Text>
+                        )}
+                      </View>
+                    </Pressable>
+                  );
+                })}
+
+                {exerciseOptions.length === 0 && !exLoading && (
+                  <View style={s.empty}>
+                    <Text style={{ color: colors.subtle }}>
+                      No matches. Try a different search or filters.
+                    </Text>
+                  </View>
+                )}
+              </ScrollView>
+            )}
+
+            {/* Confirm */}
             <Pressable
               style={[
-                s.btn,
-                s.primary,
-                { flex: 1, opacity: selectedToAdd.size ? 1 : 0.6 },
+                s.modalDoneBtn,
+                {
+                  backgroundColor: modalSelectedIds.length
+                    ? colors.primary
+                    : colors.surface,
+                  borderColor: colors.border,
+                },
               ]}
-              disabled={selectedToAdd.size === 0}
-              onPress={() => {
-                const idSet = selectedToAdd;
-                const toAddFromCache = all
-                  .filter((e) => idSet.has(e.id) && !hasExercise(e.id))
-                  .map((r) => ({
-                    exercise: {
-                      id: r.id,
-                      name: r.name,
-                      type: r.type,
-                    } as ExerciseRow,
-                    order_index: 0,
-                  }));
-
-                const merged = [...draft.exercises, ...toAddFromCache].map(
-                  (e, i) => ({
-                    ...e,
-                    order_index: i,
-                  })
-                );
-                setWorkout(index, { ...draft, exercises: merged });
-
-                clearPickerSelections();
-                setTypeFilter("all");
-                setMuscleFilter(null);
-                setSearch("");
-                setShowPicker(false);
-              }}
+              disabled={modalSelectedIds.length === 0}
+              onPress={handleConfirmAddExercises}
             >
-              <Text style={s.btnPrimaryText}>
-                Add {selectedToAdd.size || ""}{" "}
-                {selectedToAdd.size === 1 ? "Exercise" : "Exercises"}
+              <Text
+                style={{
+                  color:
+                    modalSelectedIds.length > 0
+                      ? colors.subtle ?? "#fff"
+                      : colors.subtle,
+                  fontWeight: "700",
+                }}
+              >
+                Add {modalSelectedIds.length || ""} exercise
+                {modalSelectedIds.length === 1 ? "" : "s"}
               </Text>
             </Pressable>
-          </View>
-        </View>
-      </Modal>
-
-      <View style={{ flexDirection: "row", gap: 12, marginTop: 16 }}>
-        {index > 0 && (
-          <Pressable style={s.btn} onPress={() => router.back()}>
-            <Text style={s.btnText}>← Back</Text>
-          </Pressable>
-        )}
-        <Pressable style={[s.btn, s.primary, { flex: 1 }]} onPress={next}>
-          <Text style={s.btnPrimaryText}>
-            {index < workoutsPerWeek - 1 ? "Next Workout →" : "Next → Goals"}
-          </Text>
-        </Pressable>
-      </View>
-    </ScrollView>
+          </SafeAreaView>
+        </Modal>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
@@ -617,14 +1134,22 @@ const makeStyles = (colors: any) =>
       color: colors.text,
     },
 
+    groupCard: {
+      backgroundColor: colors.surface,
+      borderRadius: 12,
+      padding: 10,
+      marginTop: 6,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+    },
+
     item: {
       backgroundColor: colors.surface,
-      borderRadius: 10,
+      borderRadius: 8,
       padding: 10,
       flexDirection: "row",
       justifyContent: "space-between",
       alignItems: "center",
-      marginTop: 6,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.border,
     },
@@ -654,35 +1179,31 @@ const makeStyles = (colors: any) =>
     btnPrimaryText: { color: colors.onPrimary ?? "#fff", fontWeight: "800" },
 
     chip: {
+      height: 34,
       paddingHorizontal: 12,
-      paddingVertical: 8,
       borderRadius: 999,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
       backgroundColor: colors.surface,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: colors.border,
+      marginRight: 8,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
     },
-    chipActive: {
-      backgroundColor: colors.primary,
-      borderColor: colors.primary,
+    chipLabel: {
+      fontSize: 12,
+      color: colors.text,
+      fontWeight: "600",
     },
-
-    chipOutline: {
-      paddingHorizontal: 12,
-      paddingVertical: 8,
-      borderRadius: 999,
-      borderWidth: 1,
-      borderColor: colors.border,
-      backgroundColor: colors.card,
+    chipSection: {
+      marginBottom: 6,
     },
-    chipOutlineActive: { borderColor: colors.primary },
-
-    pickerCard: {
-      marginTop: 12,
-      backgroundColor: colors.card,
-      borderRadius: 16,
-      padding: 12,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: colors.border,
+    chipGrid: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      rowGap: 10,
+      columnGap: 12,
+      marginBottom: 4,
     },
 
     empty: {
@@ -690,27 +1211,112 @@ const makeStyles = (colors: any) =>
       alignItems: "center",
       backgroundColor: colors.card,
       borderRadius: 12,
+      marginTop: 12,
     },
 
-    modalContainer: {
+    modalSafeArea: {
       flex: 1,
-      paddingTop: 50,
+      paddingHorizontal: 16,
+      paddingTop: 16,
     },
     modalHeader: {
       flexDirection: "row",
-      justifyContent: "space-between",
       alignItems: "center",
-      paddingHorizontal: 16,
-      paddingBottom: 8,
-      borderBottomWidth: StyleSheet.hairlineWidth,
-      borderColor: colors.border,
+      justifyContent: "space-between",
+      marginBottom: 8,
     },
-    modalActions: {
-      flexDirection: "row",
-      gap: 12,
-      padding: 16,
-      borderTopWidth: StyleSheet.hairlineWidth,
+    modalTitle: {
+      fontSize: 18,
+      fontWeight: "800",
+      color: colors.text,
+    },
+    modalClose: {
+      fontSize: 14,
+      fontWeight: "700",
+    },
+    modalSearchInput: {
+      borderRadius: 10,
+      paddingHorizontal: 12,
+      paddingVertical: 14,
+      borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.border,
-      backgroundColor: colors.card,
+      marginBottom: 8,
+    },
+
+    checkbox: {
+      width: 24,
+      height: 24,
+      borderRadius: 999,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+
+    filterBar: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: 8,
+      marginBottom: 4,
+    },
+    filterPill: {
+      flex: 1,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      borderRadius: 999,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+      paddingVertical: 6,
+      paddingHorizontal: 10,
+      gap: 6,
+    },
+    filterPillLabel: {
+      fontSize: 18,
+      fontWeight: "700",
+      color: colors.text,
+    },
+    filterPillCount: {
+      fontSize: 15,
+      fontWeight: "700",
+      color: colors.subtle,
+    },
+    filterSummaryText: {
+      fontSize: 15,
+      color: colors.subtle,
+      marginBottom: 6,
+      textAlign: "center",
+    },
+
+    modalRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingVertical: 10,
+      paddingHorizontal: 12,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: colors.border,
+      marginBottom: 12,
+      backgroundColor: colors.surface,
+    },
+    modalExerciseName: {
+      fontSize: 15,
+      fontWeight: "700",
+      color: colors.text,
+    },
+    modalExerciseMeta: {
+      fontSize: 12,
+      color: colors.subtle,
+      marginTop: 2,
+    },
+    modalDoneBtn: {
+      marginTop: 4,
+      marginBottom: 12,
+      paddingVertical: 12,
+      borderRadius: 999,
+      alignItems: "center",
+      borderWidth: StyleSheet.hairlineWidth,
     },
   });

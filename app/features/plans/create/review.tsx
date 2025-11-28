@@ -1,4 +1,4 @@
-// app/_features/plans/create/Review.tsx
+// app/features/plans/create/review.tsx
 import { useEffect, useMemo, useState } from "react";
 import {
   View,
@@ -9,11 +9,12 @@ import {
   ActivityIndicator,
   Alert,
 } from "react-native";
-import { useRootNavigationState, useRouter } from "expo-router";
+import { useRouter } from "expo-router";
 import { usePlanDraft } from "./store";
 import { supabase } from "../../../../lib/supabase";
 import { useAuth } from "../../../../lib/useAuth";
 import { useAppTheme } from "../../../../lib/useAppTheme";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 function humanDate(iso?: string | null) {
   if (!iso) return "—";
@@ -29,9 +30,21 @@ function humanDate(iso?: string | null) {
   }
 }
 
+/** Helper: returns the Sunday (local) that starts the week as YYYY-MM-DD */
+function weekKeySundayLocal(d: Date) {
+  const copy = new Date(d); // local
+  const dow = copy.getDay(); // 0=Sun
+  copy.setHours(0, 0, 0, 0);
+  copy.setDate(copy.getDate() - dow); // back to Sunday
+  const y = copy.getFullYear();
+  const m = String(copy.getMonth() + 1).padStart(2, "0");
+  const day = String(copy.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 export default function Review() {
   const { session, loading } = useAuth();
-  const userId = session?.user?.id;
+  const userId = session?.user?.id ?? null;
 
   const { colors } = useAppTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
@@ -45,40 +58,48 @@ export default function Review() {
   );
 
   const [saving, setSaving] = useState(false);
-  const [pendingNav, setPendingNav] = useState(false);
-  const navState = useRootNavigationState();
   const router = useRouter();
 
-  useEffect(() => {
-    if (pendingNav && navState?.key) {
-      setPendingNav(false);
-      router.replace("/(tabs)");
-    }
-  }, [pendingNav, navState?.key]);
+  // validate goals (min 1, max 3, all have start & target > 0)
+  const goalsValid = useMemo(() => {
+    if (goals.length < 1 || goals.length > 3) return false;
+    return goals.every(
+      (g) =>
+        g.start != null &&
+        !Number.isNaN(g.start) &&
+        g.start > 0 &&
+        g.target != null &&
+        !Number.isNaN(g.target) &&
+        g.target > 0
+    );
+  }, [goals]);
 
+  // overall canSave guard
   const canSave = useMemo(() => {
     if (!title?.trim()) return false;
     if (!endDate) return false;
     if (!workouts || workouts.length !== workoutsPerWeek) return false;
     if (workouts.some((w) => !w.title?.trim() || w.exercises.length === 0))
       return false;
+    if (!goalsValid) return false;
     return true;
-  }, [title, endDate, workoutsPerWeek, workouts]);
+  }, [title, endDate, workoutsPerWeek, workouts, goalsValid]);
 
+  // redirect to login if not authenticated
   useEffect(() => {
     if (loading) return;
     if (!userId) {
       Alert.alert("Please log in", "You must be signed in to create a plan.");
       router.replace("/(auth)/login");
     }
-  }, [loading, userId]);
+  }, [loading, userId, router]);
 
   async function handleCreate() {
     if (!userId) return;
     if (!canSave) {
       Alert.alert(
         "Incomplete",
-        "Please complete all required fields before creating the plan."
+        "Please complete all required fields and goals before creating the plan."
       );
       return;
     }
@@ -86,6 +107,7 @@ export default function Review() {
     try {
       setSaving(true);
 
+      // ---- build payload for RPC ----
       const p_workouts = workouts.map((w) => ({
         title: w.title,
         exercises: w.exercises.map((e) => ({
@@ -110,7 +132,8 @@ export default function Review() {
         start: g.start ?? null,
       }));
 
-      const { error } = await supabase.rpc("create_full_plan", {
+      // ✅ IMPORTANT: match DB signature exactly – no p_weekly_target_sessions here
+      const { error: rpcError } = await supabase.rpc("create_full_plan", {
         p_user_id: userId,
         p_title: title,
         p_end_date: endDate,
@@ -118,74 +141,82 @@ export default function Review() {
         p_goals,
       });
 
-      if (error) {
-        console.error("create_full_plan RPC failed:", error);
-        Alert.alert("Could not create plan", error.message ?? "Unknown error");
+      if (rpcError) {
+        console.error("create_full_plan RPC failed:", rpcError);
+        Alert.alert(
+          "Could not create plan",
+          rpcError.message ?? "Unknown error"
+        );
         return;
       }
 
-      // ------------------ NEW: set weekly workout goal + init current week ------------------
+      // ------------------ Weekly goal + weekly stats ------------------
       const weeklyTarget = Math.max(
         1,
         Math.min(14, Number(workoutsPerWeek) || p_workouts.length || 3)
       );
       const now = new Date();
-      const currentWeekKey = weekKeySundayLocal(now); // e.g. "2025-10-26" (the Sunday that starts the week)
+      const currentWeekKey = weekKeySundayLocal(now);
 
-      // 1) Store the goal and the "active" week key in profile.settings (no timezone stored)
-      await supabase
+      // 1) load existing settings
+      const { data: profileRow, error: profileSelectErr } = await supabase
+        .from("profiles")
+        .select("settings")
+        .eq("id", userId)
+        .maybeSingle();
+
+      if (profileSelectErr) {
+        console.warn("Failed to load profile settings:", profileSelectErr);
+      }
+
+      const existingSettings =
+        (profileRow?.settings as Record<string, any> | null) ?? {};
+
+      // 2) update weekly_workout_goal + week key
+      const { error: profileUpdateErr } = await supabase
         .from("profiles")
         .update({
           weekly_workout_goal: weeklyTarget,
           settings: {
-            ...((
-              await supabase
-                .from("profiles")
-                .select("settings")
-                .eq("id", userId)
-                .maybeSingle()
-            ).data?.settings ?? {}),
+            ...existingSettings,
             workout_week_key: currentWeekKey,
           },
         })
         .eq("id", userId);
 
-      // 2) Ensure a row exists for this week in your per-week stats table (create if you don’t have it)
-      // Suggest a table: user_weekly_workout_stats(user_id uuid, week_key text, goal int, completed int, met bool, updated_at timestamptz)
-      await supabase.from("user_weekly_workout_stats").upsert(
-        {
-          user_id: userId,
-          week_key: currentWeekKey,
-          goal: weeklyTarget,
-          completed: 0,
-          met: false,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "user_id,week_key" }
-      );
-      // --------------------------------------------------------------------------------------
+      if (profileUpdateErr) {
+        console.warn("Failed to update profile weekly goal:", profileUpdateErr);
+      }
+
+      // 3) upsert weekly stats row
+      const { error: weeklyErr } = await supabase
+        .from("user_weekly_workout_stats")
+        .upsert(
+          {
+            user_id: userId,
+            week_key: currentWeekKey,
+            goal: weeklyTarget,
+            completed: 0,
+            met: false,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "user_id,week_key" }
+        );
+
+      if (weeklyErr) {
+        console.warn("Failed to upsert weekly workout stats:", weeklyErr);
+      }
+      // ---------------------------------------------------------------
 
       Alert.alert("Plan created", "Your plan has been saved.");
       reset();
-      setPendingNav(true);
+      router.replace("/(tabs)/workout");
     } catch (e: any) {
       console.error("Unexpected error creating plan:", e);
       Alert.alert("Could not create plan", e?.message ?? String(e));
     } finally {
       setSaving(false);
     }
-  }
-
-  /** Helper: returns the Sunday (local) that starts the week as YYYY-MM-DD */
-  function weekKeySundayLocal(d: Date) {
-    const copy = new Date(d); // local
-    const dow = copy.getDay(); // 0=Sun
-    copy.setHours(0, 0, 0, 0);
-    copy.setDate(copy.getDate() - dow); // back to Sunday
-    const y = copy.getFullYear();
-    const m = String(copy.getMonth() + 1).padStart(2, "0");
-    const day = String(copy.getDate()).padStart(2, "0");
-    return `${y}-${m}-${day}`; // the "week_key"
   }
 
   if (loading || !userId) {
@@ -196,7 +227,6 @@ export default function Review() {
     );
   }
 
-  // keep your fun superset colors (they read well on both themes)
   const SUPERSET_COLORS = [
     "#2563eb",
     "#16a34a",
@@ -212,171 +242,177 @@ export default function Review() {
   }
 
   return (
-    <ScrollView
-      style={{ flex: 1, backgroundColor: colors.background }}
-      contentContainerStyle={{ padding: 16, gap: 12 }}
-    >
-      <View style={styles.card}>
-        <Text style={styles.h2}>Review Plan</Text>
-        <Text style={styles.muted}>
-          Make sure everything looks right before creating your plan.
-        </Text>
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
+      <ScrollView
+        style={{ flex: 1, backgroundColor: colors.background }}
+        contentContainerStyle={{ padding: 16, gap: 12 }}
+      >
+        <View style={styles.card}>
+          <Text style={styles.h2}>Review Plan</Text>
+          <Text style={styles.muted}>
+            Make sure everything looks right before creating your plan.
+          </Text>
 
-        <View style={styles.divider} />
+          <View style={styles.divider} />
 
-        <Text style={styles.h3}>{title || "Untitled Plan"}</Text>
-        <Text style={styles.muted}>
-          Ends {humanDate(endDate)} • {workoutsPerWeek} workouts/week
-        </Text>
-      </View>
+          <Text style={styles.h3}>{title || "Untitled Plan"}</Text>
+          <Text style={styles.muted}>
+            Ends {humanDate(endDate)} • {workoutsPerWeek} workouts/week
+          </Text>
+        </View>
 
-      <View style={styles.card}>
-        <Text style={styles.h3}>Workouts</Text>
-        <View style={{ height: 8 }} />
-        {workouts.map((w, i) => {
-          const groupsOrder: string[] = [];
-          const seen = new Set<string>();
-          w.exercises.forEach((ex) => {
-            if (ex.supersetGroup && !seen.has(ex.supersetGroup)) {
-              groupsOrder.push(ex.supersetGroup);
-              seen.add(ex.supersetGroup);
-            }
-          });
+        <View style={styles.card}>
+          <Text style={styles.h3}>Workouts</Text>
+          <View style={{ height: 8 }} />
+          {workouts.map((w, i) => {
+            const groupsOrder: string[] = [];
+            const seen = new Set<string>();
+            w.exercises.forEach((ex) => {
+              if (ex.supersetGroup && !seen.has(ex.supersetGroup)) {
+                groupsOrder.push(ex.supersetGroup);
+                seen.add(ex.supersetGroup);
+              }
+            });
 
-          const rendered = new Set<string>();
-          const rows: React.ReactNode[] = [];
+            const rendered = new Set<string>();
+            const rows: React.ReactNode[] = [];
 
-          w.exercises.forEach((e, j) => {
-            const key = `${e.exercise.id}-${j}`;
-            if (e.supersetGroup) {
-              const gid = e.supersetGroup;
-              if (rendered.has(gid)) return;
+            w.exercises.forEach((e, j) => {
+              const key = `${e.exercise.id}-${j}`;
+              if (e.supersetGroup) {
+                const gid = e.supersetGroup;
+                if (rendered.has(gid)) return;
 
-              const members = w.exercises
-                .map((x, idx) => ({ x, idx }))
-                .filter(({ x }) => x.supersetGroup === gid);
+                const members = w.exercises
+                  .map((x, idx) => ({ x, idx }))
+                  .filter(({ x }) => x.supersetGroup === gid);
 
-              members.forEach(({ idx }) => rendered.add(`${gid}-${idx}`));
-              rendered.add(gid);
+                members.forEach(({ idx }) => rendered.add(`${gid}-${idx}`));
+                rendered.add(gid);
 
-              const order = groupsOrder.indexOf(gid);
-              const color = colorForGroupId(gid, order);
+                const order = groupsOrder.indexOf(gid);
+                const color = colorForGroupId(gid, order);
 
-              rows.push(
-                <View
-                  key={`group-${gid}`}
-                  style={[
-                    styles.superset,
-                    { borderColor: color, backgroundColor: colors.card },
-                  ]}
-                >
-                  <Text style={{ fontWeight: "800", color, marginBottom: 4 }}>
-                    Superset {groupLabel(order)}
+                rows.push(
+                  <View
+                    key={`group-${gid}`}
+                    style={[
+                      styles.superset,
+                      { borderColor: color, backgroundColor: colors.card },
+                    ]}
+                  >
+                    <Text style={{ fontWeight: "800", color, marginBottom: 4 }}>
+                      Superset {groupLabel(order)}
+                    </Text>
+
+                    {members.map(({ x, idx: memberIdx }) => {
+                      const isGoal = goalExerciseIds.has(x.exercise.id);
+                      return (
+                        <Text
+                          key={`m-${gid}-${memberIdx}`}
+                          style={[
+                            styles.muted,
+                            isGoal && {
+                              color: colors.primaryText,
+                              fontWeight: "700",
+                            },
+                          ]}
+                        >
+                          • {x.exercise.name}
+                          {x.isDropset ? "  • Dropset" : ""}
+                          {isGoal ? "  🎯" : ""}
+                        </Text>
+                      );
+                    })}
+                  </View>
+                );
+              } else {
+                const isGoal = goalExerciseIds.has(e.exercise.id);
+                rows.push(
+                  <Text
+                    key={key}
+                    style={[
+                      styles.muted,
+                      { marginTop: 6 },
+                      isGoal && {
+                        color: colors.primaryText,
+                        fontWeight: "700",
+                      },
+                    ]}
+                  >
+                    • {e.exercise.name}
+                    {e.isDropset ? "  • Dropset" : ""}
+                    {isGoal ? "  🎯" : ""}
                   </Text>
+                );
+              }
+            });
 
-                  {members.map(({ x, idx: memberIdx }) => {
-                    const isGoal = goalExerciseIds.has(x.exercise.id);
-                    return (
-                      <Text
-                        key={`m-${gid}-${memberIdx}`}
-                        style={[
-                          styles.muted,
-                          isGoal && {
-                            color: colors.primaryText,
-                            fontWeight: "700",
-                          },
-                        ]}
-                      >
-                        • {x.exercise.name}
-                        {x.isDropset ? "  • Dropset" : ""}
-                        {isGoal ? "  🎯" : ""}
-                      </Text>
-                    );
-                  })}
-                </View>
-              );
-            } else {
-              const isGoal = goalExerciseIds.has(e.exercise.id);
-              rows.push(
+            return (
+              <View key={i} style={styles.subCard}>
+                <Text style={styles.h4}>
+                  {i + 1}. {w.title || "Untitled Workout"}
+                </Text>
+                {w.exercises.length === 0 ? (
+                  <Text style={styles.muted}>No exercises yet.</Text>
+                ) : (
+                  <View style={{ marginTop: 4 }}>{rows}</View>
+                )}
+              </View>
+            );
+          })}
+        </View>
+
+        <View style={styles.card}>
+          <Text style={styles.h3}>Goals</Text>
+          <View style={{ height: 8 }} />
+          {goals.length === 0 ? (
+            <Text style={styles.muted}>No goals selected.</Text>
+          ) : (
+            <View style={{ gap: 6 }}>
+              {goals.map((g, i) => (
                 <Text
-                  key={key}
+                  key={i}
                   style={[
                     styles.muted,
-                    { marginTop: 6 },
-                    isGoal && { color: colors.primaryText, fontWeight: "700" },
+                    { color: colors.primaryText, fontWeight: "700" },
                   ]}
                 >
-                  • {e.exercise.name}
-                  {e.isDropset ? "  • Dropset" : ""}
-                  {isGoal ? "  🎯" : ""}
+                  • {g.exercise.name} — {g.mode.replace("_", " ")} → {g.target}
+                  {g.unit ? ` ${g.unit}` : ""}
+                  {g.start != null ? `  (start ${g.start}${g.unit ?? ""})` : ""}
                 </Text>
-              );
-            }
-          });
-
-          return (
-            <View key={i} style={styles.subCard}>
-              <Text style={styles.h4}>
-                {i + 1}. {w.title || "Untitled Workout"}
-              </Text>
-              {w.exercises.length === 0 ? (
-                <Text style={styles.muted}>No exercises yet.</Text>
-              ) : (
-                <View style={{ marginTop: 4 }}>{rows}</View>
-              )}
+              ))}
             </View>
-          );
-        })}
-      </View>
-
-      <View style={styles.card}>
-        <Text style={styles.h3}>Goals</Text>
-        <View style={{ height: 8 }} />
-        {goals.length === 0 ? (
-          <Text style={styles.muted}>No goals selected.</Text>
-        ) : (
-          <View style={{ gap: 6 }}>
-            {goals.map((g, i) => (
-              <Text
-                key={i}
-                style={[
-                  styles.muted,
-                  { color: colors.primaryText, fontWeight: "700" },
-                ]}
-              >
-                • {g.exercise.name} — {g.mode.replace("_", " ")} → {g.target}
-                {g.unit ? ` ${g.unit}` : ""}
-                {g.start != null ? `  (start ${g.start}${g.unit ?? ""})` : ""}
-              </Text>
-            ))}
-          </View>
-        )}
-      </View>
-
-      <View style={{ flexDirection: "row", gap: 12 }}>
-        <Pressable style={styles.btn} onPress={() => router.back()}>
-          <Text style={styles.btnText}>← Back</Text>
-        </Pressable>
-        <Pressable
-          style={[styles.btn, styles.primary, { flex: 1 }]}
-          onPress={handleCreate}
-          disabled={!canSave || saving}
-        >
-          {saving ? (
-            <ActivityIndicator color={colors.primary ?? "#fff"} />
-          ) : (
-            <Text
-              style={[
-                styles.btnText,
-                { color: colors.primary ?? "#fff", fontWeight: "800" },
-              ]}
-            >
-              Create Plan
-            </Text>
           )}
-        </Pressable>
-      </View>
-    </ScrollView>
+        </View>
+
+        <View style={{ flexDirection: "row", gap: 12 }}>
+          <Pressable style={styles.btn} onPress={() => router.back()}>
+            <Text style={styles.btnText}>← Back</Text>
+          </Pressable>
+          <Pressable
+            style={[
+              styles.btn,
+              styles.primary,
+              { flex: 1, opacity: !canSave || saving ? 0.6 : 1 },
+            ]}
+            onPress={handleCreate}
+            disabled={!canSave || saving}
+          >
+            {saving ? (
+              <ActivityIndicator color={"#fff"} />
+            ) : (
+              <Text
+                style={[styles.btnText, { color: "#fff", fontWeight: "800" }]}
+              >
+                Create Plan
+              </Text>
+            )}
+          </Pressable>
+        </View>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
@@ -398,6 +434,8 @@ const makeStyles = (colors: any) =>
       padding: 12,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.border,
+      gap: 4,
+      marginBottom: 8,
     },
 
     divider: { height: 1, backgroundColor: colors.border, marginVertical: 12 },
@@ -412,6 +450,7 @@ const makeStyles = (colors: any) =>
       borderRadius: 12,
       padding: 10,
       marginTop: 6,
+      gap: 2,
     },
 
     btn: {
