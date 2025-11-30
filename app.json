@@ -2,7 +2,7 @@
   "expo": {
     "name": "MuscleMetric",
     "slug": "musclemetric",
-    "version": "1.0.2",
+    "version": "1.0.3",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "musclemetric",
@@ -11,7 +11,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.musclemetric.app",
-      "buildNumber": "3",
+      "buildNumber": "1",
       "infoPlist": {
         "NSMotionUsageDescription": "We use your motion data to show daily step counts.",
         "NSSupportsLiveActivities": true,
