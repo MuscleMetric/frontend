@@ -19,14 +19,11 @@ export type LivePayload = {
   workoutTitle: string;
   currentExercise?: string;
   setLabel?: string; // e.g. "Set 2 of 4"
-  prevLabel?: string; // e.g. "Last: 80×6kg"
+  prevLabel?: string; // e.g. "Last: 5×100kg"
 };
 
 const ANDROID_NOTIFICATION_ID = "workout-live";
 const ANDROID_CHANNEL_ID = "workout-live";
-
-// We still keep this for reference, but we won't use it as a countdown.
-const LIVE_ACTIVITY_DURATION_MS = 90 * 60 * 1000; // 90 minutes
 
 let iOSActivityId: string | null = null;
 
@@ -59,44 +56,37 @@ function androidSubtitle(p: LivePayload) {
   return p.prevLabel || undefined;
 }
 
-// Format elapsed time as MM:SS
-function formatElapsed(startedAt: number): string {
-  const sec = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
-  const mm = String(Math.floor(sec / 60)).padStart(2, "0");
-  const ss = String(sec % 60).padStart(2, "0");
-  return `${mm}:${ss}`;
-}
+// This is how long we let the ActivityKit timer run.
+// We use `startedAt + LIVE_ACTIVITY_DURATION_MS` as the "end" of the interval.
+const LIVE_ACTIVITY_DURATION_MS = 90 * 60 * 1000; // 90 minutes
 
-// Build the iOS Live Activity state from our payload
-function buildIOSState(p: LivePayload): LiveActivityState {
-  const timerText = formatElapsed(p.startedAt); // "00:02", "10:15", etc
-
-  // We'll pack 4 lines into subtitle:
-  // 1) Workout name
-  // 2) Exercise name
-  // 3) Set info
-  // 4) Last set info
-  const lines = [
-    p.workoutTitle,
-    p.currentExercise ?? "",
-    p.setLabel ?? "",
-    p.prevLabel ?? "",
-  ]
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0);
+// Build the iOS Live Activity *state* from our payload
+function buildState(p: LivePayload): LiveActivityState {
+  const endMs = p.startedAt + LIVE_ACTIVITY_DURATION_MS;
 
   return {
-    // BIG TIMER text (we'll style this in Swift)
-    title: timerText,
+    // We’re not using this for the timer anymore (Swift uses timerInterval),
+    // but we can keep the workout title here.
+    title: p.workoutTitle,
 
-    // 4 lines separated by "\n" – we'll unpack them in Swift
-    subtitle: lines.join("\n"),
+    // 4 lines: workout, exercise, set info, last set info
+    subtitle: [
+      p.workoutTitle,
+      p.currentExercise ?? "",
+      p.setLabel ?? "",
+      p.prevLabel ?? "",
+    ]
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .join("\n"),
 
-    // IMPORTANT: no progressBar -> no green line
-    // progressBar: undefined,
+    // This is translated by expo-live-activity to `timerEndDateInMilliseconds`
+    // in your Swift `ContentState`.
+    progressBar: {
+      date: endMs,
+    },
 
-    // Name of your logo image in Assets.xcassets
-    // e.g. add an image set called "LiveLogo"
+    // Logo image name – must match an image in assets/liveActivity/LiveLogo.png
     imageName: "LiveLogo",
     dynamicIslandImageName: "LiveLogo",
   };
@@ -125,7 +115,7 @@ export async function startLiveWorkout(p: LivePayload) {
         onlyAlertOnce: true,
         ongoing: true,
         pressAction: { id: "default" },
-        smallIcon: "ic_stat_name", // custom small icon (drawable) – or remove to use app icon
+        smallIcon: "ic_stat_name", // optional custom small icon (drawable)
         timestamp: p.startedAt,
         showChronometer: true,
         importance: notifee.AndroidImportance?.HIGH,
@@ -138,16 +128,17 @@ export async function startLiveWorkout(p: LivePayload) {
   // ---- iOS: Live Activity via expo-live-activity ----
   if (Platform.OS === "ios" && typeof LiveActivity.startActivity === "function") {
     try {
-      const state = buildIOSState(p);
+      const state = buildState(p);
 
       const config: LiveActivityConfig = {
-        backgroundColor: "#000000", // dark pill
-        titleColor: "#FFFFFF", // timer color
-        subtitleColor: "#E5E7EB", // 4-line text color
-        // No progressViewTint -> no line anyway because we don't send progressBar
-        timerType: "digital",
-        imagePosition: "left", // logo on the left
-        imageAlign: "top", // push it to the top on the left side
+        backgroundColor: "#000000",
+        titleColor: "#FFFFFF",
+        subtitleColor: "#E5E7EB",
+        progressViewTint: "#22c55e",
+        progressViewLabelColor: "#FFFFFF",
+        timerType: "circular",
+        imagePosition: "left",
+        imageAlign: "top",
       };
 
       console.log("[liveWorkout] iOS startActivity", { state, config });
@@ -156,7 +147,8 @@ export async function startLiveWorkout(p: LivePayload) {
         const activityId = LiveActivity.startActivity(state, config);
         iOSActivityId = activityId ?? null;
       } else {
-        await updateLiveWorkout(p);
+        // If something is already running, just update it
+        LiveActivity.updateActivity(iOSActivityId, state);
       }
     } catch (e) {
       console.warn("[liveWorkout] Live Activity start failed:", e);
@@ -198,7 +190,7 @@ export async function updateLiveWorkout(p: LivePayload) {
     typeof LiveActivity.updateActivity === "function"
   ) {
     try {
-      const state = buildIOSState(p);
+      const state = buildState(p);
 
       console.log("[liveWorkout] iOS updateActivity", {
         activityId: iOSActivityId,
@@ -235,6 +227,9 @@ export async function stopLiveWorkout() {
       const finalState: LiveActivityState = {
         title: "Workout Complete",
         subtitle: undefined,
+        progressBar: { progress: 1 },
+        imageName: "LiveLogo",
+        dynamicIslandImageName: "LiveLogo",
       };
 
       console.log("[liveWorkout] iOS stopActivity", {
