@@ -188,57 +188,62 @@ import WidgetKit
         let hasImage = contentState.imageName != nil
         let effectiveStretch = isStretch && hasImage
 
-        HStack(alignment: .center) {
-          if hasImage, isLeftImage {
-            if let imageName = contentState.imageName {
-              alignedImage(imageName: imageName)
-            }
-          }
+HStack(alignment: .center, spacing: 12) {
+  // LEFT COLUMN: logo top-left, timer bottom-left
+  if let imageName = contentState.imageName {
+    VStack(alignment: .leading) {
+      // Logo at the top
+      alignedImage(imageName: imageName)
 
-          VStack(alignment: .leading, spacing: 2) {
-            Text(contentState.title)
-              .font(.title2)
-              .fontWeight(.semibold)
-              .modifier(ConditionalForegroundViewModifier(color: attributes.titleColor))
+      Spacer(minLength: 0)
 
-            if let subtitle = contentState.subtitle {
-              Text(subtitle)
-                .font(.title3)
-                .modifier(ConditionalForegroundViewModifier(color: attributes.subtitleColor))
-            }
+      // Timer at the bottom-left, big & bold
+      Text(contentState.title) // we now send "MM:SS" here from JS
+        .font(.title2)         // make this as big as your workout text
+        .fontWeight(.bold)
+        .modifier(ConditionalForegroundViewModifier(color: attributes.titleColor))
+    }
+    .frame(maxHeight: .infinity, alignment: .topLeading)
+  }
 
-            if effectiveStretch {
-              if let date = contentState.timerEndDateInMilliseconds {
-                ProgressView(timerInterval: Date.toTimerInterval(miliseconds: date))
-                  .tint(progressViewTint)
-                  .modifier(ConditionalForegroundViewModifier(color: attributes.progressViewLabelColor))
-              } else if let progress = contentState.progress {
-                ProgressView(value: progress)
-                  .tint(progressViewTint)
-                  .modifier(ConditionalForegroundViewModifier(color: attributes.progressViewLabelColor))
-              }
-            }
-          }.layoutPriority(1)
+  // RIGHT COLUMN: 4 equal-sized text rows
+  let lines = (contentState.subtitle ?? "").components(separatedBy: "\n")
 
-          if hasImage, !isLeftImage { // right side (default)
-            Spacer()
-            if let imageName = contentState.imageName {
-              alignedImage(imageName: imageName)
-            }
-          }
-        }
+  func line(_ index: Int) -> String? {
+    guard index < lines.count else { return nil }
+    let trimmed = lines[index].trimmingCharacters(in: .whitespacesAndNewlines)
+    return trimmed.isEmpty ? nil : trimmed
+  }
 
-        if !effectiveStretch {
-          if let date = contentState.timerEndDateInMilliseconds {
-            ProgressView(timerInterval: Date.toTimerInterval(miliseconds: date))
-              .tint(progressViewTint)
-              .modifier(ConditionalForegroundViewModifier(color: attributes.progressViewLabelColor))
-          } else if let progress = contentState.progress {
-            ProgressView(value: progress)
-              .tint(progressViewTint)
-              .modifier(ConditionalForegroundViewModifier(color: attributes.progressViewLabelColor))
-          }
-        }
+  VStack(alignment: .leading, spacing: 2) {
+    if let workoutName = line(0) {
+      Text(workoutName)             // Workout name
+        .font(.title3)
+        .fontWeight(.semibold)
+        .modifier(ConditionalForegroundViewModifier(color: attributes.subtitleColor))
+    }
+
+    if let exerciseName = line(1) {
+      Text(exerciseName)            // Exercise name
+        .font(.title3)
+        .modifier(ConditionalForegroundViewModifier(color: attributes.subtitleColor))
+    }
+
+    if let setInfo = line(2) {
+      Text(setInfo)                 // Set info (e.g. "Set 2 of 4")
+        .font(.title3)
+        .modifier(ConditionalForegroundViewModifier(color: attributes.subtitleColor))
+    }
+
+    if let lastInfo = line(3) {
+      Text(lastInfo)                // Last weight info (e.g. "Last: 80×6kg")
+        .font(.title3)
+        .modifier(ConditionalForegroundViewModifier(color: attributes.subtitleColor))
+    }
+  }
+  .layoutPriority(1)
+}
+
       }
       .padding(EdgeInsets(top: top, leading: leading, bottom: bottom, trailing: trailing))
     }

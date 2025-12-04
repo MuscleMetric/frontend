@@ -193,7 +193,6 @@ export default function StartWorkoutScreen() {
     });
 
     return () => {
-      // ensure we stop if user navigates away
       stopLiveWorkout();
     };
   }, [!!workout, !!state]);
