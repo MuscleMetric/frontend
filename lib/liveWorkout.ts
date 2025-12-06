@@ -18,7 +18,7 @@ export type LivePayload = {
   startedAt: number; // ms epoch
   workoutTitle: string;
   currentExercise?: string;
-  setLabel?: string; // e.g. "Set 2 of 4"
+  setLabel?: string; // e.g. "Set 2 of 3"
   prevLabel?: string; // e.g. "Last: 5×100kg"
 };
 
@@ -65,8 +65,7 @@ function buildState(p: LivePayload): LiveActivityState {
   const endMs = p.startedAt + LIVE_ACTIVITY_DURATION_MS;
 
   return {
-    // We’re not using this for the timer anymore (Swift uses timerInterval),
-    // but we can keep the workout title here.
+    // Title is still the workout name
     title: p.workoutTitle,
 
     // 4 lines: workout, exercise, set info, last set info
@@ -80,16 +79,12 @@ function buildState(p: LivePayload): LiveActivityState {
       .filter(Boolean)
       .join("\n"),
 
-    // This is translated by expo-live-activity to `timerEndDateInMilliseconds`
-    // in your Swift `ContentState`.
+    // expo-live-activity maps this into timerEndDateInMilliseconds
     progressBar: {
       date: endMs,
     },
-
-    // Logo image name – must match an image in assets/liveActivity/LiveLogo.png
-    imageName: "LiveLogo",
-    dynamicIslandImageName: "LiveLogo",
-  };
+    // ⛔️ no imageName / dynamicIslandImageName anymore
+  } as LiveActivityState;
 }
 
 /* ---------- public API ---------- */
@@ -132,13 +127,12 @@ export async function startLiveWorkout(p: LivePayload) {
 
       const config: LiveActivityConfig = {
         backgroundColor: "#000000",
-        titleColor: "#FFFFFF",
-        subtitleColor: "#E5E7EB",
+        titleColor: "#0c9effff",      // blue for "MuscleMetric"
+        subtitleColor: "#FFFFFF",
         progressViewTint: "#22c55e",
         progressViewLabelColor: "#FFFFFF",
         timerType: "circular",
-        imagePosition: "left",
-        imageAlign: "top",
+        // ⛔️ no imagePosition / imageAlign
       };
 
       console.log("[liveWorkout] iOS startActivity", { state, config });
@@ -147,7 +141,6 @@ export async function startLiveWorkout(p: LivePayload) {
         const activityId = LiveActivity.startActivity(state, config);
         iOSActivityId = activityId ?? null;
       } else {
-        // If something is already running, just update it
         LiveActivity.updateActivity(iOSActivityId, state);
       }
     } catch (e) {
@@ -228,9 +221,8 @@ export async function stopLiveWorkout() {
         title: "Workout Complete",
         subtitle: undefined,
         progressBar: { progress: 1 },
-        imageName: "LiveLogo",
-        dynamicIslandImageName: "LiveLogo",
-      };
+        // ⛔️ no image fields
+      } as LiveActivityState;
 
       console.log("[liveWorkout] iOS stopActivity", {
         activityId: iOSActivityId,

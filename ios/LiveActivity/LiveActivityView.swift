@@ -37,218 +37,82 @@ struct DebugLog: View {
 struct LiveActivityView: View {
   let contentState: LiveActivityAttributes.ContentState
   let attributes: LiveActivityAttributes
-  @State private var imageContainerSize: CGSize?
   @Environment(\.colorScheme) private var colorScheme
 
-  var progressViewTint: Color? {
-    attributes.progressViewTint.map { Color(hex: $0) }
-  }
-
-  private var imageAlignment: Alignment {
-    switch attributes.imageAlign {
-    case "center":
-      return .center
-    case "bottom":
-      return .bottom
-    default:
-      return .top
-    }
-  }
-
-  private func alignedImage(imageName: String) -> some View {
-    let defaultHeight: CGFloat = 64
-    let defaultWidth: CGFloat = 64
-    let containerHeight = imageContainerSize?.height
-    let containerWidth = imageContainerSize?.width
-    let hasWidthConstraint = (attributes.imageWidthPercent != nil) || (attributes.imageWidth != nil)
-
-    let computedHeight: CGFloat? = {
-      if let percent = attributes.imageHeightPercent {
-        let clamped = min(max(percent, 0), 100) / 100.0
-        let base = (containerHeight ?? defaultHeight)
-        return base * clamped
-      } else if let size = attributes.imageHeight {
-        return CGFloat(size)
-      } else if hasWidthConstraint {
-        // height automatic to preserve aspect ratio
-        return nil
-      } else {
-        // default size
-        return defaultHeight
-      }
-    }()
-
-    let computedWidth: CGFloat? = {
-      if let percent = attributes.imageWidthPercent {
-        let clamped = min(max(percent, 0), 100) / 100.0
-        let base = (containerWidth ?? defaultWidth)
-        return base * clamped
-      } else if let size = attributes.imageWidth {
-        return CGFloat(size)
-      } else {
-        // width automatic, based on height / aspect ratio
-        return nil
-      }
-    }()
-
-    return ZStack(alignment: .center) {
-      Group {
-        let fit = attributes.contentFit ?? "cover"
-        switch fit {
-        case "contain":
-          Image.dynamic(assetNameOrPath: imageName)
-            .resizable()
-            .scaledToFit()
-            .frame(width: computedWidth, height: computedHeight)
-
-        case "fill":
-          Image.dynamic(assetNameOrPath: imageName)
-            .resizable()
-            .frame(width: computedWidth, height: computedHeight)
-
-        case "none":
-          Image.dynamic(assetNameOrPath: imageName)
-            .renderingMode(.original)
-            .frame(width: computedWidth, height: computedHeight)
-
-        case "scale-down":
-          if let uiImage = UIImage.dynamic(assetNameOrPath: imageName) {
-            let targetHeight = computedHeight ?? uiImage.size.height
-            let targetWidth = computedWidth ?? uiImage.size.width
-            let shouldScaleDown = uiImage.size.height > targetHeight || uiImage.size.width > targetWidth
-
-            if shouldScaleDown {
-              Image(uiImage: uiImage)
-                .resizable()
-                .scaledToFit()
-                .frame(width: computedWidth, height: computedHeight)
-            } else {
-              Image(uiImage: uiImage)
-                .renderingMode(.original)
-                .frame(
-                  width: min(uiImage.size.width, targetWidth),
-                  height: min(uiImage.size.height, targetHeight)
-                )
-            }
-          } else {
-            DebugLog("⚠️[ExpoLiveActivity] assetNameOrPath couldn't resolve to UIImage")
-          }
-
-        case "cover":
-          Image.dynamic(assetNameOrPath: imageName)
-            .resizable()
-            .scaledToFill()
-            .frame(width: computedWidth, height: computedHeight)
-            .clipped()
-
-        default:
-          DebugLog("⚠️[ExpoLiveActivity] Unknown contentFit '\(fit)'")
-        }
-      }
-    }
-    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: imageAlignment)
-    .background(
-      GeometryReader { proxy in
-        Color.clear
-          .onAppear {
-            let s = proxy.size
-            if s.width > 0, s.height > 0 { imageContainerSize = s }
-          }
-          .onChange(of: proxy.size) { s in
-            if s.width > 0, s.height > 0 { imageContainerSize = s }
-          }
-      }
-    )
-  }
-
-  // MARK: - Main Layout
+  // MARK: - Body
 
   var body: some View {
-    VStack(alignment: .leading) {
-      // Split subtitle into up to 4 lines:
-      // 0: workout name
-      // 1: exercise name
-      // 2: set info
-      // 3: last set info
+    VStack(alignment: .leading, spacing: 8) {
+      // Brand at the top
+      Text("MuscleMetric")
+        .font(.headline)
+        .fontWeight(.bold)
+        .foregroundColor(Color(hex: attributes.titleColor ?? "#0B6AA9"))
+        .frame(maxWidth: .infinity, alignment: .center)
+
       let lines = (contentState.subtitle ?? "").components(separatedBy: "\n")
 
-      HStack(alignment: .center, spacing: 12) {
-        // LEFT COLUMN: logo at the top, timer at the bottom
-        if let imageName = contentState.imageName {
-          VStack(alignment: .leading) {
-            // Logo top-left
-            alignedImage(imageName: imageName)
+      // TIMER + TEXT SIDE BY SIDE
+      HStack(alignment: .center, spacing: 16) {
 
-            Spacer(minLength: 0)
+        // TIMER ON THE LEFT
+        if let ms = contentState.timerEndDateInMilliseconds {
+          let endDate = Date(timeIntervalSince1970: ms / 1000)
+          let startDate = endDate.addingTimeInterval(-90 * 60)
 
-            // Timer bottom-left (ActivityKit-driven timer)
-            if let ms = contentState.timerEndDateInMilliseconds {
-              Text(
-                timerInterval: Date.toTimerInterval(miliseconds: ms),
-                pauseTime: nil,
-                countsDown: false,
-                showsHours: true
-              )
-              .monospacedDigit()
-              .font(.title2)
-              .fontWeight(.bold)
-              .modifier(
-                ConditionalForegroundViewModifier(
-                  color: attributes.titleColor
-                )
-              )
-            }
-          }
-          .frame(maxHeight: .infinity, alignment: .topLeading)
+          Text(
+            timerInterval: startDate ... endDate,
+            pauseTime: nil,
+            countsDown: false,
+            showsHours: true
+          )
+          .monospacedDigit()
+          .font(.system(size: 44, weight: .bold))   // big but not crazy
+          .foregroundColor(.white)
+          .lineLimit(1)
+          .minimumScaleFactor(0.7)
         }
 
-        // RIGHT COLUMN: 4 rows of text
+        // WORKOUT INFO ON THE RIGHT
         VStack(alignment: .leading, spacing: 2) {
           if let workoutName = line(0, from: lines) {
-            Text(workoutName) // Workout name
+            Text(workoutName)
               .font(.title3)
               .fontWeight(.semibold)
               .modifier(
-                ConditionalForegroundViewModifier(
-                  color: attributes.subtitleColor
-                )
+                ConditionalForegroundViewModifier(color: attributes.subtitleColor)
               )
           }
 
           if let exerciseName = line(1, from: lines) {
-            Text(exerciseName) // Exercise name
+            Text(exerciseName)
               .font(.title3)
               .modifier(
-                ConditionalForegroundViewModifier(
-                  color: attributes.subtitleColor
-                )
+                ConditionalForegroundViewModifier(color: attributes.subtitleColor)
               )
           }
 
           if let setInfo = line(2, from: lines) {
-            Text(setInfo) // Set info (e.g. "Set 2 of 2")
+            Text(setInfo)
               .font(.title3)
               .modifier(
-                ConditionalForegroundViewModifier(
-                  color: attributes.subtitleColor
-                )
+                ConditionalForegroundViewModifier(color: attributes.subtitleColor)
               )
           }
 
           if let lastInfo = line(3, from: lines) {
-            Text(lastInfo) // Last set info (e.g. "Last: 5×100kg")
+            Text(lastInfo)
               .font(.title3)
               .modifier(
-                ConditionalForegroundViewModifier(
-                  color: attributes.subtitleColor
-                )
+                ConditionalForegroundViewModifier(color: attributes.subtitleColor)
               )
           }
         }
-        .layoutPriority(1)
+
+        Spacer(minLength: 0) // keeps equal padding to the right
       }
     }
-    .padding(paddingInsets(from: attributes))
+    .padding(paddingInsets(from: attributes)) // handles left/right padding
     .activityBackgroundTint(activityBackgroundTint(from: attributes))
     .activitySystemActionForegroundColor(systemActionColor(from: attributes))
   }
@@ -257,9 +121,7 @@ struct LiveActivityView: View {
 
   private func line(_ index: Int, from lines: [String]) -> String? {
     guard index < lines.count else { return nil }
-    let trimmed = lines[index].trimmingCharacters(
-      in: .whitespacesAndNewlines
-    )
+    let trimmed = lines[index].trimmingCharacters(in: .whitespacesAndNewlines)
     return trimmed.isEmpty ? nil : trimmed
   }
 
@@ -285,7 +147,6 @@ struct LiveActivityView: View {
       )
     }
 
-    // default padding
     return EdgeInsets(top: 24, leading: 16, bottom: 24, trailing: 16)
   }
 
@@ -294,7 +155,7 @@ struct LiveActivityView: View {
       return Color(hex: hex)
     }
 
-    // Fallback: adapt to system light/dark
+    // Fallback: adapt to light/dark
     return colorScheme == .dark
       ? Color.black.opacity(0.85)
       : Color.white.opacity(0.9)
@@ -305,7 +166,6 @@ struct LiveActivityView: View {
       return Color(hex: hex)
     }
 
-    // Fallback: readable against the background
     return colorScheme == .dark ? .white : .black
   }
 }
