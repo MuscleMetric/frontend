@@ -15,8 +15,13 @@ import {
   Alert,
   TextInput,
   ActivityIndicator,
+  Modal,
+  FlatList,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 import { useLocalSearchParams, router, useNavigation } from "expo-router";
 import { useAppTheme } from "../../../lib/useAppTheme";
 import { supabase } from "../../../lib/supabase";
@@ -32,6 +37,7 @@ import { setReviewPayload } from "../../../lib/sessionStore";
 type Workout = {
   id: string;
   title: string | null;
+  notes: string | null;
   workout_exercises: WorkoutExercise[];
 };
 
@@ -51,22 +57,24 @@ type WorkoutExercise = {
   target_time_seconds: number | null;
   target_distance: number | null;
   notes: string | null;
-  is_dropset?: boolean | null; // NEW: db flag to allow drop mode
-  superset_group?: string | null; // 👈 NEW
+  is_dropset?: boolean | null; // db flag to allow drop mode
+  superset_group?: string | null;
   superset_index?: number | null;
   exercises: Exercise | null;
+
+  // NEW: added during this workout only (no row in workout_exercises)
+  isAdHoc?: boolean;
 };
 
-// In-progress logging
-type StrengthDrop = { reps?: string; weight?: string };
+export type StrengthDrop = { reps?: string; weight?: string };
 
-type StrengthSet = {
+export type StrengthSet = {
   reps?: string;
   weight?: string;
   drops?: StrengthDrop[]; // when exercise dropMode is true, use this array (one set with many drops)
 };
 
-type CardioSet = { distance?: string; timeSec?: string };
+export type CardioSet = { distance?: string; timeSec?: string };
 
 type ExerciseState =
   | {
@@ -93,6 +101,19 @@ type InProgressState = {
   startedAt: number; // ms epoch
   cardioTimeBonusSec: number;
   anyCompleted: boolean;
+};
+
+type SupersetInfo = {
+  byGroup: Record<string, string[]>; // groupId -> ordered WE ids
+  byWeId: Record<string, { group: string; pos: number }>;
+  labels: Record<string, string>; // groupId -> "A", "B", ...
+};
+
+type ExerciseOption = {
+  id: string;
+  name: string | null;
+  type: string | null;
+  equipment: string | null;
 };
 
 /* ---------- helpers ---------- */
@@ -137,11 +158,59 @@ function TimerText({ startedAt, color }: { startedAt: number; color: string }) {
   );
 }
 
+/* Excel-style A, B, ..., Z, AA, AB, ... */
+function alphaLabel(n: number) {
+  let s = "";
+  n += 1; // 1-based
+  while (n > 0) {
+    const rem = (n - 1) % 26;
+    s = String.fromCharCode(65 + rem) + s;
+    n = Math.floor((n - 1) / 26);
+  }
+  return s;
+}
+
+function buildSupersets(workout: Workout): SupersetInfo {
+  const byGroupTmp: Record<string, { id: string; pos: number }[]> = {};
+  const groupOrder: string[] = []; // first-seen order across workout
+
+  for (const we of workout.workout_exercises) {
+    if (we.superset_group) {
+      const gid = we.superset_group;
+      if (!byGroupTmp[gid]) {
+        byGroupTmp[gid] = [];
+        groupOrder.push(gid); // remember first appearance order
+      }
+      byGroupTmp[gid].push({ id: we.id, pos: we.superset_index ?? 0 });
+    }
+  }
+
+  const byGroup: Record<string, string[]> = {};
+  const byWeId: SupersetInfo["byWeId"] = {};
+  const labels: Record<string, string> = {};
+
+  // assign labels A, B, C ... based on first-appearance order
+  groupOrder.forEach((gid, idx) => {
+    labels[gid] = alphaLabel(idx);
+  });
+
+  Object.entries(byGroupTmp).forEach(([gid, arr]) => {
+    arr.sort((a, b) => a.pos - b.pos);
+    byGroup[gid] = arr.map((x) => x.id);
+    byGroup[gid].forEach((weId, i) => {
+      byWeId[weId] = { group: gid, pos: i };
+    });
+  });
+
+  return { byGroup, byWeId, labels };
+}
+
 /* ---------- main screen ---------- */
 export default function StartWorkoutScreen() {
   const { colors } = useAppTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const nav = useNavigation();
+  const insets = useSafeAreaInsets();
 
   // Disable gestures + header
   useEffect(() => {
@@ -169,6 +238,8 @@ export default function StartWorkoutScreen() {
   );
 
   const [state, setState] = useState<InProgressState | null>(null);
+  const [lastWorkoutNotes, setLastWorkoutNotes] = useState<string | null>(null);
+  const [notesOverlayVisible, setNotesOverlayVisible] = useState(false);
 
   // scrolling to open exercise
   const scrollRef = useRef<ScrollView>(null);
@@ -180,6 +251,61 @@ export default function StartWorkoutScreen() {
     }
   };
 
+  // ---------- Exercise picker modal state ----------
+  const [exerciseModalVisible, setExerciseModalVisible] = useState(false);
+  const [exerciseOptions, setExerciseOptions] = useState<ExerciseOption[]>([]);
+  const [exLoading, setExLoading] = useState(false);
+  const [exerciseSearch, setExerciseSearch] = useState("");
+  const [modalSelectedIds, setModalSelectedIds] = useState<string[]>([]);
+
+  const loadExercises = useCallback(async () => {
+    try {
+      setExLoading(true);
+      const { data, error } = await supabase
+        .from("exercises")
+        .select("id, name, type, equipment")
+        .order("name", { ascending: true });
+      if (error) throw error;
+
+      const opts: ExerciseOption[] =
+        data?.map((row: any) => ({
+          id: String(row.id),
+          name: row.name ?? null,
+          type: row.type ?? null,
+          equipment: row.equipment ?? null,
+        })) ?? [];
+
+      setExerciseOptions(opts);
+    } catch (e) {
+      console.warn("loadExercises error", e);
+      Alert.alert("Could not load exercises", "Please try again in a moment.");
+    } finally {
+      setExLoading(false);
+    }
+  }, []);
+
+  // Load exercises when modal first opens
+  useEffect(() => {
+    if (exerciseModalVisible && exerciseOptions.length === 0 && !exLoading) {
+      loadExercises();
+    }
+  }, [exerciseModalVisible, exerciseOptions.length, exLoading, loadExercises]);
+
+  const filteredExerciseOptions = useMemo(() => {
+    const q = exerciseSearch.trim().toLowerCase();
+    if (!q) return exerciseOptions;
+    return exerciseOptions.filter((opt) =>
+      (opt.name || "").toLowerCase().includes(q)
+    );
+  }, [exerciseOptions, exerciseSearch]);
+
+  const toggleModalSelect = (id: string) => {
+    setModalSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  };
+
+  // ---------- Existing live activity effects ----------
   useEffect(() => {
     if (!workout || !state) return;
 
@@ -279,7 +405,7 @@ export default function StartWorkoutScreen() {
         .from("workouts")
         .select(
           `
-          id, title,
+          id, title, notes,
           workout_exercises(
             id, exercise_id, order_index, target_sets, target_reps, target_weight, target_time_seconds, target_distance, notes, is_dropset,
             superset_group, superset_index,
@@ -297,6 +423,7 @@ export default function StartWorkoutScreen() {
         ? {
             id: String(data.id),
             title: data.title ?? null,
+            notes: data.notes ?? null,
             workout_exercises: (data.workout_exercises ?? [])
               .map((we: any) => ({
                 id: String(we.id),
@@ -331,6 +458,27 @@ export default function StartWorkoutScreen() {
         : null;
 
       setWorkout(w);
+
+      // last workout notes for this workout & user
+      try {
+        const { data: lastHist, error: lastErr } = await supabase
+          .from("workout_history")
+          .select("notes")
+          .eq("user_id", userId)
+          .eq("workout_id", workoutId)
+          .order("completed_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (!lastErr && lastHist?.notes) {
+          setLastWorkoutNotes(lastHist.notes as string);
+        } else {
+          setLastWorkoutNotes(null);
+        }
+      } catch (e) {
+        console.warn("load lastWorkoutNotes error", e);
+        setLastWorkoutNotes(null);
+      }
 
       // initialize in-progress state
       if (w) {
@@ -393,6 +541,115 @@ export default function StartWorkoutScreen() {
     load();
   }, [load]);
 
+  // ---------- Add ad-hoc exercises (from exercises table) ----------
+  const handleConfirmAddExercises = () => {
+    if (!workout || modalSelectedIds.length === 0) {
+      setExerciseModalVisible(false);
+      return;
+    }
+
+    const selected = exerciseOptions.filter((opt) =>
+      modalSelectedIds.includes(opt.id)
+    );
+    if (!selected.length) {
+      setExerciseModalVisible(false);
+      return;
+    }
+
+    let baseOrder =
+      workout.workout_exercises[workout.workout_exercises.length - 1]
+        ?.order_index ?? workout.workout_exercises.length - 1;
+
+    const added: WorkoutExercise[] = selected.map((opt, idx) => {
+      const weId = `adhoc-${Date.now()}-${idx}`;
+      const type = (opt.type || "").toLowerCase();
+      const isCardioKind = type === "cardio";
+      const order_index = (baseOrder ?? 0) + idx + 1;
+
+      return {
+        id: weId,
+        exercise_id: opt.id, // real DB exercise id
+        order_index,
+        target_sets: isCardioKind ? null : 3,
+        target_reps: isCardioKind ? null : 10,
+        target_weight: null,
+        target_time_seconds: isCardioKind ? 600 : null,
+        target_distance: null,
+        notes: null,
+        is_dropset: false,
+        superset_group: null,
+        superset_index: null,
+        exercises: {
+          id: opt.id,
+          name: opt.name ?? "Exercise",
+          type: opt.type,
+        },
+        isAdHoc: true,
+      };
+    });
+
+    // 1) add to workout object
+    setWorkout((prev) =>
+      prev
+        ? {
+            ...prev,
+            workout_exercises: [...prev.workout_exercises, ...added],
+          }
+        : prev
+    );
+
+    // 2) initialise logging state
+    setState((s) => {
+      if (!s) return s;
+      const byWeId = { ...s.byWeId };
+
+      for (const we of added) {
+        if (isCardio(we)) {
+          byWeId[we.id] = {
+            kind: "cardio",
+            sets: [{ distance: "", timeSec: "" }],
+            currentSet: 0,
+            completed: false,
+            notes: "",
+            open: false,
+          };
+        } else {
+          byWeId[we.id] = {
+            kind: "strength",
+            sets: [{ reps: "", weight: "", drops: [] }],
+            currentSet: 0,
+            dropMode: false,
+            completed: false,
+            notes: "",
+            open: false,
+          };
+        }
+      }
+
+      return { ...s, byWeId };
+    });
+
+    // 3) open the first added exercise
+    const firstId = added[0]?.id;
+    if (firstId) {
+      requestAnimationFrame(() => scrollToExercise(firstId));
+      setState((s) => {
+        if (!s) return s;
+        const nextByWe: Record<string, ExerciseState> = {};
+        for (const [id, ex] of Object.entries(s.byWeId)) {
+          nextByWe[id] = { ...ex, open: id === firstId };
+        }
+        return { ...s, byWeId: nextByWe };
+      });
+    }
+
+    // 4) close modal + reset
+    setExerciseModalVisible(false);
+    setModalSelectedIds([]);
+    setExerciseSearch("");
+  };
+
+  // ---------- Early loading / auth guards ----------
   if (!userId) {
     return (
       <SafeAreaView
@@ -412,66 +669,14 @@ export default function StartWorkoutScreen() {
     );
   }
 
-  type SupersetInfo = {
-    byGroup: Record<string, string[]>; // groupId -> ordered WE ids
-    byWeId: Record<string, { group: string; pos: number }>;
-    labels: Record<string, string>; // groupId -> "A", "B", ...
-  };
-
-  // Excel-style A, B, ..., Z, AA, AB, ...
-  function alphaLabel(n: number) {
-    let s = "";
-    n += 1; // 1-based
-    while (n > 0) {
-      const rem = (n - 1) % 26;
-      s = String.fromCharCode(65 + rem) + s;
-      n = Math.floor((n - 1) / 26);
-    }
-    return s;
-  }
-
-  function buildSupersets(workout: Workout): SupersetInfo {
-    const byGroupTmp: Record<string, { id: string; pos: number }[]> = {};
-    const groupOrder: string[] = []; // first-seen order across workout
-
-    for (const we of workout.workout_exercises) {
-      if (we.superset_group) {
-        const gid = we.superset_group;
-        if (!byGroupTmp[gid]) {
-          byGroupTmp[gid] = [];
-          groupOrder.push(gid); // remember first appearance order
-        }
-        byGroupTmp[gid].push({ id: we.id, pos: we.superset_index ?? 0 });
-      }
-    }
-
-    const byGroup: Record<string, string[]> = {};
-    const byWeId: SupersetInfo["byWeId"] = {};
-    const labels: Record<string, string> = {};
-
-    // assign labels A, B, C ... based on first-appearance order
-    groupOrder.forEach((gid, idx) => {
-      labels[gid] = alphaLabel(idx);
-    });
-
-    Object.entries(byGroupTmp).forEach(([gid, arr]) => {
-      arr.sort((a, b) => a.pos - b.pos);
-      byGroup[gid] = arr.map((x) => x.id);
-      byGroup[gid].forEach((weId, i) => {
-        byWeId[weId] = { group: gid, pos: i };
-      });
-    });
-
-    return { byGroup, byWeId, labels };
-  }
-
   const setExerciseOpen = (weId: string, open: boolean) =>
     setState((s) => {
       if (!s) return s;
-      const ex = s.byWeId[weId];
-      if (!ex) return s;
-      const next = { ...s, byWeId: { ...s.byWeId, [weId]: { ...ex, open } } };
-      // scroll after open
+      const nextByWeId: Record<string, ExerciseState> = {};
+      for (const [id, ex] of Object.entries(s.byWeId)) {
+        nextByWeId[id] = { ...ex, open: id === weId ? open : false };
+      }
+      const next = { ...s, byWeId: nextByWeId };
       if (open) {
         requestAnimationFrame(() => scrollToExercise(weId));
       }
@@ -538,38 +743,20 @@ export default function StartWorkoutScreen() {
       return s;
     });
 
-  const removeSet = (weId: string, index: number) =>
+  const removeLastSet = (weId: string) =>
     setState((s) => {
       if (!s) return s;
       const ex = s.byWeId[weId];
-      if (!ex) return s;
+      if (!ex || ex.sets.length <= 1) return s;
 
-      // prevent deleting first set or single remaining set
-      if (index === 0 || ex.sets.length <= 1) return s;
-
-      if (isStrengthState(ex)) {
-        const nextSets = ex.sets.filter((_, i) => i !== index);
-        const nextCurrent = Math.min(ex.currentSet, nextSets.length - 1);
-        const next: typeof ex = {
-          ...ex,
-          sets: nextSets,
-          currentSet: nextCurrent,
-        };
-        return { ...s, byWeId: { ...s.byWeId, [weId]: next } };
-      }
-
-      if (isCardioState(ex)) {
-        const nextSets = ex.sets.filter((_, i) => i !== index);
-        const nextCurrent = Math.min(ex.currentSet, nextSets.length - 1);
-        const next: typeof ex = {
-          ...ex,
-          sets: nextSets,
-          currentSet: nextCurrent,
-        };
-        return { ...s, byWeId: { ...s.byWeId, [weId]: next } };
-      }
-
-      return s;
+      const nextSets = ex.sets.slice(0, ex.sets.length - 1);
+      const nextCurrent = Math.min(ex.currentSet, nextSets.length - 1);
+      const nextEx: ExerciseState = {
+        ...(ex as any),
+        sets: nextSets as any,
+        currentSet: nextCurrent,
+      };
+      return { ...s, byWeId: { ...s.byWeId, [weId]: nextEx } };
     });
 
   const setPrevSet = (weId: string) =>
@@ -585,14 +772,15 @@ export default function StartWorkoutScreen() {
         const prevWeId = groupIds[prevPos];
         const prevEx = s.byWeId[prevWeId];
         if (prevEx && !prevEx.completed) {
-          const updated = {
-            ...s,
-            byWeId: {
-              ...s.byWeId,
-              [prevWeId]: { ...prevEx, open: true },
-              [weId]: { ...ex, open: false },
-            },
-          };
+          const updatedBy: Record<string, ExerciseState> = {};
+          for (const [id, val] of Object.entries(s.byWeId)) {
+            if (id === prevWeId)
+              updatedBy[id] = { ...val, open: true } as ExerciseState;
+            else if (id === weId)
+              updatedBy[id] = { ...val, open: false } as ExerciseState;
+            else updatedBy[id] = val;
+          }
+          const updated = { ...s, byWeId: updatedBy };
           requestAnimationFrame(() => scrollToExercise(prevWeId));
           return updated;
         }
@@ -656,10 +844,6 @@ export default function StartWorkoutScreen() {
       const node = supersets.byWeId[weId];
       if (node && supersets.byGroup[node.group]?.length > 1) {
         const groupIds = supersets.byGroup[node.group];
-        const i = ex.currentSet;
-
-        // 1) Increment current exercise's set index if we're at the end we can also create next set (prefill)
-        const atEnd = i >= ex.sets.length - 1;
 
         let updated: InProgressState = s;
 
@@ -736,32 +920,27 @@ export default function StartWorkoutScreen() {
           }
         }
 
-        // 2) Open NEXT exercise in the group (same set index as old i)
+        // 2) Open NEXT exercise in the group (same set index)
         const curPos = node.pos;
         const nextPos = (curPos + 1) % groupIds.length;
         const nextWeId = groupIds[nextPos];
 
         const nextEx = updated.byWeId[nextWeId];
         if (nextEx && !nextEx.completed) {
-          // open it; keep others closed
-          updated = {
-            ...updated,
-            byWeId: {
-              ...updated.byWeId,
-              [nextWeId]: { ...nextEx, open: true },
-              [weId]: { ...updated.byWeId[weId], open: false },
-            },
-          };
-          // scroll after state update
+          const updatedBy: Record<string, ExerciseState> = {};
+          for (const [id, val] of Object.entries(updated.byWeId)) {
+            if (id === nextWeId)
+              updatedBy[id] = { ...val, open: true } as ExerciseState;
+            else updatedBy[id] = { ...val, open: false } as ExerciseState;
+          }
           requestAnimationFrame(() => scrollToExercise(nextWeId));
-          return updated;
+          return { ...updated, byWeId: updatedBy };
         }
 
-        // if next is completed, fall back to default (non-superset) next-se t behavior
         return updated;
       }
 
-      // --- Non-superset fallback: your original next logic ---
+      // --- Non-superset fallback (original logic) ---
       const i = ex.currentSet;
       const atEnd = i >= ex.sets.length - 1;
       if (atEnd) {
@@ -884,7 +1063,7 @@ export default function StartWorkoutScreen() {
       let bonus = 0;
       if (ex.kind === "cardio") {
         for (const st of ex.sets) {
-          const t = Number(st.timeSec || 0);
+          const t = Number((st as CardioSet).timeSec || 0);
           if (!Number.isNaN(t)) bonus += t;
         }
       }
@@ -908,7 +1087,13 @@ export default function StartWorkoutScreen() {
           if (candidateId === weId) continue;
           const cand = updated.byWeId[candidateId];
           if (cand && !cand.completed) {
-            updated.byWeId[candidateId] = { ...cand, open: true };
+            const updatedBy: Record<string, ExerciseState> = {};
+            for (const [id, val] of Object.entries(updated.byWeId)) {
+              if (id === candidateId)
+                updatedBy[id] = { ...val, open: true } as ExerciseState;
+              else updatedBy[id] = { ...val, open: false } as ExerciseState;
+            }
+            updated = { ...updated, byWeId: updatedBy };
             openIdAfter = candidateId;
             break;
           }
@@ -923,7 +1108,13 @@ export default function StartWorkoutScreen() {
           const nid = ids[i];
           const n = updated.byWeId[nid];
           if (n && !n.completed) {
-            updated.byWeId[nid] = { ...n, open: true };
+            const updatedBy: Record<string, ExerciseState> = {};
+            for (const [id, val] of Object.entries(updated.byWeId)) {
+              if (id === nid)
+                updatedBy[id] = { ...val, open: true } as ExerciseState;
+              else updatedBy[id] = { ...val, open: false } as ExerciseState;
+            }
+            updated = { ...updated, byWeId: updatedBy };
             openIdAfter = nid;
             break;
           }
@@ -1003,6 +1194,12 @@ export default function StartWorkoutScreen() {
           const isOpen = exState.open;
           const subtitle = formatTargetSubtitle(we);
 
+          const isLastSet =
+            exState.currentSet >= exState.sets.length - 1 &&
+            exState.sets.length > 0;
+
+          const shouldShowComplete = isLastSet;
+
           return (
             <View
               key={we.id}
@@ -1039,28 +1236,44 @@ export default function StartWorkoutScreen() {
                   ) : null}
                 </View>
 
-                {!exState.completed ? (
-                  isOpen ? (
-                    <Text style={[styles.badge, { color: colors.warnText }]}>
-                      Active
-                    </Text>
-                  ) : (
-                    <Pressable
-                      onPress={() => {
-                        setExerciseOpen(we.id, true);
-                        requestAnimationFrame(() => scrollToExercise(we.id));
+                {/* Completed / Active / Start pill (completed is tappable to re-open) */}
+                {exState.completed ? (
+                  <Pressable
+                    onPress={() => setExerciseOpen(we.id, !isOpen)}
+                    style={[
+                      styles.badge,
+                      {
+                        borderColor: colors.successText,
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={{
+                        color: colors.successText,
+                        fontWeight: "800",
                       }}
-                      style={[styles.pill, { borderColor: colors.border }]}
                     >
-                      <Text style={{ color: colors.text, fontWeight: "700" }}>
-                        Start
-                      </Text>
-                    </Pressable>
-                  )
-                ) : (
-                  <Text style={[styles.badge, { color: colors.successText }]}>
-                    Done ✓
+                      {isOpen ? "Editing ✓" : "Done ✓ Edit"}
+                    </Text>
+                  </Pressable>
+                ) : isOpen ? (
+                  <Text
+                    style={[
+                      styles.badge,
+                      { color: colors.warnText ?? colors.text },
+                    ]}
+                  >
+                    Active
                   </Text>
+                ) : (
+                  <Pressable
+                    onPress={() => setExerciseOpen(we.id, true)}
+                    style={[styles.pill, { borderColor: colors.border }]}
+                  >
+                    <Text style={{ color: colors.text, fontWeight: "700" }}>
+                      Start
+                    </Text>
+                  </Pressable>
                 )}
 
                 {we.superset_group ? (
@@ -1079,8 +1292,36 @@ export default function StartWorkoutScreen() {
                 ) : null}
               </View>
 
-              {/* Editor when open & not completed */}
-              {isOpen && !exState.completed ? (
+              {/* Summary of completed sets */}
+              {exState.completed && exState.kind === "strength" && (
+                <View style={styles.completedSummaryContainer}>
+                  {exState.sets.map((set, i) => {
+                    const s = set as StrengthSet;
+                    if (
+                      (exState as any).dropMode &&
+                      s.drops &&
+                      s.drops.length
+                    ) {
+                      const chain = s.drops
+                        .map((d) => `${d.reps || 0} reps × ${d.weight || 0}kg`)
+                        .join(" → ");
+                      return (
+                        <Text key={i} style={styles.completedSummaryLine}>
+                          {i + 1}. {chain}
+                        </Text>
+                      );
+                    }
+                    return (
+                      <Text key={i} style={styles.completedSummaryLine}>
+                        {i + 1}. {s.reps || 0} reps × {s.weight || 0}kg
+                      </Text>
+                    );
+                  })}
+                </View>
+              )}
+
+              {/* Editor when open (even if completed so user can fix mistakes) */}
+              {isOpen ? (
                 <View style={{ marginTop: 14 }}>
                   {/* Exercise-level Drop Set toggle (for strength) */}
                   {exState.kind === "strength" && we.is_dropset ? (
@@ -1091,7 +1332,11 @@ export default function StartWorkoutScreen() {
                             if (!s) return s;
                             const ex = s.byWeId[we.id];
                             if (!ex || ex.kind !== "strength") return s;
-                            const next = { ...ex, dropMode: !ex.dropMode };
+                            const next: Extract<
+                              ExerciseState,
+                              { kind: "strength" }
+                            > = { ...(ex as any), dropMode: !ex.dropMode };
+
                             if (next.dropMode) {
                               const i = next.currentSet;
                               const set = next.sets[i];
@@ -1104,6 +1349,7 @@ export default function StartWorkoutScreen() {
                                 ];
                               }
                             }
+
                             return {
                               ...s,
                               byWeId: { ...s.byWeId, [we.id]: next },
@@ -1173,24 +1419,15 @@ export default function StartWorkoutScreen() {
                     </View>
                   ) : null}
 
-                  {/* Labels above inputs */}
-                  <View style={styles.setsHeader}>
-                    {exState.kind === "strength" ? (
-                      <>
-                        <Text style={styles.subtle}>Reps</Text>
-                        <Text style={[styles.subtle, { textAlign: "right" }]}>
-                          Weight (kg)
-                        </Text>
-                      </>
-                    ) : (
-                      <>
-                        <Text style={styles.subtle}>Distance (km)</Text>
-                        <Text style={[styles.subtle, { textAlign: "right" }]}>
-                          Time (sec)
-                        </Text>
-                      </>
-                    )}
-                  </View>
+                  {/* Labels above inputs (cardio only – strength labels sit above each box) */}
+                  {exState.kind === "cardio" && (
+                    <View style={styles.setsHeader}>
+                      <Text style={styles.subtle}>Distance (km)</Text>
+                      <Text style={[styles.subtle, { textAlign: "right" }]}>
+                        Time (sec)
+                      </Text>
+                    </View>
+                  )}
 
                   {/* Last set preview */}
                   {(() => {
@@ -1250,7 +1487,11 @@ export default function StartWorkoutScreen() {
                             return (
                               <View key={di} style={styles.setRow}>
                                 <TextInput
-                                  placeholder="0"
+                                  placeholder={
+                                    we.target_reps != null
+                                      ? String(we.target_reps)
+                                      : "0"
+                                  }
                                   keyboardType="numeric"
                                   value={d.reps ?? ""}
                                   onChangeText={(t) =>
@@ -1276,11 +1517,19 @@ export default function StartWorkoutScreen() {
                                       };
                                     })
                                   }
-                                  style={[styles.input, { marginRight: 8 }]}
+                                  style={[
+                                    styles.input,
+                                    styles.setInput,
+                                    { marginRight: 8 },
+                                  ]}
                                   placeholderTextColor={colors.subtle}
                                 />
                                 <TextInput
-                                  placeholder="0"
+                                  placeholder={
+                                    we.target_weight != null
+                                      ? String(we.target_weight)
+                                      : "0"
+                                  }
                                   keyboardType="numeric"
                                   value={d.weight ?? ""}
                                   onChangeText={(t) =>
@@ -1306,7 +1555,7 @@ export default function StartWorkoutScreen() {
                                       };
                                     })
                                   }
-                                  style={styles.input}
+                                  style={[styles.input, styles.setInput]}
                                   placeholderTextColor={colors.subtle}
                                 />
                                 <Pressable
@@ -1408,60 +1657,84 @@ export default function StartWorkoutScreen() {
 
                     // NORMAL editing (non-drop or cardio)
                     const set = exState.sets[i];
-                    return (
-                      <View style={styles.setRow}>
-                        {exState.kind === "strength" ? (
-                          <>
+
+                    if (exState.kind === "strength") {
+                      // square, centred strength inputs with labels above
+                      return (
+                        <View style={styles.setRow}>
+                          <View style={styles.setCol}>
+                            <Text style={[styles.subtle, styles.setLabel]}>
+                              Reps
+                            </Text>
                             <TextInput
-                              placeholder="0"
+                              placeholder={
+                                we.target_reps != null
+                                  ? String(we.target_reps)
+                                  : "0"
+                              }
                               keyboardType="numeric"
                               value={(set as StrengthSet).reps ?? ""}
                               onChangeText={(t) =>
                                 updateSet(we.id, i, { reps: t })
                               }
-                              style={[styles.input, { marginRight: 8 }]}
+                              style={[styles.input, styles.setInput]}
                               placeholderTextColor={colors.subtle}
                             />
+                          </View>
+
+                          <View style={[styles.setCol, { marginLeft: 16 }]}>
+                            <Text style={[styles.subtle, styles.setLabel]}>
+                              Weight (kg)
+                            </Text>
                             <TextInput
-                              placeholder="0"
+                              placeholder={
+                                we.target_weight != null
+                                  ? String(we.target_weight)
+                                  : "0"
+                              }
                               keyboardType="numeric"
                               value={(set as StrengthSet).weight ?? ""}
                               onChangeText={(t) =>
                                 updateSet(we.id, i, { weight: t })
                               }
-                              style={styles.input}
+                              style={[styles.input, styles.setInput]}
                               placeholderTextColor={colors.subtle}
                             />
-                          </>
-                        ) : (
-                          <>
-                            <TextInput
-                              placeholder="0.00"
-                              keyboardType="decimal-pad"
-                              value={(set as CardioSet).distance ?? ""}
-                              onChangeText={(t) =>
-                                updateSet(we.id, i, { distance: t })
-                              }
-                              style={[styles.input, { marginRight: 8 }]}
-                              placeholderTextColor={colors.subtle}
-                            />
-                            <TextInput
-                              placeholder="0"
-                              keyboardType="numeric"
-                              value={(set as CardioSet).timeSec ?? ""}
-                              onChangeText={(t) =>
-                                updateSet(we.id, i, { timeSec: t })
-                              }
-                              style={styles.input}
-                              placeholderTextColor={colors.subtle}
-                            />
-                          </>
-                        )}
+                          </View>
+                        </View>
+                      );
+                    }
+
+                    // CARDIO branch – keep wide inputs
+                    return (
+                      <View style={styles.setRow}>
+                        <>
+                          <TextInput
+                            placeholder="0.00"
+                            keyboardType="decimal-pad"
+                            value={(set as CardioSet).distance ?? ""}
+                            onChangeText={(t) =>
+                              updateSet(we.id, i, { distance: t })
+                            }
+                            style={[styles.input, { flex: 1, marginRight: 8 }]}
+                            placeholderTextColor={colors.subtle}
+                          />
+                          <TextInput
+                            placeholder="0"
+                            keyboardType="numeric"
+                            value={(set as CardioSet).timeSec ?? ""}
+                            onChangeText={(t) =>
+                              updateSet(we.id, i, { timeSec: t })
+                            }
+                            style={[styles.input, { flex: 1 }]}
+                            placeholderTextColor={colors.subtle}
+                          />
+                        </>
 
                         {/* Delete current set (disabled for first/only) */}
                         <Pressable
                           disabled={i === 0 || exState.sets.length <= 1}
-                          onPress={() => removeSet(we.id, i)}
+                          onPress={() => removeLastSet(we.id)}
                           style={[
                             styles.removeBtn,
                             (i === 0 || exState.sets.length <= 1) && {
@@ -1479,7 +1752,7 @@ export default function StartWorkoutScreen() {
                     );
                   })()}
 
-                  {/* Pager + Prev / Dots / Next */}
+                  {/* Pager + Prev / dots / Next-or-Complete */}
                   <View
                     style={{
                       flexDirection: "row",
@@ -1488,6 +1761,7 @@ export default function StartWorkoutScreen() {
                       marginTop: 10,
                     }}
                   >
+                    {/* Prev */}
                     <Pressable
                       disabled={exState.currentSet === 0}
                       onPress={() => setPrevSet(we.id)}
@@ -1502,6 +1776,7 @@ export default function StartWorkoutScreen() {
                       </Text>
                     </Pressable>
 
+                    {/* Dots */}
                     <View style={{ flexDirection: "row", gap: 6 }}>
                       {exState.sets.map((_, dotIdx) => (
                         <View
@@ -1520,12 +1795,25 @@ export default function StartWorkoutScreen() {
                       ))}
                     </View>
 
+                    {/* Next / Complete */}
                     <Pressable
-                      onPress={() => setNextSet(we.id)}
-                      style={[styles.pill, styles.ghost]}
+                      onPress={() =>
+                        shouldShowComplete
+                          ? completeExercise(we.id)
+                          : setNextSet(we.id)
+                      }
+                      style={[
+                        styles.pill,
+                        shouldShowComplete ? styles.completePill : styles.ghost,
+                      ]}
                     >
-                      <Text style={{ color: colors.text, fontWeight: "800" }}>
-                        Next ›
+                      <Text
+                        style={{
+                          color: shouldShowComplete ? "white" : colors.text,
+                          fontWeight: "800",
+                        }}
+                      >
+                        {shouldShowComplete ? "✓ Complete" : "Next ›"}
                       </Text>
                     </Pressable>
                   </View>
@@ -1540,22 +1828,35 @@ export default function StartWorkoutScreen() {
                     Set {exState.currentSet + 1} of {exState.sets.length}
                   </Text>
 
-                  {/* Add / Complete */}
-                  <View style={{ flexDirection: "row", gap: 12, marginTop: 8 }}>
+                  {/* Add / Remove Set */}
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      gap: 12,
+                      marginTop: 8,
+                      justifyContent: "center",
+                    }}
+                  >
+                    <Pressable
+                      disabled={exState.sets.length <= 1}
+                      onPress={() => removeLastSet(we.id)}
+                      style={[
+                        styles.pill,
+                        styles.ghost,
+                        exState.sets.length <= 1 && { opacity: 0.5 },
+                      ]}
+                    >
+                      <Text style={{ color: colors.text, fontWeight: "800" }}>
+                        − Remove Set
+                      </Text>
+                    </Pressable>
+
                     <Pressable
                       onPress={() => addSet(we.id)}
                       style={[styles.pill, styles.ghost]}
                     >
                       <Text style={{ color: colors.text, fontWeight: "800" }}>
                         ＋ Add Set
-                      </Text>
-                    </Pressable>
-                    <Pressable
-                      onPress={() => completeExercise(we.id)}
-                      style={[styles.pill, { backgroundColor: "#22c55e" }]}
-                    >
-                      <Text style={{ color: "white", fontWeight: "800" }}>
-                        ✓ Complete Exercise
                       </Text>
                     </Pressable>
                   </View>
@@ -1587,23 +1888,61 @@ export default function StartWorkoutScreen() {
           );
         })}
 
-        {/* Workout Notes */}
-        <View style={[styles.bigCard, { marginTop: 6 }]}>
+        {/* Workout Notes (opens full-screen editor) */}
+        <Pressable
+          style={[styles.bigCard, { marginTop: 6 }]}
+          onPress={() => setNotesOverlayVisible(true)}
+        >
           <Text style={styles.h3}>Workout Notes</Text>
-          <TextInput
-            placeholder="Add any general notes for this workout"
-            value={state.workoutNotes}
-            onChangeText={(t) =>
-              setState((s) => (s ? { ...s, workoutNotes: t } : s))
-            }
-            style={[styles.notesInput, { marginTop: 8 }]}
-            placeholderTextColor={colors.subtle}
-            multiline
-          />
+          {state.workoutNotes ? (
+            <Text style={styles.notesPreview} numberOfLines={2}>
+              {state.workoutNotes}
+            </Text>
+          ) : (
+            <Text style={[styles.muted, { marginTop: 4 }]}>
+              Tap to add notes about this workout
+            </Text>
+          )}
+
+          {(workout.notes || lastWorkoutNotes) && (
+            <View style={{ marginTop: 8 }}>
+              {workout.notes ? (
+                <Text style={styles.mutedSmall}>
+                  Plan notes: {workout.notes}
+                </Text>
+              ) : null}
+              {lastWorkoutNotes ? (
+                <Text style={styles.mutedSmall}>
+                  Last workout: {lastWorkoutNotes}
+                </Text>
+              ) : null}
+            </View>
+          )}
+        </Pressable>
+
+        {/* NEW: Add ad-hoc exercises for this workout only */}
+        <View style={{ marginTop: 12, alignItems: "center" }}>
+          <Pressable
+            onPress={() => setExerciseModalVisible(true)}
+            style={[styles.pill, { paddingHorizontal: 18 }]}
+          >
+            <Text style={{ color: colors.text, fontWeight: "800" }}>
+              ＋ Add exercise to this workout
+            </Text>
+          </Pressable>
+          <Text
+            style={[
+              styles.muted,
+              { marginTop: 4, fontSize: 12, textAlign: "center" },
+            ]}
+          >
+            This exercise will only be saved as part of this workout&apos;s
+            history.
+          </Text>
         </View>
       </ScrollView>
 
-      {/* Sticky Footer (raised a bit) */}
+      {/* Sticky Footer */}
       <View style={[styles.footer, { borderTopColor: colors.border }]}>
         <Pressable
           disabled={!state.anyCompleted}
@@ -1619,7 +1958,7 @@ export default function StartWorkoutScreen() {
             setReviewPayload({
               workout,
               state,
-              supersets, // you already compute this for supersets A, B, ...
+              supersets,
             });
 
             router.push({
@@ -1651,6 +1990,205 @@ export default function StartWorkoutScreen() {
           </Text>
         </Pressable>
       </View>
+
+      {/* FULL-SCREEN EXERCISE PICKER MODAL (simple list) */}
+      <Modal
+        visible={exerciseModalVisible}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setExerciseModalVisible(false)}
+      >
+        <SafeAreaView
+          style={[
+            styles.modalSafeArea,
+            {
+              backgroundColor: colors.background,
+            },
+          ]}
+        >
+          {/* Header row */}
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Select exercises</Text>
+            <Pressable
+              onPress={() => setExerciseModalVisible(false)}
+              hitSlop={10}
+            >
+              <Text style={[styles.modalClose, { color: colors.primary }]}>
+                Close
+              </Text>
+            </Pressable>
+          </View>
+
+          {/* Search */}
+          <TextInput
+            value={exerciseSearch}
+            onChangeText={setExerciseSearch}
+            placeholder="Search exercises…"
+            placeholderTextColor={colors.subtle}
+            style={[
+              styles.modalSearchInput,
+              { color: colors.text, backgroundColor: colors.surface },
+            ]}
+          />
+
+          {/* List */}
+          {exLoading ? (
+            <ActivityIndicator style={{ marginTop: 16 }} />
+          ) : (
+            <FlatList
+              data={filteredExerciseOptions}
+              keyExtractor={(item) => item.id}
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={{ paddingBottom: 12 }}
+              renderItem={({ item }) => {
+                const isSelected = modalSelectedIds.includes(item.id);
+                return (
+                  <Pressable
+                    onPress={() => toggleModalSelect(item.id)}
+                    style={[
+                      styles.modalRow,
+                      isSelected && {
+                        borderColor: colors.primary,
+                        backgroundColor: colors.card,
+                      },
+                    ]}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text
+                        style={[
+                          styles.modalExerciseName,
+                          isSelected && { color: colors.primary },
+                        ]}
+                      >
+                        {item.name}
+                      </Text>
+                      <Text style={styles.modalExerciseMeta}>
+                        {item.type || ""}
+                        {item.equipment ? ` • ${item.equipment}` : ""}
+                      </Text>
+                    </View>
+
+                    <View
+                      style={[
+                        styles.checkbox,
+                        {
+                          borderColor: isSelected
+                            ? colors.primary
+                            : colors.border,
+                          backgroundColor: isSelected
+                            ? colors.primary
+                            : "transparent",
+                        },
+                      ]}
+                    >
+                      {isSelected && (
+                        <Text
+                          style={{
+                            color: colors.subtle,
+                            fontSize: 10,
+                            fontWeight: "700",
+                          }}
+                        >
+                          ✓
+                        </Text>
+                      )}
+                    </View>
+                  </Pressable>
+                );
+              }}
+            />
+          )}
+
+          {/* Confirm */}
+          <Pressable
+            style={[
+              styles.modalDoneBtn,
+              {
+                backgroundColor: modalSelectedIds.length
+                  ? colors.primary
+                  : colors.surface,
+                borderColor: colors.border,
+              },
+            ]}
+            disabled={modalSelectedIds.length === 0}
+            onPress={handleConfirmAddExercises}
+          >
+            <Text
+              style={{
+                color:
+                  modalSelectedIds.length > 0
+                    ? colors.subtle ?? "#fff"
+                    : colors.subtle,
+                fontWeight: "700",
+              }}
+            >
+              Add {modalSelectedIds.length || ""} exercise
+              {modalSelectedIds.length === 1 ? "" : "s"}
+            </Text>
+          </Pressable>
+        </SafeAreaView>
+      </Modal>
+
+      {/* FULL-SCREEN WORKOUT NOTES EDITOR */}
+      <Modal
+        visible={notesOverlayVisible}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setNotesOverlayVisible(false)}
+      >
+        <SafeAreaView
+          style={[
+            styles.modalSafeArea,
+            {
+              paddingTop: insets.top,
+              backgroundColor: colors.background,
+            },
+          ]}
+        >
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Workout Notes</Text>
+            <Pressable
+              onPress={() => setNotesOverlayVisible(false)}
+              hitSlop={10}
+            >
+              <Text style={[styles.modalClose, { color: colors.primary }]}>
+                Done
+              </Text>
+            </Pressable>
+          </View>
+
+          {(workout.notes || lastWorkoutNotes) && (
+            <View style={styles.notesMetaBox}>
+              {workout.notes ? (
+                <>
+                  <Text style={styles.notesMetaTitle}>Plan notes</Text>
+                  <Text style={styles.notesMetaText}>{workout.notes}</Text>
+                </>
+              ) : null}
+              {lastWorkoutNotes ? (
+                <>
+                  <Text style={[styles.notesMetaTitle, { marginTop: 8 }]}>
+                    Last workout notes
+                  </Text>
+                  <Text style={styles.notesMetaText}>{lastWorkoutNotes}</Text>
+                </>
+              ) : null}
+            </View>
+          )}
+
+          <TextInput
+            autoFocus
+            multiline
+            placeholder="Add notes about how the workout felt, PRs, etc."
+            placeholderTextColor={colors.subtle}
+            value={state.workoutNotes}
+            onChangeText={(t) =>
+              setState((s) => (s ? { ...s, workoutNotes: t } : s))
+            }
+            style={styles.modalNotesInput}
+          />
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -1691,6 +2229,7 @@ const makeStyles = (colors: any) =>
 
     h3: { fontSize: 16, fontWeight: "800", color: colors.text },
     muted: { color: colors.muted },
+    mutedSmall: { color: colors.muted, fontSize: 12 },
 
     pill: {
       paddingVertical: 10,
@@ -1718,23 +2257,9 @@ const makeStyles = (colors: any) =>
       flexDirection: "row",
       justifyContent: "space-between",
       marginBottom: 4,
-      paddingHorizontal: 4,
-    },
-    setRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      marginBottom: 8,
-    },
-    input: {
-      flex: 1,
-      backgroundColor: colors.surface,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: colors.border,
-      borderRadius: 12,
-      paddingVertical: 10,
       paddingHorizontal: 12,
-      color: colors.text,
     },
+
     removeBtn: {
       marginLeft: 8,
       width: 36,
@@ -1761,7 +2286,7 @@ const makeStyles = (colors: any) =>
       position: "absolute",
       left: 0,
       right: 0,
-      bottom: 10, // raised slightly
+      bottom: 10,
       backgroundColor: colors.background,
       padding: 12,
       borderTopWidth: StyleSheet.hairlineWidth,
@@ -1777,5 +2302,176 @@ const makeStyles = (colors: any) =>
       width: 8,
       height: 8,
       borderRadius: 4,
+    },
+
+    pagerRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      marginTop: 10,
+    },
+    navBtn: {
+      minWidth: 110,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    navBtnText: {
+      color: colors.text,
+      fontWeight: "800",
+    },
+    completePill: {
+      backgroundColor: "#22c55e",
+      borderColor: "#16a34a",
+    },
+    completePillText: {
+      color: "white",
+    },
+
+    completedSummaryContainer: {
+      marginTop: 8,
+      alignItems: "center",
+    },
+    completedSummaryLine: {
+      fontSize: 12,
+      color: colors.muted,
+      marginTop: 2,
+      textAlign: "center",
+    },
+
+    notesPreview: {
+      marginTop: 6,
+      color: colors.muted,
+      fontSize: 13,
+    },
+
+    // Modal styles
+    modalSafeArea: {
+      flex: 1,
+      paddingHorizontal: 16,
+      paddingTop: 8,
+    },
+    modalHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      marginBottom: 8,
+    },
+    modalTitle: {
+      fontSize: 20,
+      fontWeight: "900",
+      color: colors.text,
+    },
+    modalClose: {
+      fontSize: 16,
+      fontWeight: "700",
+    },
+    modalSearchInput: {
+      borderRadius: 999,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+      marginTop: 4,
+      marginBottom: 8,
+    },
+    modalRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingVertical: 10,
+      paddingHorizontal: 12,
+      borderRadius: 12,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+      marginTop: 8,
+    },
+    modalExerciseName: {
+      fontSize: 15,
+      fontWeight: "800",
+      color: colors.text,
+    },
+    modalExerciseMeta: {
+      marginTop: 2,
+      fontSize: 12,
+      color: colors.muted,
+    },
+    checkbox: {
+      width: 22,
+      height: 22,
+      borderRadius: 6,
+      borderWidth: StyleSheet.hairlineWidth,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    modalDoneBtn: {
+      marginTop: 10,
+      paddingVertical: 12,
+      alignItems: "center",
+      borderRadius: 999,
+      borderWidth: StyleSheet.hairlineWidth,
+    },
+
+    notesMetaBox: {
+      borderRadius: 12,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      padding: 10,
+      marginBottom: 12,
+      backgroundColor: colors.surface,
+    },
+    notesMetaTitle: {
+      fontSize: 12,
+      fontWeight: "800",
+      color: colors.subtle,
+      textTransform: "uppercase",
+    },
+    notesMetaText: {
+      marginTop: 2,
+      fontSize: 13,
+      color: colors.text,
+    },
+    modalNotesInput: {
+      flex: 1,
+      borderRadius: 12,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      padding: 12,
+      textAlignVertical: "top",
+      color: colors.text,
+      backgroundColor: colors.surface,
+    },
+
+    setRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      marginBottom: 8,
+    },
+
+    input: {
+      backgroundColor: colors.surface,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      borderRadius: 12,
+      paddingVertical: 10,
+      paddingHorizontal: 12,
+      color: colors.text,
+    },
+
+    setCol: {
+      alignItems: "center",
+      justifyContent: "center",
+    },
+
+    setLabel: {
+      marginBottom: 4,
+      textAlign: "center",
+    },
+
+    setInput: {
+      width: 80, // control width
+      height: 56, // control height
+      textAlign: "center",
+      fontSize: 18,
     },
   });

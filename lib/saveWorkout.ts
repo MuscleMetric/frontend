@@ -37,7 +37,6 @@ type SaveArgs = {
 
 export type SaveResult = { workoutHistoryId: string };
 
-// lib/saveWorkout.ts (only the function body shown for brevity)
 export async function saveCompletedWorkout(
   args: SaveArgs
 ): Promise<SaveResult> {
@@ -90,6 +89,8 @@ export async function saveCompletedWorkout(
       const exState = state.byWeId[we.id];
       if (!exState) continue;
 
+      const isAdHoc = (we as any).isAdHoc === true;
+
       const exerciseId = (we as any).exercise_id ?? we.exercises?.id ?? "";
       if (!exerciseId)
         throw new Error(`Missing exercise_id for workout_exercise ${we.id}`);
@@ -99,7 +100,8 @@ export async function saveCompletedWorkout(
         exercise_id: String(exerciseId),
         order_index: we.order_index ?? 0,
         notes: exState.notes ?? null,
-        workout_exercise_id: we.id || null,
+        // ⬇️ For ad-hoc exercises we MUST NOT store a bogus FK
+        workout_exercise_id: isAdHoc ? null : we.id || null,
         is_dropset:
           exState.kind === "strength" ? !!(exState as any).dropMode : null,
         superset_group: we.superset_group ?? null,
@@ -112,11 +114,13 @@ export async function saveCompletedWorkout(
         .from("workout_exercise_history")
         .insert(wexhRows)
         .select("id, workout_exercise_id");
+
       if (wexhErr)
         throw new Error(
           `Failed to create workout_exercise_history: ${wexhErr.message}`
         );
 
+      // map DB rows back to workout_exercise ids (for non-ad-hoc only)
       for (const row of wexhInserts || []) {
         const key = row.workout_exercise_id as string | null;
         if (key) weIdToInserted[key] = row.id as string;
@@ -139,7 +143,12 @@ export async function saveCompletedWorkout(
       const exState = state.byWeId[we.id];
       if (!exState) continue;
 
-      let wexhId = weIdToInserted[we.id] || null;
+      const isAdHoc = (we as any).isAdHoc === true;
+
+      // For non-ad-hoc, we often have this from the map above
+      let wexhId = isAdHoc ? null : weIdToInserted[we.id] || null;
+
+      // Fallback: look up by (history, exercise_id, order_index)
       if (!wexhId) {
         const { data: found, error: findErr } = await supabase
           .from("workout_exercise_history")
@@ -156,7 +165,10 @@ export async function saveCompletedWorkout(
           );
         }
         wexhId = found.id as string;
-        weIdToInserted[we.id] = wexhId;
+        // Only cache under real workout_exercises ids; ad-hoc ids are local only
+        if (!isAdHoc) {
+          weIdToInserted[we.id] = wexhId;
+        }
       }
 
       if (exState.kind === "strength") {
@@ -240,6 +252,9 @@ export async function saveCompletedWorkout(
     // 5) Update workout_exercises targets for next time (based on what user just did)
     //    (per-row updates since each row has different values)
     for (const we of workout.workout_exercises) {
+      // ⬇️ Skip ad-hoc exercises: they don't exist in workout_exercises table
+      if ((we as any).isAdHoc) continue;
+
       const exState = state.byWeId[we.id];
       if (!exState) continue;
 
