@@ -1,118 +1,57 @@
 // app/(tabs)/user.tsx
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useRef } from "react";
 import {
   View,
   Text,
   Pressable,
-  FlatList,
   StyleSheet,
   Alert,
   ActivityIndicator,
   StatusBar,
+  ScrollView,
+  AppState,
 } from "react-native";
+import Svg, { Path } from "react-native-svg";
 import { supabase } from "../../lib/supabase";
 import { router } from "expo-router";
 import { useAuth } from "../../lib/useAuth";
-import QuickUpdateModal from "../features/profile/QuickUpdateModal";
-import { toISODateUTC } from "../utils/dates";
-import { AppState } from "react-native";
-import { useRef } from "react";
 
-import {
-  Header,
-  SectionCard,
-  StatCard,
-  RingProgress,
-  PlanRow,
-  SettingRow,
-} from "../_components";
+import { SectionCard, RingProgress } from "../_components";
 import { useAppTheme } from "../../lib/useAppTheme";
-import { usePlanGoals } from "../features/goals/hooks/usePlanGoals";
+
+type ProfileRow = {
+  name: string | null;
+  email: string | null;
+  created_at: string;
+  settings: any;
+  weekly_streak: number | null;
+};
 
 type PlanRowType = {
   id: string;
   title: string;
   subtitle: string;
-  status: string;
-  statusColor: string;
 };
-
-function weekKeySundayLocal(d: Date) {
-  const copy = new Date(d);
-  const dow = copy.getDay(); // 0=Sun
-  copy.setHours(0, 0, 0, 0);
-  copy.setDate(copy.getDate() - dow);
-  const y = copy.getFullYear();
-  const m = String(copy.getMonth() + 1).padStart(2, "0");
-  const day = String(copy.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-
-function parseStart(notes?: string | null): number | null {
-  if (!notes) return null;
-  try {
-    const obj = JSON.parse(notes);
-    if (typeof obj?.start === "number") return obj.start;
-  } catch {}
-  return null;
-}
-
-function coerceUnitRound(
-  value: number,
-  type: "exercise_weight" | "exercise_reps" | "distance" | "time"
-): number {
-  const roundQuarter = (n: number) => Math.round(n * 4) / 4;
-  const roundTime = (s: number) => Math.round(s / 5) * 5;
-  const roundDistance = (d: number) => Math.round(d * 10) / 10;
-
-  switch (type) {
-    case "exercise_weight":
-    case "exercise_reps":
-      return roundQuarter(value);
-    case "distance":
-      return roundDistance(value);
-    case "time":
-      return roundTime(value);
-    default:
-      return value;
-  }
-}
 
 export default function UserScreen() {
   const { session } = useAuth();
   const userId = session?.user?.id;
 
   const [loading, setLoading] = useState(true);
-  const [showWeightModal, setShowWeightModal] = useState(false);
 
   const { colors, dark } = useAppTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
-  // NEW: use plan goals hook
-  const { plan, goals } = usePlanGoals(userId);
-
-  // NEW: ring state
-  const [goalsRingProgress, setGoalsRingProgress] = useState(0); // 0–1
-  const [goalsRingLabel, setGoalsRingLabel] = useState("0%");
-  const [goalsRingLoading, setGoalsRingLoading] = useState(true);
-
-  // DB-backed state
-  const [profile, setProfile] = useState<{
-    name: string | null;
-    email: string | null;
-    created_at: string;
-    settings: any;
-  } | null>(null);
-
+  const [profile, setProfile] = useState<ProfileRow | null>(null);
   const [workoutsCompleted, setWorkoutsCompleted] = useState<number>(0);
+  const [plannedWorkouts, setPlannedWorkouts] = useState<number>(0);
   const [weeklyStreak, setWeeklyStreak] = useState<number>(0);
 
   const [achievementsTotal, setAchievementsTotal] = useState<number>(0);
   const [achievementsUnlocked, setAchievementsUnlocked] = useState<number>(0);
-
   const [plans, setPlans] = useState<PlanRowType[]>([]);
 
-  // NEW step stats UI state
+  // steps + timezone
   const [stepsStreak, setStepsStreak] = useState<number>(0);
   const [stepsDaysMetTotal, setStepsDaysMetTotal] = useState<number>(0);
   const [profileTz, setProfileTz] = useState<string>("UTC");
@@ -120,302 +59,60 @@ export default function UserScreen() {
 
   const name =
     profile?.name ?? (session?.user?.user_metadata as any)?.name ?? "User";
-  const email = profile?.email ?? session?.user?.email ?? "user@example.com";
   const joinedAt =
     profile?.created_at ??
     session?.user?.created_at ??
     new Date().toISOString();
   const joinedText = useMemo(() => formatMonthYear(joinedAt), [joinedAt]);
 
-  const ringModeLabel = plan && goals && goals.length > 0 ? "Plan" : "Weekly";
+  const settings = (profile?.settings ?? {}) as any;
+  const levelLabel = formatLevel(settings.level);
+  const goalLabel = formatPrimaryGoal(settings.primaryGoal);
 
-  const ringColor =
-    goalsRingProgress < 1 / 3
-      ? "#ef4444"
-      : goalsRingProgress < 2 / 3
-      ? "#eab308"
-      : colors.successBg ?? colors.primary;
+  const initials = useMemo(() => {
+    if (!name) return "U";
+    const parts = name.trim().split(/\s+/);
+    if (parts.length === 1) return parts[0].charAt(0).toUpperCase();
+    return (
+      parts[0].charAt(0).toUpperCase() +
+      parts[parts.length - 1].charAt(0).toUpperCase()
+    );
+  }, [name]);
 
   useEffect(() => {
-    if (userId) fetchProfile();
+    if (userId) {
+      fetchProfile(userId);
+      fetchTotals(userId);
+    }
   }, [userId]);
 
+  // ---------- timezone + steps ----------
   useEffect(() => {
-    if (!userId) {
-      setGoalsRingProgress(0);
-      setGoalsRingLabel("0%");
-      setGoalsRingLoading(false);
-      return;
-    }
+    if (!userId) return;
 
-    let cancelled = false;
+    syncTimezoneIfChanged(userId);
+    fetchStepStats(userId);
 
-    async function load() {
-      setGoalsRingLoading(true);
-      try {
-        // ---- CASE 1: user has a plan with goals -> average progress over up to 3 exercises ----
-        if (plan && goals && goals.length > 0) {
-          const exerciseGoals = goals
-            .filter((g: any) => g.exercises?.id)
-            .slice(0, 3);
-
-          if (!exerciseGoals.length) {
-            throw new Error("No exercise-based plan goals.");
-          }
-
-          const exerciseIds = exerciseGoals.map(
-            (g: any) => g.exercises!.id as string
-          );
-
-          const goalByExerciseId: Record<string, any> = {};
-          exerciseGoals.forEach((g: any) => {
-            if (g.exercises?.id) {
-              goalByExerciseId[g.exercises.id] = g;
-            }
-          });
-
-          // get all history for those exercises in the plan date range
-          const { data, error } = await supabase
-            .from("workout_history")
-            .select(
-              `
-            id,
-            completed_at,
-            workout_exercise_history!inner(
-              exercise_id,
-              workout_set_history (
-                reps,
-                weight,
-                time_seconds,
-                distance
-              )
-            )
-          `
-            )
-            .eq("user_id", userId)
-            .gte("completed_at", plan.start_date)
-            .lte("completed_at", plan.end_date)
-            .order("completed_at", { ascending: true });
-
-          if (error) throw error;
-
-          // latest actual value per exercise
-          const latestByExercise: Record<string, number> = {};
-
-          (data ?? []).forEach((row: any) => {
-            const histories = row.workout_exercise_history ?? [];
-            histories.forEach((eh: any) => {
-              const exId = eh.exercise_id as string;
-              if (!exerciseIds.includes(exId)) return;
-
-              const g = goalByExerciseId[exId];
-              if (!g) return;
-
-              const sets = eh.workout_set_history ?? [];
-              if (!sets.length) return;
-
-              let rawVal = 0;
-              switch (g.type) {
-                case "exercise_weight":
-                  rawVal = Math.max(
-                    ...sets.map((s: any) => Number(s.weight ?? 0))
-                  );
-                  break;
-                case "exercise_reps":
-                  rawVal = Math.max(
-                    ...sets.map((s: any) => Number(s.reps ?? 0))
-                  );
-                  break;
-                case "distance":
-                  rawVal = sets.reduce(
-                    (sum: number, s: any) => sum + Number(s.distance ?? 0),
-                    0
-                  );
-                  break;
-                case "time":
-                  rawVal = sets.reduce(
-                    (sum: number, s: any) => sum + Number(s.time_seconds ?? 0),
-                    0
-                  );
-                  break;
-                default:
-                  rawVal = 0;
-              }
-
-              const val = coerceUnitRound(rawVal, g.type);
-              latestByExercise[exId] = val; // rows ordered asc, so this ends up as latest
-            });
-          });
-
-          // compute per-goal progress and average
-          const progresses: number[] = [];
-          exerciseGoals.forEach((g: any) => {
-            const exId = g.exercises!.id as string;
-            const target = Number(g.target_number);
-            const startParsed = parseStart(g.notes);
-            const start = typeof startParsed === "number" ? startParsed : 0;
-
-            const actual =
-              latestByExercise[exId] !== undefined
-                ? latestByExercise[exId]
-                : start;
-
-            if (target <= start) {
-              // weird config; treat as done if we're at/above target
-              progresses.push(actual >= target ? 1 : 0);
-            } else {
-              const frac = (actual - start) / (target - start);
-              const clamped = Math.max(0, Math.min(1, frac));
-              progresses.push(clamped);
-            }
-          });
-
-          const avg =
-            progresses.length > 0
-              ? progresses.reduce((a, b) => a + b, 0) / progresses.length
-              : 0;
-
-          if (!cancelled) {
-            setGoalsRingProgress(avg);
-            setGoalsRingLabel(`${Math.round(avg * 100)}%`);
-          }
-          return;
-        }
-
-        // ---- CASE 2: no plan/goals -> weekly workouts vs goal ----
-        const now = new Date();
-        const wk = weekKeySundayLocal(now);
-
-        const { data: weekly, error: weeklyErr } = await supabase
-          .from("user_weekly_workout_stats")
-          .select("goal, completed")
-          .eq("user_id", userId)
-          .eq("week_key", wk)
-          .maybeSingle();
-
-        if (weeklyErr) throw weeklyErr;
-
-        let goalNum = Number(weekly?.goal ?? 0);
-        let completedNum = Number(weekly?.completed ?? 0);
-
-        // fallback to profile weekly_workout_goal if no row yet
-        if (!weekly) {
-          const { data: prof, error: profErr } = await supabase
-            .from("profiles")
-            .select("weekly_workout_goal")
-            .eq("id", userId)
-            .maybeSingle();
-          if (profErr) throw profErr;
-          goalNum =
-            prof?.weekly_workout_goal != null
-              ? Number(prof.weekly_workout_goal)
-              : 3;
-          completedNum = 0;
-        }
-
-        const frac =
-          goalNum > 0 ? Math.max(0, Math.min(1, completedNum / goalNum)) : 0;
-
-        if (!cancelled) {
-          setGoalsRingProgress(frac);
-          setGoalsRingLabel(`${completedNum}/${goalNum || "?"}`);
-        }
-      } catch (e) {
-        console.warn("Goals ring load error:", e);
-        if (!cancelled) {
-          setGoalsRingProgress(0);
-          setGoalsRingLabel("0%");
-        }
-      } finally {
-        if (!cancelled) setGoalsRingLoading(false);
+    const sub = AppState.addEventListener("change", (next) => {
+      if (appState.current.match(/inactive|background/) && next === "active") {
+        syncTimezoneIfChanged(userId);
+        fetchStepStats(userId);
       }
-    }
+      appState.current = next;
+    });
 
-    load();
+    return () => sub.remove();
+  }, [userId]);
 
-    return () => {
-      cancelled = true;
-    };
-  }, [userId, plan?.id, goals]);
-
-  async function rolloverWeeklyIfNeeded(userId: string) {
-    // 1) read goal + current week_key from profile.settings
-    const { data: profileRow } = await supabase
-      .from("profiles")
-      .select("weekly_workout_goal, settings")
-      .eq("id", userId)
-      .maybeSingle();
-
-    const goal = Number(profileRow?.weekly_workout_goal ?? 0) || 3;
-    const lastKey = profileRow?.settings?.workout_week_key as
-      | string
-      | undefined;
-
-    const nowKey = weekKeySundayLocal(new Date());
-    if (lastKey === nowKey) return; // same week, nothing to do
-
-    // 2) finalize previous week (if we had one)
-    if (lastKey) {
-      // compute "met" from existing row
-      const { data: prev } = await supabase
-        .from("user_weekly_workout_stats")
-        .select("completed, goal")
-        .eq("user_id", userId)
-        .eq("week_key", lastKey)
-        .maybeSingle();
-
-      const prevCompleted = Number(prev?.completed ?? 0);
-      const prevGoal = Number(prev?.goal ?? goal);
-      const met = prevCompleted >= prevGoal;
-
-      await supabase.from("user_weekly_workout_stats").upsert(
-        {
-          user_id: userId,
-          week_key: lastKey,
-          goal: prevGoal,
-          completed: prevCompleted,
-          met,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "user_id,week_key" }
-      );
-    }
-
-    // 3) open the new week with current goal
-    await supabase.from("user_weekly_workout_stats").upsert(
-      {
-        user_id: userId,
-        week_key: nowKey,
-        goal,
-        completed: 0,
-        met: false,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "user_id,week_key" }
-    );
-
-    // 4) store the active week key in profile.settings
-    await supabase
-      .from("profiles")
-      .update({
-        settings: {
-          ...(profileRow?.settings ?? {}),
-          workout_week_key: nowKey,
-        },
-      })
-      .eq("id", userId);
-  }
-
-  async function syncTimezoneIfChanged(userId: string) {
+  async function syncTimezoneIfChanged(uid: string) {
     try {
       const deviceTz =
         Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
 
-      // read current profile timezone
       const { data } = await supabase
         .from("profiles")
         .select("timezone")
-        .eq("id", userId)
+        .eq("id", uid)
         .maybeSingle();
 
       const currentTz = data?.timezone || "UTC";
@@ -425,10 +122,8 @@ export default function UserScreen() {
         await supabase
           .from("profiles")
           .update({ timezone: deviceTz })
-          .eq("id", userId);
+          .eq("id", uid);
         setProfileTz(deviceTz);
-        // You can optionally trigger recompute here if you want immediate refresh:
-        // await supabase.rpc('recompute_step_stats', { p_user_id: userId });
       }
     } catch (e) {
       console.warn("syncTimezoneIfChanged error", e);
@@ -453,42 +148,21 @@ export default function UserScreen() {
     }
   }
 
-  useEffect(() => {
-    if (!userId) return;
-
-    // initial run
-    syncTimezoneIfChanged(userId);
-    fetchStepStats(userId);
-
-    rolloverWeeklyIfNeeded(userId);
-
-    const sub = AppState.addEventListener("change", (next) => {
-      if (appState.current.match(/inactive|background/) && next === "active") {
-        syncTimezoneIfChanged(userId);
-        fetchStepStats(userId);
-      }
-      appState.current = next;
-    });
-
-    return () => sub.remove();
-  }, [userId]);
-
-  async function fetchProfile() {
+  // ---------- profile + totals ----------
+  async function fetchProfile(uid: string) {
     try {
       setLoading(true);
 
-      // 1) Profile
-      const { data: profileData } = await supabase
+      const { data: profileData, error } = await supabase
         .from("profiles")
-        .select(
-          "name, email, created_at, settings, height, weight, weekly_streak"
-        )
-        .eq("id", userId)
+        .select("name, email, created_at, settings, weekly_streak")
+        .eq("id", uid)
         .single();
+
+      if (error) throw error;
 
       if (profileData) {
         setProfile(profileData);
-        // use DB-backed weekly streak, falling back to 0
         const streakFromDb =
           profileData.weekly_streak !== null &&
           profileData.weekly_streak !== undefined
@@ -496,24 +170,44 @@ export default function UserScreen() {
             : 0;
         setWeeklyStreak(Number.isFinite(streakFromDb) ? streakFromDb : 0);
       }
+    } catch (e) {
+      console.error("fetchProfile error", e);
+    } finally {
+      setLoading(false);
+    }
+  }
 
-      // 2) Totals
+  async function fetchTotals(uid: string) {
+    try {
+      // 1) total completed workouts
       const { data: totals } = await supabase
         .from("v_user_totals")
         .select("workouts_completed")
-        .eq("user_id", userId)
+        .eq("user_id", uid)
         .maybeSingle();
+
       setWorkoutsCompleted(Number(totals?.workouts_completed ?? 0));
 
-      // 3) Streak
-      const { data: history } = await supabase
-        .from("workout_history")
-        .select("completed_at")
-        .eq("user_id", userId)
-        .order("completed_at", { ascending: false })
-        .limit(365);
+      // 2) planned workouts = all workouts in active plans
+      const { data: planned, error: plannedErr } = await supabase
+        .from("plan_workouts")
+        .select(
+          `
+          id,
+          plans!inner(
+            id,
+            user_id,
+            is_completed
+          )
+        `
+        )
+        .eq("plans.user_id", uid)
+        .eq("plans.is_completed", false);
 
-      // 4) Achievements
+      if (plannedErr) throw plannedErr;
+      setPlannedWorkouts(Array.isArray(planned) ? planned.length : 0);
+
+      // 3) achievements counts
       const [{ count: totalCount }, { count: unlockedCount }] =
         await Promise.all([
           supabase
@@ -522,42 +216,130 @@ export default function UserScreen() {
           supabase
             .from("user_achievements")
             .select("*", { count: "exact", head: true })
-            .eq("user_id", userId),
+            .eq("user_id", uid),
         ]);
+
       setAchievementsTotal(totalCount ?? 0);
       setAchievementsUnlocked(unlockedCount ?? 0);
 
-      // 5) Plans
-      const { data: plansData } = await supabase
+      // 4) recent completed plans
+      const { data: plansData, error: plansErr } = await supabase
         .from("plans")
         .select("id, title, updated_at")
-        .eq("user_id", userId)
+        .eq("user_id", uid)
         .eq("is_completed", true)
         .order("updated_at", { ascending: false })
         .limit(5);
 
+      if (plansErr) throw plansErr;
+
       if (Array.isArray(plansData) && plansData.length > 0) {
-        const rows = plansData.map((p) => ({
+        const rows: PlanRowType[] = plansData.map((p) => ({
           id: p.id,
           title: p.title ?? "Plan",
-          subtitle: `Completed • Last Active: ${formatShortDate(p.updated_at)}`,
-          status: "Completed",
-          statusColor: "#22c55e",
+          subtitle: `Completed • Last active: ${formatShortDate(p.updated_at)}`,
         }));
         setPlans(rows);
       } else {
         setPlans([]);
       }
     } catch (e) {
-      console.error(e);
-    } finally {
-      setLoading(false);
+      console.error("fetchTotals error", e);
+      setPlannedWorkouts(0);
+      setAchievementsTotal(0);
+      setAchievementsUnlocked(0);
+      setPlans([]);
     }
   }
 
   async function onLogout() {
     await supabase.auth.signOut();
     router.replace("/(auth)/login");
+  }
+
+  // ---------- Half donut gauge ----------
+  type HalfDonutProps = {
+    completed: number;
+    planned: number;
+    size?: number;
+    strokeWidth?: number;
+    progressColor: string;
+    backgroundColor: string;
+    labelColor: string;
+  };
+
+  function HalfDonut({
+    completed,
+    planned,
+    size = 190,
+    strokeWidth = 18,
+    progressColor,
+    backgroundColor,
+    labelColor,
+  }: HalfDonutProps) {
+    const cx = size / 2;
+    const cy = size / 2;
+    const radius = cx - strokeWidth / 2;
+
+    const total = Math.max(completed + planned, 1);
+    const progress = Math.max(
+      0,
+      Math.min(1, total > 0 ? completed / total : 0)
+    );
+
+    const startAngle = -Math.PI; // left
+    const endAngle = 0; // right
+    const progressEndAngle = startAngle + (endAngle - startAngle) * progress;
+
+    const buildArc = (from: number, to: number) => {
+      const x1 = cx + radius * Math.cos(from);
+      const y1 = cy + radius * Math.sin(from);
+      const x2 = cx + radius * Math.cos(to);
+      const y2 = cy + radius * Math.sin(to);
+      const largeArc = to - from > Math.PI ? 1 : 0;
+      return `M ${x1} ${y1} A ${radius} ${radius} 0 ${largeArc} 1 ${x2} ${y2}`;
+    };
+
+    const bgPath = buildArc(startAngle, endAngle);
+    const fgPath = buildArc(startAngle, progressEndAngle);
+
+    return (
+      <View style={{ alignItems: "center" }}>
+        <Svg width={size} height={size / 1.3}>
+          {/* background half ring */}
+          <Path
+            d={bgPath}
+            stroke={backgroundColor}
+            strokeWidth={strokeWidth}
+            fill="transparent"
+            strokeLinecap="round"
+          />
+          {/* progress half ring */}
+          <Path
+            d={fgPath}
+            stroke={progressColor}
+            strokeWidth={strokeWidth}
+            fill="transparent"
+            strokeLinecap="round"
+          />
+        </Svg>
+
+        <View
+          style={{
+            position: "absolute",
+            top: size / 4.1,
+            alignItems: "center",
+          }}
+        >
+          <Text style={{ color: labelColor, fontSize: 12, opacity: 0.7 }}>
+            Total workouts
+          </Text>
+          <Text style={{ color: labelColor, fontSize: 26, fontWeight: "800" }}>
+            {completed}
+          </Text>
+        </View>
+      </View>
+    );
   }
 
   if (!userId) {
@@ -579,85 +361,111 @@ export default function UserScreen() {
         backgroundColor={colors.background}
       />
 
-      <FlatList
+      <ScrollView
         style={{ flex: 1, backgroundColor: colors.background }}
         contentContainerStyle={{ padding: 16, paddingBottom: 32 }}
-        ListHeaderComponent={
-          <View style={{ gap: 16 }}>
-            <Header
-              name={name}
-              email={email}
-              joined={joinedText}
-              onEdit={() => router.push("/features/profile/EditProfile")}
-            />
-
-            {/* Stats */}
-            <View style={styles.row}>
-              <StatCard
-                value={workoutsCompleted}
-                label="Workouts"
-                tint={colors.primaryBg}
-              />
-              <StatCard
-                value={weeklyStreak}
-                label="Weekly Streak"
-                tint={colors.successBg}
-              />
+      >
+        {/* Profile card */}
+        <SectionCard>
+          <View style={styles.profileContainer}>
+            <View style={styles.avatar}>
+              <Text style={styles.avatarText}>{initials}</Text>
             </View>
 
-            <View style={[styles.row, { marginTop: 8 }]}>
-              <StatCard
-                value={stepsStreak}
-                label="Step Streak"
-                tint={colors.successBg}
-              />
-              <StatCard
-                value={stepsDaysMetTotal}
-                label="Days Met (All)"
-                tint={colors.primaryBg}
-              />
-            </View>
+            <Text style={styles.profileName}>{name}</Text>
 
-            {/* Quick Update Section */}
-            <SectionCard>
-              <View style={styles.centerButtonContainer}>
-                <Pressable
-                  style={[
-                    styles.primaryButton,
-                    { backgroundColor: colors.primary },
-                  ]}
-                  onPress={() => setShowWeightModal(true)}
-                >
-                  <Text
-                    style={[
-                      styles.primaryButtonText,
-                      { color: dark ? colors.text : "#FFFFFF" },
-                    ]}
-                  >
-                    Update Weight
-                  </Text>
-                </Pressable>
+            {/* Level + primary goal */}
+            <Text style={styles.profileMeta}>
+              {levelLabel} · {goalLabel}
+            </Text>
+
+            <Text style={styles.profileJoined}>Joined {joinedText}</Text>
+          </View>
+        </SectionCard>
+
+        {/* My Activity */}
+        <Text style={styles.sectionHeading}>My Activity</Text>
+        <SectionCard tint={colors.card}>
+          {loading ? (
+            <View style={{ paddingVertical: 16 }}>
+              <ActivityIndicator />
+            </View>
+          ) : (
+            <>
+              {/* Half donut gauge */}
+              <View style={styles.activityGaugeContainer}>
+                <HalfDonut
+                  completed={workoutsCompleted}
+                  planned={plannedWorkouts}
+                  progressColor={colors.successBg ?? "#22c55e"}
+                  backgroundColor={colors.border}
+                  labelColor={colors.text}
+                />
               </View>
-            </SectionCard>
 
-            <QuickUpdateModal
-              visible={showWeightModal}
-              onClose={() => {
-                setShowWeightModal(false);
-                fetchProfile();
-              }}
-              userId={userId}
-              field="weight"
-              currentValue={profile?.settings?.weight ?? null}
-            />
+              {/* Legend under gauge */}
+              <View style={styles.activityLegendRow}>
+                <View style={styles.activityLegendItem}>
+                  <View
+                    style={[
+                      styles.legendDot,
+                      { backgroundColor: colors.successBg ?? "#22c55e" },
+                    ]}
+                  />
+                  <Text style={styles.activityLabel}>
+                    Completed ({workoutsCompleted})
+                  </Text>
+                </View>
+                <View style={styles.activityLegendItem}>
+                  <View
+                    style={[
+                      styles.legendDot,
+                      { backgroundColor: colors.border },
+                    ]}
+                  />
+                  <Text style={styles.activityLabel}>
+                    Planned ({plannedWorkouts})
+                  </Text>
+                </View>
+              </View>
 
-            {/* Achievements */}
-            <SectionCard>
-              <Text style={styles.sectionTitle}>Achievements Completed</Text>
-              <View style={styles.rowBetween}>
-                <Text style={styles.subtle}>
-                  {achievementsUnlocked} of {achievementsTotal}
-                </Text>
+              {/* Streak cards */}
+              <View style={styles.streakRow}>
+                <View style={styles.streakCard}>
+                  <Text style={styles.streakLabel}>Weekly workout streak</Text>
+                  <Text style={styles.streakValue}>
+                    {weeklyStreak} week{weeklyStreak === 1 ? "" : "s"}
+                  </Text>
+                  <Text style={styles.streakHint}>
+                    Hit your weekly goal to keep this going.
+                  </Text>
+                </View>
+
+                <View style={styles.streakCard}>
+                  <Text style={styles.streakLabel}>Step streak</Text>
+                  <Text style={styles.streakValue}>
+                    {stepsStreak} day{stepsStreak === 1 ? "" : "s"}
+                  </Text>
+                  <Text style={styles.streakHint}>
+                    Days met total: {stepsDaysMetTotal}
+                  </Text>
+                </View>
+              </View>
+
+              {/* --- divider before extra sections --- */}
+              <View style={styles.activityDivider} />
+
+              {/* Achievements section */}
+              <Text style={styles.subSectionHeading}>Achievements</Text>
+              <View style={styles.achievementsRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.achievementsText}>
+                    {achievementsUnlocked} of {achievementsTotal} unlocked
+                  </Text>
+                  <Text style={styles.achievementsHint}>
+                    Keep training to unlock more badges.
+                  </Text>
+                </View>
                 <RingProgress
                   size={64}
                   stroke={8}
@@ -676,142 +484,381 @@ export default function UserScreen() {
                 />
               </View>
               <Pressable
-                style={[styles.button, { backgroundColor: colors.successBg }]}
+                style={[
+                  styles.smallButton,
+                  { backgroundColor: colors.successBg },
+                ]}
                 onPress={() =>
                   router.push("/features/achievements/achievements")
                 }
               >
                 <Text
-                  style={[styles.buttonText, { color: colors.successText }]}
+                  style={[
+                    styles.smallButtonText,
+                    { color: colors.successText },
+                  ]}
                 >
-                  View Achievements
+                  View all achievements
                 </Text>
               </Pressable>
-            </SectionCard>
 
-            {/* Goals */}
-            {/* Goals */}
-            <SectionCard tint={colors.primaryBg}>
-              <Text style={[styles.sectionTitle, { color: colors.primary }]}>
-                Goals
-              </Text>
+              {/* --- divider before plan history --- */}
+              <View style={styles.activityDivider} />
 
-              <Text style={[styles.body, { marginBottom: 8 }]}>
-                {plan && goals && goals.length > 0
-                  ? "Average progress towards your current plan exercise goals."
-                  : "Weekly workout goal progress."}
-              </Text>
-
-              <View style={styles.rowBetween}>
-                <Pressable
-                  style={[styles.button, { backgroundColor: colors.primaryBg }]}
-                  onPress={() => router.push("/features/goals/goals")}
-                >
-                  <Text style={[styles.buttonText, { color: colors.primary }]}>
-                    Manage Goals
-                  </Text>
-                </Pressable>
-
-                <View style={{ alignItems: "center" }}>
-                  {goalsRingLoading ? (
-                    <RingProgress size={64} stroke={8} progress={0} label="…" />
-                  ) : (
-                    <>
-                      {/* If your RingProgress supports a color/tint prop, use it */}
-                      <RingProgress
-                        size={64}
-                        stroke={8}
-                        progress={goalsRingProgress}
-                        label={goalsRingLabel}
-                        // tweak this prop name to match your RingProgress implementation
-                        color={ringColor}
-                      />
-                      <Text style={styles.ringModeLabel}>{ringModeLabel}</Text>
-                    </>
-                  )}
-                </View>
-              </View>
-            </SectionCard>
-
-            {/* Plan history */}
-            <Text style={styles.groupTitle}>Plan History</Text>
-            {loading && (
-              <View style={{ paddingVertical: 6 }}>
-                <ActivityIndicator />
-              </View>
-            )}
-            {!loading && plans.length === 0 && (
-              <SectionCard>
+              {/* Plan history */}
+              <Text style={styles.subSectionHeading}>Recent plans</Text>
+              {plans.length === 0 ? (
                 <Text style={styles.subtle}>
                   No plans have been completed yet.
                 </Text>
-              </SectionCard>
-            )}
-          </View>
-        }
-        data={plans}
-        keyExtractor={(i) => i.id}
-        renderItem={({ item }) => (
-          <PlanRow
-            title={item.title}
-            subtitle={item.subtitle}
-            status={item.status}
-            statusColor={item.statusColor}
-            onPress={() => Alert.alert(item.title)}
-          />
-        )}
-        ListFooterComponent={
-          <View style={{ gap: 12, marginTop: 16 }}>
-            <Text style={styles.groupTitle}>Settings</Text>
+              ) : (
+                <View style={{ marginTop: 4 }}>
+                  {plans.slice(0, 3).map((p) => (
+                    <Pressable
+                      key={p.id}
+                      style={styles.planRow}
+                      onPress={() => Alert.alert(p.title)}
+                    >
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.planTitle}>{p.title}</Text>
+                        <Text style={styles.planSubtitle}>{p.subtitle}</Text>
+                      </View>
+                      <View style={styles.planStatusPill}>
+                        <Text style={styles.planStatusText}>Completed</Text>
+                      </View>
+                    </Pressable>
+                  ))}
+                </View>
+              )}
+            </>
+          )}
+        </SectionCard>
 
-            <Pressable style={styles.logout} onPress={onLogout}>
-              <Text style={{ color: "#ef4444", fontWeight: "700" }}>
-                Logout 
-              </Text>
-            </Pressable>
-          </View>
-        }
-      />
+        {/* Settings */}
+        <Text style={styles.sectionHeading}>Settings</Text>
+        <SectionCard>
+          <SettingRowSimple
+            label="Personal Information"
+            onPress={() => router.push("/features/profile/EditProfile")}
+          />
+          <SettingRowSimple
+            label="Notifications"
+            onPress={() =>
+              Alert.alert("Notifications", "Notification settings coming soon.")
+            }
+          />
+          <SettingRowSimple
+            label="Help & Support"
+            onPress={() =>
+              Alert.alert("Help & Support", "Support screen coming soon.")
+            }
+          />
+          <SettingRowSimple
+            label="Privacy Policy"
+            onPress={() =>
+              Alert.alert(
+                "Privacy Policy",
+                "Privacy Policy screen coming soon."
+              )
+            }
+          />
+          <SettingRowSimple
+            label="Terms & Conditions"
+            onPress={() =>
+              Alert.alert(
+                "Terms & Conditions",
+                "Terms & Conditions screen coming soon."
+              )
+            }
+          />
+          <SettingRowSimple
+            label="Community Guidelines"
+            onPress={() =>
+              Alert.alert(
+                "Community Guidelines",
+                "Community Guidelines screen coming soon."
+              )
+            }
+            showDivider={false}
+          />
+        </SectionCard>
+
+        {/* Logout */}
+        <Pressable style={styles.logout} onPress={onLogout}>
+          <Text style={{ color: "#ef4444", fontWeight: "700" }}>Log Out</Text>
+        </Pressable>
+      </ScrollView>
     </>
   );
+}
+
+/**
+ * Simple settings row for this screen.
+ */
+function SettingRowSimple({
+  label,
+  onPress,
+  showDivider = true,
+}: {
+  label: string;
+  onPress: () => void;
+  showDivider?: boolean;
+}) {
+  const { colors } = useAppTheme();
+  return (
+    <View>
+      <Pressable
+        onPress={onPress}
+        style={{
+          paddingVertical: 14,
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+        }}
+      >
+        <Text style={{ fontSize: 15, fontWeight: "600", color: colors.text }}>
+          {label}
+        </Text>
+        <Text style={{ color: colors.subtle, fontSize: 16 }}>›</Text>
+      </Pressable>
+      {showDivider && (
+        <View
+          style={{
+            height: StyleSheet.hairlineWidth,
+            backgroundColor: colors.border,
+          }}
+        />
+      )}
+    </View>
+  );
+}
+
+function formatLevel(level?: string | null) {
+  if (!level) return "Set your level";
+  switch (level) {
+    case "beginner":
+      return "Beginner";
+    case "intermediate":
+      return "Intermediate";
+    case "advanced":
+      return "Advanced";
+    default:
+      return level.replace(/_/g, " ");
+  }
+}
+
+function formatPrimaryGoal(goal?: string | null) {
+  if (!goal) return "Set your primary goal";
+  switch (goal) {
+    case "build_muscle":
+      return "Build muscle";
+    case "lose_fat":
+      return "Lose fat";
+    case "maintain":
+      return "Maintain";
+    case "get_stronger":
+      return "Get stronger";
+    case "improve_fitness":
+      return "Improve fitness";
+    default:
+      return goal.replace(/_/g, " ");
+  }
 }
 
 /* ---------- Themed styles ---------- */
 const makeStyles = (colors: any) =>
   StyleSheet.create({
-    row: { flexDirection: "row", alignItems: "center" },
-    rowBetween: {
+    centered: { flex: 1, justifyContent: "center", alignItems: "center" },
+
+    sectionHeading: {
+      fontSize: 18,
+      fontWeight: "800",
+      marginBottom: 8,
+      color: colors.text,
+      marginTop: 16,
+    },
+
+    activityGaugeContainer: {
+      alignItems: "center",
+      marginBottom: 12,
+      marginTop: 4,
+    },
+    activityLegendRow: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      marginTop: 4,
+    },
+    activityLegendItem: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+    },
+    legendDot: {
+      width: 10,
+      height: 10,
+      borderRadius: 5,
+    },
+    activityLabel: {
+      fontSize: 13,
+      color: colors.subtle,
+    },
+
+    streakRow: {
+      flexDirection: "row",
+      gap: 10,
+      marginTop: 16,
+    },
+    streakCard: {
+      flex: 1,
+      backgroundColor: colors.surface ?? colors.background,
+      borderRadius: 12,
+      padding: 10,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+    },
+    streakLabel: {
+      fontSize: 12,
+      fontWeight: "600",
+      color: colors.subtle,
+      marginBottom: 4,
+    },
+    streakValue: {
+      fontSize: 18,
+      fontWeight: "800",
+      color: colors.text,
+      marginBottom: 2,
+    },
+    streakHint: {
+      fontSize: 11,
+      color: colors.subtle,
+    },
+
+    activityDivider: {
+      height: StyleSheet.hairlineWidth,
+      backgroundColor: colors.border,
+      marginTop: 18,
+      marginBottom: 12,
+    },
+    subSectionHeading: {
+      fontSize: 14,
+      fontWeight: "700",
+      color: colors.text,
+      marginBottom: 6,
+    },
+
+    // Achievements section
+    achievementsRow: {
       flexDirection: "row",
       alignItems: "center",
       justifyContent: "space-between",
+      gap: 12,
     },
-    centered: { flex: 1, justifyContent: "center", alignItems: "center" },
-
-    sectionTitle: {
-      fontSize: 16,
+    achievementsText: {
+      fontSize: 14,
       fontWeight: "700",
-      marginBottom: 8,
       color: colors.text,
     },
-    groupTitle: {
-      fontSize: 18,
-      fontWeight: "800",
-      marginTop: 4,
-      marginBottom: 8,
-      color: colors.text,
+    achievementsHint: {
+      fontSize: 12,
+      color: colors.subtle,
+      marginTop: 2,
     },
-    button: {
-      marginTop: 10,
+    smallButton: {
       alignSelf: "flex-start",
-      paddingHorizontal: 14,
-      paddingVertical: 8,
-      borderRadius: 12,
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: 999,
+      marginTop: 8,
     },
-    buttonText: { fontWeight: "700" },
-    body: { fontSize: 14, color: colors.text },
-    subtle: { color: colors.subtle },
+    smallButtonText: {
+      fontSize: 12,
+      fontWeight: "700",
+    },
+
+    // Plan history rows
+    planRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingVertical: 10,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.border,
+      gap: 8,
+    },
+    planTitle: {
+      fontSize: 14,
+      fontWeight: "700",
+      color: colors.text,
+    },
+    planSubtitle: {
+      fontSize: 12,
+      color: colors.subtle,
+      marginTop: 2,
+    },
+    planStatusPill: {
+      paddingHorizontal: 10,
+      paddingVertical: 4,
+      borderRadius: 999,
+      backgroundColor: colors.successBg ?? "#22c55e22",
+    },
+    planStatusText: {
+      fontSize: 11,
+      fontWeight: "700",
+      color: colors.successText ?? "#16a34a",
+    },
+
+    subtle: {
+      color: colors.subtle,
+      fontSize: 13,
+    },
+
+    profileContainer: {
+      alignItems: "center",
+      paddingVertical: 16,
+      gap: 4,
+    },
+    avatar: {
+      width: 88,
+      height: 88,
+      borderRadius: 44,
+      backgroundColor: colors.primaryBg ?? colors.card,
+      alignItems: "center",
+      justifyContent: "center",
+      marginBottom: 8,
+    },
+    avatarText: {
+      fontSize: 32,
+      fontWeight: "800",
+      color: colors.primaryText ?? colors.text,
+    },
+    profileName: {
+      fontSize: 20,
+      fontWeight: "800",
+      color: colors.text,
+      textAlign: "center",
+    },
+    profileJoined: {
+      fontSize: 12,
+      color: colors.subtle,
+      marginTop: 2,
+      textAlign: "center",
+    },
+    editProfileBtn: {
+      marginTop: 10,
+      paddingHorizontal: 18,
+      paddingVertical: 8,
+      borderRadius: 999,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+    },
+    editProfileText: {
+      fontWeight: "700",
+      color: colors.text,
+      fontSize: 14,
+    },
 
     logout: {
+      marginTop: 16,
       backgroundColor: colors.card,
       borderRadius: 16,
       padding: 16,
@@ -819,25 +866,11 @@ const makeStyles = (colors: any) =>
       borderColor: colors.border,
       alignItems: "flex-start",
     },
-    centerButtonContainer: {
-      alignItems: "center",
-      justifyContent: "center",
-      marginTop: 2,
-    },
-    primaryButton: {
-      paddingVertical: 18,
-      paddingHorizontal: 32,
-      borderRadius: 14,
-    },
-    primaryButtonText: {
-      fontWeight: "700",
-      fontSize: 20,
-      textAlign: "center",
-    },
-    ringModeLabel: {
-      marginTop: 2,
-      fontSize: 11,
+
+    profileMeta: {
+      fontSize: 14,
       color: colors.subtle,
+      marginTop: 2,
       textAlign: "center",
     },
   });
@@ -860,27 +893,4 @@ function formatShortDate(iso?: string | null) {
   } catch {
     return "—";
   }
-}
-
-/** Compute consecutive-day streak up to today from ISO date strings */
-function computeDayStreak(isoDates: string[]): number {
-  if (!isoDates.length) return 0;
-  const daysSet = new Set(isoDates.map((d) => new Date(d).toDateString()));
-  let streak = 0;
-  let cursor = new Date();
-  while (true) {
-    const key = cursor.toDateString();
-    if (daysSet.has(key)) {
-      streak += 1;
-      cursor.setDate(cursor.getDate() - 1);
-    } else {
-      if (streak === 0) {
-        cursor.setDate(cursor.getDate() - 1);
-        const key2 = cursor.toDateString();
-        if (daysSet.has(key2)) continue;
-      }
-      break;
-    }
-  }
-  return streak;
 }
