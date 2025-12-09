@@ -394,6 +394,36 @@ export default function CreateWorkoutScreen() {
         style={{ flex: 1 }}
         contentContainerStyle={{ padding: 16, paddingBottom: 32, gap: 16 }}
       >
+        <View style={{ marginBottom: 4 }}>
+          <Pressable
+            onPress={() => router.back()}
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              paddingVertical: 4,
+            }}
+          >
+            <Text
+              style={{
+                color: colors.primary,
+                fontSize: 16,
+                fontWeight: "700",
+                marginRight: 4,
+              }}
+            >
+              ←
+            </Text>
+            <Text
+              style={{
+                color: colors.primary,
+                fontSize: 16,
+                fontWeight: "700",
+              }}
+            >
+              Back
+            </Text>
+          </Pressable>
+        </View>
         {/* Header */}
         <View style={s.rowBetween}>
           <Text style={s.h2}>Create Workout</Text>
@@ -947,7 +977,7 @@ const makeStyles = (colors: any) =>
       fontSize: 15,
       color: colors.subtle,
       marginBottom: 6,
-      textAlign: "center"
+      textAlign: "center",
     },
 
     chipSection: {

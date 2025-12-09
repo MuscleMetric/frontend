@@ -147,10 +147,7 @@ export default function AchievementsScreen() {
         <View style={s.headerRow}>
           <Pressable
             onPress={() => router.back()}
-            style={({ pressed }) => [
-              s.backButton,
-              pressed && { opacity: 0.7 },
-            ]}
+            style={({ pressed }) => [s.backButton, pressed && { opacity: 0.7 }]}
           >
             <Text style={s.backIcon}>‹</Text>
             <Text style={s.backLabel}>Back</Text>
@@ -168,18 +165,6 @@ export default function AchievementsScreen() {
 
         {/* Search + filter row */}
         <View style={s.searchFilterRow}>
-          <View style={s.searchContainer}>
-            <TextInput
-              value={search}
-              onChangeText={setSearch}
-              placeholder="Search achievements"
-              placeholderTextColor={colors.subtle}
-              style={s.searchInput}
-              autoCorrect={false}
-              autoCapitalize="none"
-            />
-          </View>
-
           <View style={s.filterRow}>
             <FilterPill
               label={`All`}

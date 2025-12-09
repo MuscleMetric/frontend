@@ -81,6 +81,36 @@ export default function PlanInfo() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
       <View style={s.page}>
+        <View style={{ marginBottom: 4 }}>
+          <Pressable
+            onPress={() => router.back()}
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              paddingVertical: 4,
+            }}
+          >
+            <Text
+              style={{
+                color: colors.primary,
+                fontSize: 16,
+                fontWeight: "700",
+                marginRight: 4,
+              }}
+            >
+              ←
+            </Text>
+            <Text
+              style={{
+                color: colors.primary,
+                fontSize: 16,
+                fontWeight: "700",
+              }}
+            >
+              Back
+            </Text>
+          </Pressable>
+        </View>
         <Text style={s.h2}>Plan Info</Text>
 
         {loadingExercises && (

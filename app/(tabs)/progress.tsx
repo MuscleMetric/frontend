@@ -805,7 +805,9 @@ export default function ProgressScreen() {
       {/* ===== Selected Exercise Stats + Charts ===== */}
       <View style={s.card}>
         {loadingSelected ? (
-          <Text style={s.muted}>Complete a workout to see exercise stats here.</Text>
+          <Text style={s.muted}>
+            Complete a workout to see exercise stats here.
+          </Text>
         ) : !selectedExerciseStats ? (
           <Text style={s.muted}>Select an exercise to see details.</Text>
         ) : (
@@ -1770,7 +1772,7 @@ function ExerciseStatCard({
           {lastBars.length === 0 ? (
             <Text style={[s.muted, { padding: 8 }]}>No data yet</Text>
           ) : (
-            lastBars.map((v, _i, arr) => {
+            lastBars.slice(-7).map((v, _i, arr) => {
               const max = Math.max(...arr.map((a) => a.value));
               const h = max > 0 ? Math.round((v.value / max) * 120) : 0;
 

@@ -10,7 +10,7 @@ import {
 } from "react-native";
 import Svg, { Polyline, Line, Circle } from "react-native-svg";
 import { useAppTheme } from "../../../lib/useAppTheme";
-import { useLocalSearchParams } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { supabase } from "../../../lib/supabase";
 import { useAuth } from "../../../lib/useAuth";
 
@@ -73,10 +73,11 @@ export default function StepHistoryScreen(p: Props) {
           const d = new Date(String(minRow.day));
           setEarliestDay(d);
           const today = new Date();
-          const diffDays = Math.floor(
-            (today.setHours(0, 0, 0, 0) - d.setHours(0, 0, 0, 0)) /
-              (1000 * 60 * 60 * 24)
-          ) + 1; // inclusive
+          const diffDays =
+            Math.floor(
+              (today.setHours(0, 0, 0, 0) - d.setHours(0, 0, 0, 0)) /
+                (1000 * 60 * 60 * 24)
+            ) + 1; // inclusive
           setMaxDaysAvail(Math.max(1, diffDays));
         } else {
           // no rows yet: allow only 7 days (empty)
@@ -141,14 +142,19 @@ export default function StepHistoryScreen(p: Props) {
   // Average of daily percentages (cap each day at 100%)
   const avgDailyPct =
     goal > 0 && steps.length > 0
-      ? (steps.reduce((sum, v) => sum + Math.min(1, v / goal), 0) / steps.length) *
+      ? (steps.reduce((sum, v) => sum + Math.min(1, v / goal), 0) /
+          steps.length) *
         100
       : 0;
 
   // Build pills with disabled state if beyond available history
   const pills = RANGES.map((r) => {
     const disabled = r > maxDaysAvail;
-    return { value: r, label: r === 7 ? "7D" : r === 14 ? "2W" : r === 30 ? "1M" : "3M", disabled };
+    return {
+      value: r,
+      label: r === 7 ? "7D" : r === 14 ? "2W" : r === 30 ? "1M" : "3M",
+      disabled,
+    };
   });
 
   return (
@@ -157,6 +163,36 @@ export default function StepHistoryScreen(p: Props) {
         style={{ flex: 1 }}
         contentContainerStyle={{ padding: 16, paddingBottom: 32, gap: 16 }}
       >
+        <View style={{ marginBottom: 4 }}>
+          <Pressable
+            onPress={() => router.back()}
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              paddingVertical: 4,
+            }}
+          >
+            <Text
+              style={{
+                color: colors.primary,
+                fontSize: 16,
+                fontWeight: "700",
+                marginRight: 4,
+              }}
+            >
+              ←
+            </Text>
+            <Text
+              style={{
+                color: colors.primary,
+                fontSize: 16,
+                fontWeight: "700",
+              }}
+            >
+              Back
+            </Text>
+          </Pressable>
+        </View>
         {/* Range selector (centered) */}
         <View style={styles(colors).rangeRow}>
           {pills.map(({ value, label, disabled }) => {
@@ -191,8 +227,8 @@ export default function StepHistoryScreen(p: Props) {
           </Text>
           <Text style={styles(colors).subtle}>
             Avg daily goal reached:{" "}
-            <Text style={styles(colors).big}>{Math.round(avgDailyPct)}%</Text>{" "}
-            • Daily goal: {formatNumber(goal)}
+            <Text style={styles(colors).big}>{Math.round(avgDailyPct)}%</Text> •
+            Daily goal: {formatNumber(goal)}
           </Text>
 
           {/* Optional: show “from <date>” if we have an earliest day */}
@@ -265,8 +301,7 @@ function StepsChart({
     [data, leftPadding, innerW, n]
   );
 
-  const yFor = (v: number) =>
-    topPadding + (1 - Math.min(v / yMax, 1)) * innerH;
+  const yFor = (v: number) => topPadding + (1 - Math.min(v / yMax, 1)) * innerH;
 
   const points = React.useMemo(
     () => data.map((v, i) => `${xs[i]},${yFor(v)}`).join(" "),
@@ -307,11 +342,22 @@ function StepsChart({
           />
         )}
 
-        <Polyline points={points} fill="none" stroke={colors.primaryText} strokeWidth={3} />
+        <Polyline
+          points={points}
+          fill="none"
+          stroke={colors.primaryText}
+          strokeWidth={3}
+        />
 
         {showDots &&
           data.map((v, i) => (
-            <Circle key={`pt-${i}`} cx={xs[i]} cy={yFor(v)} r={2.75} fill={colors.primaryText} />
+            <Circle
+              key={`pt-${i}`}
+              cx={xs[i]}
+              cy={yFor(v)}
+              r={2.75}
+              fill={colors.primaryText}
+            />
           ))}
       </Svg>
 
@@ -348,7 +394,10 @@ function StepsChart({
           }}
         >
           {xLabels.map((d, i) => (
-            <Text key={`xl-${i}`} style={{ color: colors.subtle, fontSize: 12 }}>
+            <Text
+              key={`xl-${i}`}
+              style={{ color: colors.subtle, fontSize: 12 }}
+            >
               {d}
             </Text>
           ))}

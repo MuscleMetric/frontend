@@ -72,6 +72,38 @@ export default function MuscleBreakdownScreen() {
         style={{ flex: 1 }}
         contentContainerStyle={{ padding: 16, gap: 16 }}
       >
+        {/* Back button */}
+        <View style={{ marginBottom: 4 }}>
+          <Pressable
+            onPress={() => router.back()}
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              paddingVertical: 4,
+            }}
+          >
+            <Text
+              style={{
+                color: colors.primary,
+                fontSize: 16,
+                fontWeight: "700",
+                marginRight: 4,
+              }}
+            >
+              ←
+            </Text>
+            <Text
+              style={{
+                color: colors.primary,
+                fontSize: 16,
+                fontWeight: "700",
+              }}
+            >
+              Back
+            </Text>
+          </Pressable>
+        </View>
+
         <View style={s.card}>
           <Text style={s.title}>Muscle Focus — Last 7 Days</Text>
           <Text style={s.subtle}>
