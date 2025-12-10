@@ -76,6 +76,13 @@ export type StrengthSet = {
 
 export type CardioSet = { distance?: string; timeSec?: string };
 
+type LastSetSnapshot = {
+  reps: number | null;
+  weight: number | null;
+  distance: number | null;
+  timeSec: number | null;
+};
+
 type ExerciseState =
   | {
       kind: "strength";
@@ -115,6 +122,111 @@ type ExerciseOption = {
   type: string | null;
   equipment: string | null;
 };
+
+/* ---------- muscle + equipment filters ---------- */
+
+// 10 muscle group chips (using your exact muscle IDs / names)
+const MUSCLE_GROUPS = [
+  {
+    id: "chest",
+    label: "Chest",
+    muscleIds: [1], // Chest
+  },
+  {
+    id: "back",
+    label: "Back",
+    muscleIds: [2, 88, 89, 90, 99, 98], // Back, Lats, Upper Back, Lower Back, Rear Delts, Traps
+  },
+  {
+    id: "shoulders",
+    label: "Shoulders",
+    muscleIds: [8], // Shoulders
+  },
+  {
+    id: "biceps",
+    label: "Biceps",
+    muscleIds: [6, 91], // Biceps, Forearms
+  },
+  {
+    id: "triceps",
+    label: "Triceps",
+    muscleIds: [7], // Triceps
+  },
+  {
+    id: "core",
+    label: "Abs / Core",
+    muscleIds: [96, 97, 10, 100, 101], // Abs, Obliques, Core, Core Stabilizers, Serratus
+  },
+  {
+    id: "quads",
+    label: "Quads",
+    muscleIds: [3, 92], // Quads, Quadriceps
+  },
+  {
+    id: "hamstrings",
+    label: "Hamstrings",
+    muscleIds: [4], // Hamstrings
+  },
+  {
+    id: "glutes_hips",
+    label: "Glutes & Hips",
+    muscleIds: [5, 94, 93, 95], // Glutes, Abductors, Adductors, Hip Flexors
+  },
+  {
+    id: "calves",
+    label: "Calves",
+    muscleIds: [9], // Calves
+  },
+] as const;
+
+// exact equipment list you gave (no additions / renames)
+const EQUIPMENT_OPTIONS: string[] = [
+  "ab wheel",
+  "air bike",
+  "backpack",
+  "band",
+  "barbell",
+  "battle rope",
+  "battle ropes",
+  "bench",
+  "bike",
+  "bike erg",
+  "bodyweight",
+  "cable",
+  "captain's chair",
+  "decline bench",
+  "dumbbell",
+  "dumbbells",
+  "elliptical",
+  "ez-bar",
+  "foam roller",
+  "heavy bag",
+  "jacobs ladder",
+  "kettlebell",
+  "ladder",
+  "landmine",
+  "machine",
+  "med ball",
+  "medicine ball",
+  "parallel bars",
+  "parallettes",
+  "plate",
+  "plates",
+  "plyo box",
+  "pool",
+  "pull-up bar",
+  "rope",
+  "rowing machine",
+  "ski erg",
+  "sled",
+  "slider",
+  "smith machine",
+  "stability ball",
+  "stair climber",
+  "trap bar",
+  "treadmill",
+  "wrist roller",
+];
 
 /* ---------- helpers ---------- */
 const isCardio = (we: WorkoutExercise) =>
@@ -241,6 +353,10 @@ export default function StartWorkoutScreen() {
   const [lastWorkoutNotes, setLastWorkoutNotes] = useState<string | null>(null);
   const [notesOverlayVisible, setNotesOverlayVisible] = useState(false);
 
+  const [lastSetsByWeId, setLastSetsByWeId] = useState<
+    Record<string, LastSetSnapshot[]>
+  >({});
+
   // scrolling to open exercise
   const scrollRef = useRef<ScrollView>(null);
   const exerciseY = useRef<Record<string, number>>({});
@@ -251,45 +367,184 @@ export default function StartWorkoutScreen() {
     }
   };
 
-  // ---------- Exercise picker modal state ----------
   const [exerciseModalVisible, setExerciseModalVisible] = useState(false);
   const [exerciseOptions, setExerciseOptions] = useState<ExerciseOption[]>([]);
   const [exLoading, setExLoading] = useState(false);
   const [exerciseSearch, setExerciseSearch] = useState("");
   const [modalSelectedIds, setModalSelectedIds] = useState<string[]>([]);
+  // NEW: muscle & equipment filter state (for chips)
+  const [selectedMuscleGroups, setSelectedMuscleGroups] = useState<string[]>(
+    []
+  );
+  const [selectedEquipment, setSelectedEquipment] = useState<string[]>([]);
 
-  const loadExercises = useCallback(async () => {
+  const [muscleFilterOpen, setMuscleFilterOpen] = useState(false);
+  const [equipmentFilterOpen, setEquipmentFilterOpen] = useState(false);
+  const s = styles;
+
+  const [replaceTargetWeId, setReplaceTargetWeId] = useState<string | null>(
+    null
+  );
+  const isReplaceMode = !!replaceTargetWeId;
+
+  // ----- muscle filter toggle -----
+  const toggleMuscleGroup = (groupId: string) => {
+    setSelectedMuscleGroups((prev) =>
+      prev.includes(groupId)
+        ? prev.filter((id) => id !== groupId)
+        : [...prev, groupId]
+    );
+  };
+
+  // ----- equipment filter toggle -----
+  const toggleEquipment = (eq: string) => {
+    setSelectedEquipment((prev) =>
+      prev.includes(eq) ? prev.filter((e) => e !== eq) : [...prev, eq]
+    );
+  };
+
+  // Prefill muscle chips for the exercise we are replacing
+  const prefillMusclesForExercise = useCallback(async (exerciseId: string) => {
     try {
-      setExLoading(true);
       const { data, error } = await supabase
-        .from("exercises")
-        .select("id, name, type, equipment")
-        .order("name", { ascending: true });
-      if (error) throw error;
+        .from("exercise_muscles")
+        .select("muscle_id")
+        .eq("exercise_id", exerciseId);
 
-      const opts: ExerciseOption[] =
-        data?.map((row: any) => ({
-          id: String(row.id),
-          name: row.name ?? null,
-          type: row.type ?? null,
-          equipment: row.equipment ?? null,
-        })) ?? [];
+      if (error) {
+        console.warn("prefill muscles error", error);
+        return;
+      }
 
-      setExerciseOptions(opts);
+      const muscleIds: number[] = (data ?? []).map(
+        (row: any) => row.muscle_id as number
+      );
+      if (!muscleIds.length) {
+        setSelectedMuscleGroups([]);
+        setMuscleFilterOpen(false);
+        return;
+      }
+
+      const groups = MUSCLE_GROUPS.filter((g) =>
+        g.muscleIds.some((mid) => muscleIds.includes(mid))
+      ).map((g) => g.id);
+
+      setSelectedMuscleGroups(groups);
+      setMuscleFilterOpen(groups.length > 0);
     } catch (e) {
-      console.warn("loadExercises error", e);
-      Alert.alert("Could not load exercises", "Please try again in a moment.");
-    } finally {
-      setExLoading(false);
+      console.warn("prefillMusclesForExercise exception", e);
     }
   }, []);
 
-  // Load exercises when modal first opens
-  useEffect(() => {
-    if (exerciseModalVisible && exerciseOptions.length === 0 && !exLoading) {
-      loadExercises();
+  const openExerciseOptions = async (we: WorkoutExercise) => {
+    setReplaceTargetWeId(we.id); // enter replace mode
+    setModalSelectedIds([]);
+    setExerciseSearch("");
+
+    // prefill recommended muscle chips based on this exercise
+    if (we.exercise_id) {
+      await prefillMusclesForExercise(we.exercise_id);
+    } else {
+      setSelectedMuscleGroups([]);
+      setMuscleFilterOpen(false);
     }
-  }, [exerciseModalVisible, exerciseOptions.length, exLoading, loadExercises]);
+
+    setExerciseModalVisible(true);
+  };
+
+  // Load / filter exercises when the modal is open or filters/search change
+  useEffect(() => {
+    let alive = true;
+
+    if (!exerciseModalVisible) {
+      return () => {
+        alive = false;
+      };
+    }
+
+    (async () => {
+      setExLoading(true);
+
+      try {
+        const hasMuscleFilter = selectedMuscleGroups.length > 0;
+
+        let q = supabase
+          .from("exercises")
+          .select(
+            hasMuscleFilter
+              ? `
+              id,
+              name,
+              type,
+              equipment,
+              exercise_muscles!inner(
+                muscle_id
+              )
+            `
+              : `
+              id,
+              name,
+              type,
+              equipment
+            `
+          )
+          .order("name", { ascending: true })
+          .limit(600);
+
+        if (exerciseSearch.trim()) {
+          q = q.ilike("name", `%${exerciseSearch.trim()}%`);
+        }
+
+        // equipment filter (multi)
+        if (selectedEquipment.length > 0) {
+          q = q.in("equipment", selectedEquipment);
+        }
+
+        // muscle filter (multi) via exercise_muscles
+        if (hasMuscleFilter) {
+          const muscleIdSet = new Set<number>();
+          selectedMuscleGroups.forEach((gid) => {
+            const group = MUSCLE_GROUPS.find((g) => g.id === gid);
+            group?.muscleIds.forEach((mid) => muscleIdSet.add(mid));
+          });
+          const muscleIds = Array.from(muscleIdSet);
+          if (muscleIds.length > 0) {
+            q = q.in("exercise_muscles.muscle_id", muscleIds);
+          }
+        }
+
+        const { data, error } = await q;
+
+        if (error) {
+          console.warn("exercise picker load error", error);
+          if (alive) setExerciseOptions([]);
+          return;
+        }
+
+        if (alive) {
+          setExerciseOptions(
+            (data ?? []).map((row: any) => ({
+              id: String(row.id),
+              name: row.name ?? null,
+              type: row.type ?? null,
+              equipment: row.equipment ?? null,
+            }))
+          );
+        }
+      } finally {
+        if (alive) setExLoading(false);
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [
+    exerciseModalVisible,
+    exerciseSearch,
+    selectedMuscleGroups,
+    selectedEquipment,
+  ]);
 
   const filteredExerciseOptions = useMemo(() => {
     const q = exerciseSearch.trim().toLowerCase();
@@ -300,9 +555,14 @@ export default function StartWorkoutScreen() {
   }, [exerciseOptions, exerciseSearch]);
 
   const toggleModalSelect = (id: string) => {
-    setModalSelectedIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
-    );
+    setModalSelectedIds((prev) => {
+      if (isReplaceMode) {
+        // single-select behaviour in replace mode
+        return prev[0] === id ? [] : [id];
+      }
+      // multi-select when adding new exercises
+      return prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id];
+    });
   };
 
   // ---------- Existing live activity effects ----------
@@ -356,14 +616,30 @@ export default function StartWorkoutScreen() {
     const exState = state.byWeId[openWe.id];
     if (!exState) return {};
 
+    const currentIdx = exState.currentSet;
     let setLabel: string | undefined;
     let prevLabel: string | undefined;
 
+    // Grab history snapshots for this WE (from last workout)
+    const histArr = lastSetsByWeId[openWe.id];
+
     if (exState.kind === "strength") {
-      const i = exState.currentSet;
-      setLabel = `Set ${i + 1} of ${exState.sets.length}`;
-      if (i > 0) {
-        const last = exState.sets[i - 1] as any;
+      setLabel = `Set ${currentIdx + 1} of ${exState.sets.length}`;
+
+      // --- 1️⃣ FIRST SET → show history instead of current workout ---
+      if (currentIdx === 0 && histArr && histArr.length > 0) {
+        // pick matching index if available, else last available history set
+        const histIdx = Math.min(currentIdx, histArr.length - 1);
+        const snap = histArr[histIdx];
+        const reps = snap.reps ?? 0;
+        const weight = snap.weight ?? 0;
+        prevLabel = `${reps}×${weight}kg`;
+      }
+
+      // --- 2️⃣ LATER SETS → keep existing “previous set in this workout” behavior ---
+      if (currentIdx > 0) {
+        const last = exState.sets[currentIdx - 1] as any;
+
         if ((exState as any).dropMode) {
           const drops = (last.drops ?? []) as {
             reps?: string;
@@ -373,19 +649,30 @@ export default function StartWorkoutScreen() {
             const chain = drops
               .map((d) => `${d.reps || 0}×${d.weight || 0}`)
               .join(" → ");
-            prevLabel = `Last: ${chain}kg`;
+            prevLabel = `${chain}kg`;
           }
         } else if (last.reps || last.weight) {
-          prevLabel = `Last: ${last.reps || 0}×${last.weight || 0}kg`;
+          prevLabel = `${last.reps || 0}×${last.weight || 0}kg`;
         }
       }
     } else {
-      const i = exState.currentSet;
-      setLabel = `Set ${i + 1} of ${exState.sets.length}`;
-      if (i > 0) {
-        const last = exState.sets[i - 1] as any;
+      // CARDIO
+      setLabel = `Set ${currentIdx + 1} of ${exState.sets.length}`;
+
+      // 1️⃣ FIRST SET → use history distance/time
+      if (currentIdx === 0 && histArr && histArr.length > 0) {
+        const histIdx = Math.min(currentIdx, histArr.length - 1);
+        const snap = histArr[histIdx];
+        const dist = snap.distance ?? 0;
+        const t = snap.timeSec ?? 0;
+        prevLabel = `${dist} km • ${t}s`;
+      }
+
+      // 2️⃣ LATER SETS → previous set in this workout
+      if (currentIdx > 0) {
+        const last = exState.sets[currentIdx - 1] as any;
         if (last.distance || last.timeSec) {
-          prevLabel = `Last: ${last.distance || 0} km • ${last.timeSec || 0}s`;
+          prevLabel = `${last.distance || 0} km • ${last.timeSec || 0}s`;
         }
       }
     }
@@ -401,6 +688,8 @@ export default function StartWorkoutScreen() {
     if (!userId || !workoutId) return;
     setLoading(true);
     try {
+      let lastSetMap: Record<string, LastSetSnapshot[]> = {};
+
       const { data, error } = await supabase
         .from("workouts")
         .select(
@@ -459,65 +748,172 @@ export default function StartWorkoutScreen() {
 
       setWorkout(w);
 
-      // last workout notes for this workout & user
+      // last workout notes + last set history for this workout & user
       try {
         const { data: lastHist, error: lastErr } = await supabase
           .from("workout_history")
-          .select("notes")
+          .select("id, notes")
           .eq("user_id", userId)
           .eq("workout_id", workoutId)
           .order("completed_at", { ascending: false })
           .limit(1)
           .maybeSingle();
 
-        if (!lastErr && lastHist?.notes) {
-          setLastWorkoutNotes(lastHist.notes as string);
+        if (!lastErr && lastHist) {
+          setLastWorkoutNotes(lastHist.notes ?? null);
+
+          if (lastHist.id) {
+            // NEW: match the actual schema
+            const { data: lastSets, error: lastSetsErr } = await supabase
+              .from("workout_set_history")
+              .select(
+                `
+          set_number,
+          reps,
+          weight,
+          distance,
+          time_seconds,
+          workout_exercise_history!inner(
+            workout_exercise_id,
+            workout_history_id
+          )
+        `
+              )
+              .eq("workout_exercise_history.workout_history_id", lastHist.id);
+
+            if (!lastSetsErr && lastSets) {
+              const map: Record<string, LastSetSnapshot[]> = {};
+
+              (lastSets as any[]).forEach((row) => {
+                const weh = row.workout_exercise_history;
+                const weId: string | null = weh?.workout_exercise_id ?? null;
+                if (!weId) return; // ad-hoc exercise with no template WE.id
+
+                const setIndexRaw = row.set_number ?? 1;
+                const setIndex = Math.max(0, Number(setIndexRaw) - 1);
+
+                if (!map[weId]) map[weId] = [];
+
+                map[weId][setIndex] = {
+                  reps:
+                    row.reps != null && !Number.isNaN(Number(row.reps))
+                      ? Number(row.reps)
+                      : null,
+                  weight:
+                    row.weight != null && !Number.isNaN(Number(row.weight))
+                      ? Number(row.weight)
+                      : null,
+                  distance:
+                    row.distance != null && !Number.isNaN(Number(row.distance))
+                      ? Number(row.distance)
+                      : null,
+                  timeSec:
+                    row.time_seconds != null &&
+                    !Number.isNaN(Number(row.time_seconds))
+                      ? Number(row.time_seconds)
+                      : null,
+                };
+              });
+
+              lastSetMap = map;
+              setLastSetsByWeId(map);
+            } else {
+              lastSetMap = {};
+              setLastSetsByWeId({});
+            }
+          } else {
+            lastSetMap = {};
+            setLastSetsByWeId({});
+          }
         } else {
           setLastWorkoutNotes(null);
+          lastSetMap = {};
+          setLastSetsByWeId({});
         }
       } catch (e) {
-        console.warn("load lastWorkoutNotes error", e);
+        console.warn("load lastWorkoutNotes / last set history error", e);
         setLastWorkoutNotes(null);
+        lastSetMap = {};
+        setLastSetsByWeId({});
       }
 
-      // initialize in-progress state
+      // initialize in-progress state (prefill from lastSetMap if available)
       if (w) {
         const byWeId: Record<string, ExerciseState> = {};
+
         for (const we of w.workout_exercises) {
+          const histSets = lastSetMap[we.id] ?? [];
+
           if (isCardio(we)) {
+            const sets: CardioSet[] =
+              histSets.length > 0
+                ? histSets.map((h) => ({
+                    distance:
+                      h.distance != null && !Number.isNaN(h.distance)
+                        ? String(h.distance)
+                        : "",
+                    timeSec:
+                      h.timeSec != null && !Number.isNaN(h.timeSec)
+                        ? String(h.timeSec)
+                        : "",
+                  }))
+                : [
+                    {
+                      distance: "",
+                      timeSec: "",
+                    },
+                  ];
+
             byWeId[we.id] = {
               kind: "cardio",
-              sets: [{ distance: "", timeSec: "" }],
-              currentSet: 0,
+              sets,
+              currentSet: 0, // start on Set 1
               completed: false,
               notes: "",
               open: false,
             };
           } else {
-            let initialSets =
-              we.target_sets && we.target_sets > 0
-                ? Array.from(
-                    { length: we.target_sets },
-                    () =>
-                      ({
-                        reps: "",
-                        weight: "",
-                        drops: [],
-                      } as StrengthSet)
-                  )
-                : [{ reps: "", weight: "", drops: [] } as StrengthSet];
+            let sets: StrengthSet[];
+
+            if (histSets.length > 0) {
+              // Prefill one StrengthSet per historical set
+              sets = histSets.map((h) => ({
+                reps:
+                  h.reps != null && !Number.isNaN(h.reps) ? String(h.reps) : "",
+                weight:
+                  h.weight != null && !Number.isNaN(h.weight)
+                    ? String(h.weight)
+                    : "",
+                drops: [], // can't infer drops from aggregate history
+              }));
+            } else {
+              // Fallback to target_sets / default
+              sets =
+                we.target_sets && we.target_sets > 0
+                  ? Array.from(
+                      { length: we.target_sets },
+                      () =>
+                        ({
+                          reps: "",
+                          weight: "",
+                          drops: [],
+                        } as StrengthSet)
+                    )
+                  : [{ reps: "", weight: "", drops: [] } as StrengthSet];
+            }
 
             byWeId[we.id] = {
               kind: "strength",
-              sets: initialSets,
-              currentSet: 0,
-              dropMode: false, // exercise-level drop toggle off by default
+              sets,
+              currentSet: 0, // start on Set 1
+              dropMode: false,
               completed: false,
               notes: "",
               open: false,
             };
           }
         }
+
         setState({
           workoutNotes: "",
           byWeId,
@@ -532,6 +928,8 @@ export default function StartWorkoutScreen() {
       console.warn("start workout load error", e);
       setWorkout(null);
       setState(null);
+      setLastWorkoutNotes(null);
+      setLastSetsByWeId({});
     } finally {
       setLoading(false);
     }
@@ -541,7 +939,7 @@ export default function StartWorkoutScreen() {
     load();
   }, [load]);
 
-  // ---------- Add ad-hoc exercises (from exercises table) ----------
+  // ---------- Add / replace ad-hoc exercises (from exercises table) ----------
   const handleConfirmAddExercises = () => {
     if (!workout || modalSelectedIds.length === 0) {
       setExerciseModalVisible(false);
@@ -556,20 +954,30 @@ export default function StartWorkoutScreen() {
       return;
     }
 
-    let baseOrder =
-      workout.workout_exercises[workout.workout_exercises.length - 1]
-        ?.order_index ?? workout.workout_exercises.length - 1;
+    // ---- REPLACE MODE ----
+    if (replaceTargetWeId) {
+      const replacement = selected[0]; // single-select in replace mode
+      const targetIndex = workout.workout_exercises.findIndex(
+        (we) => we.id === replaceTargetWeId
+      );
+      if (!replacement || targetIndex === -1) {
+        // fallback: just close
+        setExerciseModalVisible(false);
+        setReplaceTargetWeId(null);
+        return;
+      }
 
-    const added: WorkoutExercise[] = selected.map((opt, idx) => {
-      const weId = `adhoc-${Date.now()}-${idx}`;
-      const type = (opt.type || "").toLowerCase();
+      const type = (replacement.type || "").toLowerCase();
       const isCardioKind = type === "cardio";
-      const order_index = (baseOrder ?? 0) + idx + 1;
 
-      return {
-        id: weId,
-        exercise_id: opt.id, // real DB exercise id
-        order_index,
+      const newWeId = `adhoc-replace-${Date.now()}`;
+      const baseOrder =
+        workout.workout_exercises[targetIndex]?.order_index ?? targetIndex;
+
+      const replacementWe: WorkoutExercise = {
+        id: newWeId,
+        exercise_id: replacement.id, // actual DB exercise id
+        order_index: baseOrder,
         target_sets: isCardioKind ? null : 3,
         target_reps: isCardioKind ? null : 10,
         target_weight: null,
@@ -580,73 +988,155 @@ export default function StartWorkoutScreen() {
         superset_group: null,
         superset_index: null,
         exercises: {
-          id: opt.id,
-          name: opt.name ?? "Exercise",
-          type: opt.type,
+          id: replacement.id,
+          name: replacement.name ?? "Exercise",
+          type: replacement.type,
         },
         isAdHoc: true,
       };
-    });
 
-    // 1) add to workout object
-    setWorkout((prev) =>
-      prev
-        ? {
-            ...prev,
-            workout_exercises: [...prev.workout_exercises, ...added],
-          }
-        : prev
-    );
+      // 1) replace in workout object
+      setWorkout((prev) => {
+        if (!prev) return prev;
+        const arr = [...prev.workout_exercises];
+        arr[targetIndex] = replacementWe;
+        return { ...prev, workout_exercises: arr };
+      });
 
-    // 2) initialise logging state
-    setState((s) => {
-      if (!s) return s;
-      const byWeId = { ...s.byWeId };
-
-      for (const we of added) {
-        if (isCardio(we)) {
-          byWeId[we.id] = {
-            kind: "cardio",
-            sets: [{ distance: "", timeSec: "" }],
-            currentSet: 0,
-            completed: false,
-            notes: "",
-            open: false,
-          };
-        } else {
-          byWeId[we.id] = {
-            kind: "strength",
-            sets: [{ reps: "", weight: "", drops: [] }],
-            currentSet: 0,
-            dropMode: false,
-            completed: false,
-            notes: "",
-            open: false,
-          };
-        }
-      }
-
-      return { ...s, byWeId };
-    });
-
-    // 3) open the first added exercise
-    const firstId = added[0]?.id;
-    if (firstId) {
-      requestAnimationFrame(() => scrollToExercise(firstId));
+      // 2) replace in in-progress state
       setState((s) => {
         if (!s) return s;
-        const nextByWe: Record<string, ExerciseState> = {};
-        for (const [id, ex] of Object.entries(s.byWeId)) {
-          nextByWe[id] = { ...ex, open: id === firstId };
-        }
-        return { ...s, byWeId: nextByWe };
+        const nextByWeId: Record<string, ExerciseState> = { ...s.byWeId };
+        delete nextByWeId[replaceTargetWeId];
+
+        // init state for new exercise
+        nextByWeId[newWeId] = isCardioKind
+          ? {
+              kind: "cardio",
+              sets: [{ distance: "", timeSec: "" }],
+              currentSet: 0,
+              completed: false,
+              notes: "",
+              open: true,
+            }
+          : {
+              kind: "strength",
+              sets: [{ reps: "", weight: "", drops: [] }],
+              currentSet: 0,
+              dropMode: false,
+              completed: false,
+              notes: "",
+              open: true,
+            };
+
+        // close others
+        Object.keys(nextByWeId).forEach((id) => {
+          if (id !== newWeId) {
+            nextByWeId[id] = { ...nextByWeId[id], open: false };
+          }
+        });
+
+        return { ...s, byWeId: nextByWeId };
       });
+
+      const scrollId = newWeId;
+      requestAnimationFrame(() => scrollToExercise(scrollId));
+    } else {
+      // ---- ADD MODE (existing behaviour: add to end as ad-hoc) ----
+      let baseOrder =
+        workout.workout_exercises[workout.workout_exercises.length - 1]
+          ?.order_index ?? workout.workout_exercises.length - 1;
+
+      const added: WorkoutExercise[] = selected.map((opt, idx) => {
+        const weId = `adhoc-${Date.now()}-${idx}`;
+        const type = (opt.type || "").toLowerCase();
+        const isCardioKind = type === "cardio";
+        const order_index = (baseOrder ?? 0) + idx + 1;
+
+        return {
+          id: weId,
+          exercise_id: opt.id,
+          order_index,
+          target_sets: isCardioKind ? null : 3,
+          target_reps: isCardioKind ? null : 10,
+          target_weight: null,
+          target_time_seconds: isCardioKind ? 600 : null,
+          target_distance: null,
+          notes: null,
+          is_dropset: false,
+          superset_group: null,
+          superset_index: null,
+          exercises: {
+            id: opt.id,
+            name: opt.name ?? "Exercise",
+            type: opt.type,
+          },
+          isAdHoc: true,
+        };
+      });
+
+      setWorkout((prev) =>
+        prev
+          ? {
+              ...prev,
+              workout_exercises: [...prev.workout_exercises, ...added],
+            }
+          : prev
+      );
+
+      setState((s) => {
+        if (!s) return s;
+        const byWeId = { ...s.byWeId };
+
+        for (const we of added) {
+          if ((we.exercises?.type || "").toLowerCase() === "cardio") {
+            byWeId[we.id] = {
+              kind: "cardio",
+              sets: [{ distance: "", timeSec: "" }],
+              currentSet: 0,
+              completed: false,
+              notes: "",
+              open: false,
+            };
+          } else {
+            byWeId[we.id] = {
+              kind: "strength",
+              sets: [{ reps: "", weight: "", drops: [] }],
+              currentSet: 0,
+              dropMode: false,
+              completed: false,
+              notes: "",
+              open: false,
+            };
+          }
+        }
+
+        return { ...s, byWeId };
+      });
+
+      const firstId = added[0]?.id;
+      if (firstId) {
+        requestAnimationFrame(() => scrollToExercise(firstId));
+        setState((s) => {
+          if (!s) return s;
+          const nextByWe: Record<string, ExerciseState> = {};
+          for (const [id, ex] of Object.entries(s.byWeId)) {
+            nextByWe[id] = { ...ex, open: id === firstId };
+          }
+          return { ...s, byWeId: nextByWe };
+        });
+      }
     }
 
-    // 4) close modal + reset
+    // reset + close
     setExerciseModalVisible(false);
     setModalSelectedIds([]);
     setExerciseSearch("");
+    setReplaceTargetWeId(null);
+    setSelectedMuscleGroups([]);
+    setSelectedEquipment([]);
+    setMuscleFilterOpen(false);
+    setEquipmentFilterOpen(false);
   };
 
   // ---------- Early loading / auth guards ----------
@@ -1200,6 +1690,8 @@ export default function StartWorkoutScreen() {
 
           const shouldShowComplete = isLastSet;
 
+          const lastHistorySets = lastSetsByWeId[we.id];
+
           return (
             <View
               key={we.id}
@@ -1257,14 +1749,39 @@ export default function StartWorkoutScreen() {
                     </Text>
                   </Pressable>
                 ) : isOpen ? (
-                  <Text
-                    style={[
-                      styles.badge,
-                      { color: colors.warnText ?? colors.text },
-                    ]}
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: 6,
+                    }}
                   >
-                    Active
-                  </Text>
+                    <Text
+                      style={[
+                        styles.badge,
+                        { color: colors.warnText ?? colors.text },
+                      ]}
+                    >
+                      Active
+                    </Text>
+
+                    {/* 3-dots menu – replace this exercise */}
+                    <Pressable
+                      onPress={() => openExerciseOptions(we)}
+                      hitSlop={8}
+                      style={styles.iconButton}
+                    >
+                      <Text
+                        style={{
+                          color: colors.subtle,
+                          fontSize: 18,
+                          fontWeight: "900",
+                        }}
+                      >
+                        ⋯
+                      </Text>
+                    </Pressable>
+                  </View>
                 ) : (
                   <Pressable
                     onPress={() => setExerciseOpen(we.id, true)}
@@ -1296,13 +1813,13 @@ export default function StartWorkoutScreen() {
               {exState.completed && exState.kind === "strength" && (
                 <View style={styles.completedSummaryContainer}>
                   {exState.sets.map((set, i) => {
-                    const s = set as StrengthSet;
+                    const sSet = set as StrengthSet;
                     if (
                       (exState as any).dropMode &&
-                      s.drops &&
-                      s.drops.length
+                      sSet.drops &&
+                      sSet.drops.length
                     ) {
-                      const chain = s.drops
+                      const chain = sSet.drops
                         .map((d) => `${d.reps || 0} reps × ${d.weight || 0}kg`)
                         .join(" → ");
                       return (
@@ -1313,7 +1830,7 @@ export default function StartWorkoutScreen() {
                     }
                     return (
                       <Text key={i} style={styles.completedSummaryLine}>
-                        {i + 1}. {s.reps || 0} reps × {s.weight || 0}kg
+                        {i + 1}. {sSet.reps || 0} reps × {sSet.weight || 0}kg
                       </Text>
                     );
                   })}
@@ -1328,10 +1845,10 @@ export default function StartWorkoutScreen() {
                     <View style={{ marginBottom: 8 }}>
                       <Pressable
                         onPress={() =>
-                          setState((s) => {
-                            if (!s) return s;
-                            const ex = s.byWeId[we.id];
-                            if (!ex || ex.kind !== "strength") return s;
+                          setState((s2) => {
+                            if (!s2) return s2;
+                            const ex = s2.byWeId[we.id];
+                            if (!ex || ex.kind !== "strength") return s2;
                             const next: Extract<
                               ExerciseState,
                               { kind: "strength" }
@@ -1351,8 +1868,8 @@ export default function StartWorkoutScreen() {
                             }
 
                             return {
-                              ...s,
-                              byWeId: { ...s.byWeId, [we.id]: next },
+                              ...s2,
+                              byWeId: { ...s2.byWeId, [we.id]: next },
                             };
                           })
                         }
@@ -1419,6 +1936,68 @@ export default function StartWorkoutScreen() {
                     </View>
                   ) : null}
 
+                  {/* History preview for this set */}
+                  {(() => {
+                    const i = exState.currentSet;
+                    const histArr = lastHistorySets;
+
+                    if (!histArr || histArr.length === 0) {
+                      return (
+                        <Text
+                          style={[
+                            styles.muted,
+                            {
+                              textAlign: "center",
+                              marginBottom: 8,
+                              fontWeight: "600",
+                            },
+                          ]}
+                        >
+                          No previous sets recorded for this exercise
+                        </Text>
+                      );
+                    }
+
+                    const snap = histArr[i];
+                    if (!snap) return null;
+
+                    if (exState.kind === "strength") {
+                      const reps = snap.reps ?? 0;
+                      const weight = snap.weight ?? 0;
+                      return (
+                        <Text
+                          style={[
+                            styles.muted,
+                            {
+                              textAlign: "center",
+                              marginBottom: 8,
+                              fontWeight: "600",
+                            },
+                          ]}
+                        >
+                          Last time (Set {i + 1}): {reps} × {weight}kg
+                        </Text>
+                      );
+                    } else {
+                      const dist = snap.distance ?? 0;
+                      const t = snap.timeSec ?? 0;
+                      return (
+                        <Text
+                          style={[
+                            styles.muted,
+                            {
+                              textAlign: "center",
+                              marginBottom: 8,
+                              fontWeight: "600",
+                            },
+                          ]}
+                        >
+                          Last time (Set {i + 1}): {dist} km • {t}s
+                        </Text>
+                      );
+                    }
+                  })()}
+
                   {/* Labels above inputs (cardio only – strength labels sit above each box) */}
                   {exState.kind === "cardio" && (
                     <View style={styles.setsHeader}>
@@ -1428,47 +2007,6 @@ export default function StartWorkoutScreen() {
                       </Text>
                     </View>
                   )}
-
-                  {/* Last set preview */}
-                  {(() => {
-                    const i = exState.currentSet;
-                    const last = i > 0 ? exState.sets[i - 1] : null;
-                    if (!last) return null;
-                    return (
-                      <Text
-                        style={[
-                          styles.muted,
-                          {
-                            textAlign: "center",
-                            marginBottom: 8,
-                            fontWeight: "600",
-                          },
-                        ]}
-                      >
-                        Last:{" "}
-                        {exState.kind === "strength"
-                          ? (() => {
-                              const L = last as StrengthSet;
-                              if (exState.dropMode) {
-                                const drops = L.drops ?? [];
-                                const chain = drops.length
-                                  ? drops
-                                      .map(
-                                        (d) => `${d.reps || 0}×${d.weight || 0}`
-                                      )
-                                      .join(" → ")
-                                  : `${L.reps || 0}×${L.weight || 0}`;
-                                return `${chain}kg`;
-                              } else {
-                                return `${L.reps || 0} × ${L.weight || 0}kg`;
-                              }
-                            })()
-                          : `${(last as CardioSet)?.distance || 0} km • ${
-                              (last as CardioSet)?.timeSec || 0
-                            }s`}
-                      </Text>
-                    );
-                  })()}
 
                   {/* Active set editor */}
                   {(() => {
@@ -1495,11 +2033,11 @@ export default function StartWorkoutScreen() {
                                   keyboardType="numeric"
                                   value={d.reps ?? ""}
                                   onChangeText={(t) =>
-                                    setState((s) => {
-                                      if (!s) return s;
-                                      const ex = s.byWeId[we.id];
+                                    setState((s2) => {
+                                      if (!s2) return s2;
+                                      const ex = s2.byWeId[we.id];
                                       if (!ex || ex.kind !== "strength")
-                                        return s;
+                                        return s2;
                                       const sets = ex.sets.slice();
                                       const cur = {
                                         ...(sets[i] as StrengthSet),
@@ -1509,9 +2047,9 @@ export default function StartWorkoutScreen() {
                                       cur.drops = arr;
                                       sets[i] = cur;
                                       return {
-                                        ...s,
+                                        ...s2,
                                         byWeId: {
-                                          ...s.byWeId,
+                                          ...s2.byWeId,
                                           [we.id]: { ...ex, sets },
                                         },
                                       };
@@ -1533,11 +2071,11 @@ export default function StartWorkoutScreen() {
                                   keyboardType="numeric"
                                   value={d.weight ?? ""}
                                   onChangeText={(t) =>
-                                    setState((s) => {
-                                      if (!s) return s;
-                                      const ex = s.byWeId[we.id];
+                                    setState((s2) => {
+                                      if (!s2) return s2;
+                                      const ex = s2.byWeId[we.id];
                                       if (!ex || ex.kind !== "strength")
-                                        return s;
+                                        return s2;
                                       const sets = ex.sets.slice();
                                       const cur = {
                                         ...(sets[i] as StrengthSet),
@@ -1547,9 +2085,9 @@ export default function StartWorkoutScreen() {
                                       cur.drops = arr;
                                       sets[i] = cur;
                                       return {
-                                        ...s,
+                                        ...s2,
                                         byWeId: {
-                                          ...s.byWeId,
+                                          ...s2.byWeId,
                                           [we.id]: { ...ex, sets },
                                         },
                                       };
@@ -1561,11 +2099,11 @@ export default function StartWorkoutScreen() {
                                 <Pressable
                                   disabled={disableDeleteDrop}
                                   onPress={() =>
-                                    setState((s) => {
-                                      if (!s) return s;
-                                      const ex = s.byWeId[we.id];
+                                    setState((s2) => {
+                                      if (!s2) return s2;
+                                      const ex = s2.byWeId[we.id];
                                       if (!ex || ex.kind !== "strength")
-                                        return s;
+                                        return s2;
                                       const sets = ex.sets.slice();
                                       const cur = {
                                         ...(sets[i] as StrengthSet),
@@ -1583,9 +2121,9 @@ export default function StartWorkoutScreen() {
                                         : [{ reps: "", weight: "" }];
                                       sets[i] = cur;
                                       return {
-                                        ...s,
+                                        ...s2,
                                         byWeId: {
-                                          ...s.byWeId,
+                                          ...s2.byWeId,
                                           [we.id]: { ...ex, sets },
                                         },
                                       };
@@ -1614,10 +2152,10 @@ export default function StartWorkoutScreen() {
                           >
                             <Pressable
                               onPress={() =>
-                                setState((s) => {
-                                  if (!s) return s;
-                                  const ex = s.byWeId[we.id];
-                                  if (!ex || ex.kind !== "strength") return s;
+                                setState((s2) => {
+                                  if (!s2) return s2;
+                                  const ex = s2.byWeId[we.id];
+                                  if (!ex || ex.kind !== "strength") return s2;
                                   const sets = ex.sets.slice();
                                   const cur = { ...(sets[i] as StrengthSet) };
                                   const arr = (cur.drops ?? []).slice();
@@ -1631,9 +2169,9 @@ export default function StartWorkoutScreen() {
                                   cur.drops = arr;
                                   sets[i] = cur;
                                   return {
-                                    ...s,
+                                    ...s2,
                                     byWeId: {
-                                      ...s.byWeId,
+                                      ...s2.byWeId,
                                       [we.id]: { ...ex, sets },
                                     },
                                   };
@@ -1866,16 +2404,16 @@ export default function StartWorkoutScreen() {
                     placeholder="Exercise notes"
                     value={exState.notes}
                     onChangeText={(t) =>
-                      setState((s) =>
-                        s
+                      setState((s2) =>
+                        s2
                           ? {
-                              ...s,
+                              ...s2,
                               byWeId: {
-                                ...s.byWeId,
-                                [we.id]: { ...s.byWeId[we.id], notes: t },
+                                ...s2.byWeId,
+                                [we.id]: { ...s2.byWeId[we.id], notes: t },
                               },
                             }
-                          : s
+                          : s2
                       )
                     }
                     style={[styles.notesInput, { marginTop: 12 }]}
@@ -1991,7 +2529,7 @@ export default function StartWorkoutScreen() {
         </Pressable>
       </View>
 
-      {/* FULL-SCREEN EXERCISE PICKER MODAL (simple list) */}
+      {/* FULL-SCREEN EXERCISE PICKER MODAL */}
       <Modal
         visible={exerciseModalVisible}
         animationType="slide"
@@ -2000,20 +2538,23 @@ export default function StartWorkoutScreen() {
       >
         <SafeAreaView
           style={[
-            styles.modalSafeArea,
+            s.modalSafeArea,
             {
+              paddingTop: insets.top,
               backgroundColor: colors.background,
             },
           ]}
         >
           {/* Header row */}
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Select exercises</Text>
+          <View style={s.modalHeader}>
+            <Text style={s.modalTitle}>
+              {isReplaceMode ? "Replace exercise" : "Select exercises"}
+            </Text>
             <Pressable
               onPress={() => setExerciseModalVisible(false)}
               hitSlop={10}
             >
-              <Text style={[styles.modalClose, { color: colors.primary }]}>
+              <Text style={[s.modalClose, { color: colors.primary }]}>
                 Close
               </Text>
             </Pressable>
@@ -2026,10 +2567,175 @@ export default function StartWorkoutScreen() {
             placeholder="Search exercises…"
             placeholderTextColor={colors.subtle}
             style={[
-              styles.modalSearchInput,
+              s.modalSearchInput,
               { color: colors.text, backgroundColor: colors.surface },
             ]}
           />
+
+          {/* FILTER BAR — muscles & equipment on same line */}
+          <View style={{ marginTop: 8 }}>
+            <View style={s.filterBar}>
+              {/* Muscles pill */}
+              <Pressable
+                onPress={() => setMuscleFilterOpen((open) => !open)}
+                style={[
+                  s.filterPill,
+                  muscleFilterOpen && {
+                    backgroundColor: colors.primaryBg ?? colors.primary,
+                    borderColor: colors.primary,
+                  },
+                ]}
+                hitSlop={8}
+              >
+                <Text
+                  style={[
+                    s.filterPillLabel,
+                    muscleFilterOpen && {
+                      color: colors.primaryText ?? "#fff",
+                    },
+                  ]}
+                >
+                  Muscles
+                </Text>
+                {selectedMuscleGroups.length > 0 && (
+                  <Text
+                    style={[
+                      s.filterPillCount,
+                      muscleFilterOpen && {
+                        color: colors.primaryText ?? "#fff",
+                      },
+                    ]}
+                  >
+                    {selectedMuscleGroups.length}
+                  </Text>
+                )}
+              </Pressable>
+
+              {/* Equipment pill */}
+              <Pressable
+                onPress={() => setEquipmentFilterOpen((open) => !open)}
+                style={[
+                  s.filterPill,
+                  equipmentFilterOpen && {
+                    backgroundColor: colors.primaryBg ?? colors.primary,
+                    borderColor: colors.primary,
+                  },
+                ]}
+                hitSlop={8}
+              >
+                <Text
+                  style={[
+                    s.filterPillLabel,
+                    equipmentFilterOpen && {
+                      color: colors.primaryText ?? "#fff",
+                    },
+                  ]}
+                >
+                  Equipment
+                </Text>
+                {selectedEquipment.length > 0 && (
+                  <Text
+                    style={[
+                      s.filterPillCount,
+                      equipmentFilterOpen && {
+                        color: colors.primaryText ?? "#fff",
+                      },
+                    ]}
+                  >
+                    {selectedEquipment.length}
+                  </Text>
+                )}
+              </Pressable>
+            </View>
+
+            {/* Summary text under the pills */}
+            <Text style={s.filterSummaryText}>
+              {selectedMuscleGroups.length
+                ? `${selectedMuscleGroups.length} muscle group${
+                    selectedMuscleGroups.length === 1 ? "" : "s"
+                  }`
+                : "No Muscles"}
+              {" · "}
+              {selectedEquipment.length
+                ? `${selectedEquipment.length} equipment option${
+                    selectedEquipment.length === 1 ? "" : "s"
+                  }`
+                : "No Equipment"}{" "}
+              selected
+            </Text>
+          </View>
+
+          {/* MUSCLE CHIPS (when open) */}
+          {muscleFilterOpen && (
+            <View style={s.chipSection}>
+              <View style={s.chipGrid}>
+                {MUSCLE_GROUPS.map((g) => {
+                  const active = selectedMuscleGroups.includes(g.id);
+                  return (
+                    <Pressable
+                      key={g.id}
+                      onPress={() => toggleMuscleGroup(g.id)}
+                      style={[
+                        s.chip,
+                        active && {
+                          backgroundColor: colors.primaryBg ?? colors.primary,
+                          borderColor: colors.primary,
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          s.chipLabel,
+                          active && {
+                            color: colors.primaryText ?? "#fff",
+                            fontWeight: "700",
+                          },
+                        ]}
+                      >
+                        {g.label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+          )}
+
+          {/* EQUIPMENT CHIPS (when open) */}
+          {equipmentFilterOpen && (
+            <View style={s.chipSection}>
+              <View style={s.chipGrid}>
+                {EQUIPMENT_OPTIONS.map((eq) => {
+                  const active = selectedEquipment.includes(eq);
+                  return (
+                    <Pressable
+                      key={eq}
+                      onPress={() => toggleEquipment(eq)}
+                      style={[
+                        s.chip,
+                        active && {
+                          backgroundColor: colors.primaryBg ?? colors.primary,
+                          borderColor: colors.primary,
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          s.chipLabel,
+                          active && {
+                            color: colors.primaryText ?? "#fff",
+                            fontWeight: "700",
+                          },
+                        ]}
+                      >
+                        {eq}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+          )}
 
           {/* List */}
           {exLoading ? (
@@ -2046,7 +2752,7 @@ export default function StartWorkoutScreen() {
                   <Pressable
                     onPress={() => toggleModalSelect(item.id)}
                     style={[
-                      styles.modalRow,
+                      s.modalRow,
                       isSelected && {
                         borderColor: colors.primary,
                         backgroundColor: colors.card,
@@ -2056,13 +2762,13 @@ export default function StartWorkoutScreen() {
                     <View style={{ flex: 1 }}>
                       <Text
                         style={[
-                          styles.modalExerciseName,
+                          s.modalExerciseName,
                           isSelected && { color: colors.primary },
                         ]}
                       >
                         {item.name}
                       </Text>
-                      <Text style={styles.modalExerciseMeta}>
+                      <Text style={s.modalExerciseMeta}>
                         {item.type || ""}
                         {item.equipment ? ` • ${item.equipment}` : ""}
                       </Text>
@@ -2070,7 +2776,7 @@ export default function StartWorkoutScreen() {
 
                     <View
                       style={[
-                        styles.checkbox,
+                        s.checkbox,
                         {
                           borderColor: isSelected
                             ? colors.primary
@@ -2102,7 +2808,7 @@ export default function StartWorkoutScreen() {
           {/* Confirm */}
           <Pressable
             style={[
-              styles.modalDoneBtn,
+              s.modalDoneBtn,
               {
                 backgroundColor: modalSelectedIds.length
                   ? colors.primary
@@ -2122,356 +2828,360 @@ export default function StartWorkoutScreen() {
                 fontWeight: "700",
               }}
             >
-              Add {modalSelectedIds.length || ""} exercise
-              {modalSelectedIds.length === 1 ? "" : "s"}
+              {isReplaceMode ? "Replace exercise" : "Add "}{" "}
+              {isReplaceMode
+                ? ""
+                : `${modalSelectedIds.length || ""} exercise${
+                    modalSelectedIds.length === 1 ? "" : "s"
+                  }`}
             </Text>
           </Pressable>
-        </SafeAreaView>
-      </Modal>
-
-      {/* FULL-SCREEN WORKOUT NOTES EDITOR */}
-      <Modal
-        visible={notesOverlayVisible}
-        animationType="slide"
-        presentationStyle="fullScreen"
-        onRequestClose={() => setNotesOverlayVisible(false)}
-      >
-        <SafeAreaView
-          style={[
-            styles.modalSafeArea,
-            {
-              paddingTop: insets.top,
-              backgroundColor: colors.background,
-            },
-          ]}
-        >
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Workout Notes</Text>
-            <Pressable
-              onPress={() => setNotesOverlayVisible(false)}
-              hitSlop={10}
-            >
-              <Text style={[styles.modalClose, { color: colors.primary }]}>
-                Done
-              </Text>
-            </Pressable>
-          </View>
-
-          {(workout.notes || lastWorkoutNotes) && (
-            <View style={styles.notesMetaBox}>
-              {workout.notes ? (
-                <>
-                  <Text style={styles.notesMetaTitle}>Plan notes</Text>
-                  <Text style={styles.notesMetaText}>{workout.notes}</Text>
-                </>
-              ) : null}
-              {lastWorkoutNotes ? (
-                <>
-                  <Text style={[styles.notesMetaTitle, { marginTop: 8 }]}>
-                    Last workout notes
-                  </Text>
-                  <Text style={styles.notesMetaText}>{lastWorkoutNotes}</Text>
-                </>
-              ) : null}
-            </View>
-          )}
-
-          <TextInput
-            autoFocus
-            multiline
-            placeholder="Add notes about how the workout felt, PRs, etc."
-            placeholderTextColor={colors.subtle}
-            value={state.workoutNotes}
-            onChangeText={(t) =>
-              setState((s) => (s ? { ...s, workoutNotes: t } : s))
-            }
-            style={styles.modalNotesInput}
-          />
         </SafeAreaView>
       </Modal>
     </SafeAreaView>
   );
 }
 
-/* ---------- themed styles ---------- */
 const makeStyles = (colors: any) =>
   StyleSheet.create({
-    center: { flex: 1, alignItems: "center", justifyContent: "center" },
+    /* Layout helpers */
+    center: {
+      flex: 1,
+      alignItems: "center",
+      justifyContent: "center",
+    },
 
+    /* Header */
     header: {
-      paddingHorizontal: 12,
-      paddingTop: 4,
-      paddingBottom: 8,
       flexDirection: "row",
       alignItems: "center",
-      gap: 8,
-      backgroundColor: colors.background,
+      justifyContent: "space-between",
+      paddingHorizontal: 16,
+      paddingVertical: 10,
     },
-    title: { fontSize: 24, fontWeight: "900", color: colors.text },
-    subtle: { color: colors.subtle },
+    title: {
+      fontSize: 18,
+      fontWeight: "800",
+      color: colors.text,
+      textAlign: "center",
+    },
+    subtle: {
+      fontSize: 12,
+      color: colors.subtle,
+    },
 
+    /* Typography */
+    h3: {
+      fontSize: 16,
+      fontWeight: "700",
+      color: colors.text,
+    },
+    muted: {
+      fontSize: 13,
+      color: colors.subtle,
+    },
+    mutedSmall: {
+      fontSize: 11,
+      color: colors.subtle,
+    },
+
+    /* Cards */
     bigCard: {
-      backgroundColor: colors.card,
+      backgroundColor: colors.card ?? colors.surface,
       borderRadius: 16,
       padding: 14,
+      marginBottom: 10,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.border,
-      marginBottom: 12,
-    },
-    bigCardActive: {
-      borderColor: colors.primaryText,
       shadowColor: "#000",
       shadowOpacity: 0.08,
-      shadowRadius: 8,
-      shadowOffset: { width: 0, height: 2 },
+      shadowOffset: { width: 0, height: 1 },
+      shadowRadius: 4,
       elevation: 2,
     },
+    bigCardActive: {
+      borderColor: colors.primary,
+      shadowOpacity: 0.16,
+      shadowRadius: 6,
+      elevation: 3,
+    },
 
-    h3: { fontSize: 16, fontWeight: "800", color: colors.text },
-    muted: { color: colors.muted },
-    mutedSmall: { color: colors.muted, fontSize: 12 },
-
+    /* Pills / badges / icons */
     pill: {
-      paddingVertical: 10,
+      borderRadius: 999,
+      borderWidth: 1,
+      borderColor: colors.border,
       paddingHorizontal: 14,
-      borderRadius: 999,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: colors.border,
-      backgroundColor: colors.surface,
+      paddingVertical: 6,
+      alignItems: "center",
+      justifyContent: "center",
     },
-    ghost: { backgroundColor: colors.surface },
-
+    ghost: {
+      backgroundColor: "transparent",
+    },
+    completePill: {
+      backgroundColor: colors.successText ?? "#22c55e",
+      borderColor: "transparent",
+    },
     badge: {
-      fontSize: 12,
-      fontWeight: "800",
-      paddingVertical: 4,
-      paddingHorizontal: 8,
       borderRadius: 999,
-      overflow: "hidden",
+      borderWidth: 1,
+      borderColor: colors.border,
+      paddingHorizontal: 10,
+      paddingVertical: 4,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    iconButton: {
+      width: 30,
+      height: 30,
+      borderRadius: 15,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: colors.surface,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.border,
-      backgroundColor: colors.surface,
     },
 
+    /* Completed summary */
+    completedSummaryContainer: {
+      marginTop: 10,
+      padding: 10,
+      borderRadius: 12,
+      backgroundColor: colors.surface,
+    },
+    completedSummaryLine: {
+      fontSize: 13,
+      color: colors.text,
+      marginBottom: 2,
+    },
+
+    /* Sets header (cardio) */
     setsHeader: {
       flexDirection: "row",
       justifyContent: "space-between",
-      marginBottom: 4,
-      paddingHorizontal: 12,
-    },
-
-    removeBtn: {
-      marginLeft: 8,
-      width: 36,
-      height: 36,
-      borderRadius: 18,
       alignItems: "center",
-      justifyContent: "center",
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: colors.border,
-      backgroundColor: colors.surface,
+      marginBottom: 4,
+      paddingHorizontal: 2,
     },
 
-    notesInput: {
-      backgroundColor: colors.surface,
-      borderWidth: StyleSheet.hairlineWidth,
+    /* Inputs */
+    input: {
+      borderRadius: 10,
+      borderWidth: 1,
       borderColor: colors.border,
-      borderRadius: 12,
-      padding: 12,
-      minHeight: 44,
+      paddingHorizontal: 10,
+      paddingVertical: 8,
+      backgroundColor: colors.surface,
+      fontSize: 15,
       color: colors.text,
     },
-
-    footer: {
-      position: "absolute",
-      left: 0,
-      right: 0,
-      bottom: 10,
-      backgroundColor: colors.background,
-      padding: 12,
-      borderTopWidth: StyleSheet.hairlineWidth,
+    setInput: {
+      minWidth: 72,
+      textAlign: "center",
     },
-    startBtn: {
+    setRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      marginTop: 6,
+    },
+    setCol: {
+      flex: 1,
+    },
+    setLabel: {
+      marginBottom: 4,
+    },
+    removeBtn: {
+      marginLeft: 8,
+      width: 32,
+      height: 32,
+      borderRadius: 16,
+      borderWidth: 1,
+      borderColor: colors.border,
       alignItems: "center",
       justifyContent: "center",
-      paddingVertical: 14,
-      borderRadius: 999,
+      backgroundColor: colors.surface,
     },
 
+    /* Pager dots */
     dot: {
       width: 8,
       height: 8,
       borderRadius: 4,
     },
 
-    pagerRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "space-between",
-      marginTop: 10,
+    /* Notes */
+    notesInput: {
+      minHeight: 60,
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 12,
+      paddingHorizontal: 10,
+      paddingVertical: 8,
+      fontSize: 14,
+      color: colors.text,
+      backgroundColor: colors.surface,
+      textAlignVertical: "top",
     },
-    navBtn: {
-      minWidth: 110,
+    notesPreview: {
+      marginTop: 4,
+      fontSize: 13,
+      color: colors.text,
+    },
+
+    /* Footer */
+    footer: {
+      position: "absolute",
+      left: 0,
+      right: 0,
+      bottom: 0,
+      paddingHorizontal: 16,
+      paddingBottom: 16,
+      paddingTop: 10,
+      backgroundColor: colors.background,
+      borderTopWidth: StyleSheet.hairlineWidth,
+    },
+    startBtn: {
+      borderRadius: 999,
+      paddingVertical: 12,
       alignItems: "center",
       justifyContent: "center",
     },
-    navBtnText: {
-      color: colors.text,
-      fontWeight: "800",
-    },
-    completePill: {
-      backgroundColor: "#22c55e",
-      borderColor: "#16a34a",
-    },
-    completePillText: {
-      color: "white",
-    },
 
-    completedSummaryContainer: {
-      marginTop: 8,
-      alignItems: "center",
-    },
-    completedSummaryLine: {
-      fontSize: 12,
-      color: colors.muted,
-      marginTop: 2,
-      textAlign: "center",
-    },
-
-    notesPreview: {
-      marginTop: 6,
-      color: colors.muted,
-      fontSize: 13,
-    },
-
-    // Modal styles
+    /* Modal base */
     modalSafeArea: {
       flex: 1,
-      paddingHorizontal: 16,
-      paddingTop: 8,
     },
     modalHeader: {
       flexDirection: "row",
       alignItems: "center",
       justifyContent: "space-between",
-      marginBottom: 8,
+      paddingHorizontal: 16,
+      paddingBottom: 8,
     },
     modalTitle: {
-      fontSize: 20,
-      fontWeight: "900",
-      color: colors.text,
-    },
-    modalClose: {
-      fontSize: 16,
-      fontWeight: "700",
-    },
-    modalSearchInput: {
-      borderRadius: 999,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: colors.border,
-      paddingHorizontal: 14,
-      paddingVertical: 10,
-      marginTop: 4,
-      marginBottom: 8,
-    },
-    modalRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      paddingVertical: 10,
-      paddingHorizontal: 12,
-      borderRadius: 12,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: colors.border,
-      backgroundColor: colors.surface,
-      marginTop: 8,
-    },
-    modalExerciseName: {
-      fontSize: 15,
+      fontSize: 18,
       fontWeight: "800",
       color: colors.text,
     },
-    modalExerciseMeta: {
-      marginTop: 2,
-      fontSize: 12,
-      color: colors.muted,
+    modalClose: {
+      fontSize: 15,
+      fontWeight: "600",
     },
+    modalSearchInput: {
+      marginHorizontal: 16,
+      marginTop: 8,
+      borderRadius: 999,
+      paddingHorizontal: 14,
+      paddingVertical: 8,
+      borderWidth: 1,
+      borderColor: colors.border,
+      fontSize: 15,
+    },
+
+    /* Filter bar */
+    filterBar: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "flex-start",
+      marginHorizontal: 16,
+      marginTop: 8,
+      columnGap: 8,
+    },
+    filterPill: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: 999,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+    },
+    filterPillLabel: {
+      fontSize: 13,
+      color: colors.text,
+      fontWeight: "600",
+    },
+    filterPillCount: {
+      marginLeft: 6,
+      fontSize: 12,
+      color: colors.subtle,
+    },
+    filterSummaryText: {
+      marginTop: 4,
+      marginHorizontal: 16,
+      fontSize: 12,
+      color: colors.subtle,
+    },
+
+    /* Chips (muscles / equipment) */
+    chipSection: {
+      marginTop: 8,
+      paddingHorizontal: 16,
+    },
+    chipGrid: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      rowGap: 8,
+      columnGap: 8,
+    },
+    chip: {
+      borderRadius: 999,
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+    },
+    chipLabel: {
+      fontSize: 13,
+      color: colors.text,
+    },
+
+    /* Exercise list rows */
+    modalRow: {
+      marginHorizontal: 16,
+      marginTop: 8,
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.card ?? colors.surface,
+      flexDirection: "row",
+      alignItems: "center",
+    },
+    modalExerciseName: {
+      fontSize: 15,
+      fontWeight: "600",
+      color: colors.text,
+    },
+    modalExerciseMeta: {
+      fontSize: 12,
+      color: colors.subtle,
+      marginTop: 2,
+    },
+
     checkbox: {
       width: 22,
       height: 22,
       borderRadius: 6,
-      borderWidth: StyleSheet.hairlineWidth,
+      borderWidth: 1,
       alignItems: "center",
       justifyContent: "center",
+      marginLeft: 12,
     },
+
+    /* Confirm button */
     modalDoneBtn: {
-      marginTop: 10,
+      marginHorizontal: 16,
+      marginTop: 8,
+      marginBottom: 10,
       paddingVertical: 12,
-      alignItems: "center",
       borderRadius: 999,
-      borderWidth: StyleSheet.hairlineWidth,
-    },
-
-    notesMetaBox: {
-      borderRadius: 12,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: colors.border,
-      padding: 10,
-      marginBottom: 12,
-      backgroundColor: colors.surface,
-    },
-    notesMetaTitle: {
-      fontSize: 12,
-      fontWeight: "800",
-      color: colors.subtle,
-      textTransform: "uppercase",
-    },
-    notesMetaText: {
-      marginTop: 2,
-      fontSize: 13,
-      color: colors.text,
-    },
-    modalNotesInput: {
-      flex: 1,
-      borderRadius: 12,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: colors.border,
-      padding: 12,
-      textAlignVertical: "top",
-      color: colors.text,
-      backgroundColor: colors.surface,
-    },
-
-    setRow: {
-      flexDirection: "row",
       alignItems: "center",
       justifyContent: "center",
-      marginBottom: 8,
-    },
-
-    input: {
-      backgroundColor: colors.surface,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: colors.border,
-      borderRadius: 12,
-      paddingVertical: 10,
-      paddingHorizontal: 12,
-      color: colors.text,
-    },
-
-    setCol: {
-      alignItems: "center",
-      justifyContent: "center",
-    },
-
-    setLabel: {
-      marginBottom: 4,
-      textAlign: "center",
-    },
-
-    setInput: {
-      width: 80, // control width
-      height: 56, // control height
-      textAlign: "center",
-      fontSize: 18,
+      borderWidth: 1,
     },
   });
