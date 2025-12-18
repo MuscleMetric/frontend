@@ -3,6 +3,7 @@
     "name": "MuscleMetric",
     "slug": "musclemetric",
     "version": "1.0.4",
+    "scheme": "musclemetric",
     "newArchEnabled": true,
     "experiments": {
       "typedRoutes": false,

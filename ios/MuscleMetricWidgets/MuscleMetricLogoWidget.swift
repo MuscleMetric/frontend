@@ -20,7 +20,7 @@ struct LogoWidgetView: View {
         .font(.system(size: 18, weight: .heavy, design: .rounded))
         .foregroundStyle(.white)
     }
-    .widgetURL(URL(string: "musclemetric://"))
+    .widgetURL(URL(string: "musclemetric:"))
     .containerBackground(.clear, for: .widget)
   }
 }
