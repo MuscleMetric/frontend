@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 54;
+	objectVersion = 70;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -17,6 +17,9 @@
 		460BC83277DC46228FA71975 /* Color+hex.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3DDD042EB374E9DA2F1CB4F /* Color+hex.swift */; };
 		631C828DCFEDEB12A8A2A9DD /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59BE6B889E1938316D5BAF59 /* ExpoModulesProvider.swift */; };
 		68B7A3B0F5A64C3FADB69349 /* View+applyIfPresent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 187F3F1344CB43C6B05E6733 /* View+applyIfPresent.swift */; };
+		6B6376232EEBB838002262A8 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 6B6376222EEBB837002262A8 /* WidgetKit.framework */; };
+		6B6376252EEBB838002262A8 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 6B6376242EEBB838002262A8 /* SwiftUI.framework */; };
+		6B6376342EEBB83B002262A8 /* MuscleMetricWidgetsExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 6B6376212EEBB837002262A8 /* MuscleMetricWidgetsExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		731E908834574D5DAE523C2F /* LiveActivityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C15D35565D24AA39766EC65 /* LiveActivityView.swift */; };
 		8DB3E7330A654E389DEA97C3 /* View+applyWidgetURL.swift in Sources */ = {isa = PBXBuildFile; fileRef = D301A4BC0BE8464BA1CB6221 /* View+applyWidgetURL.swift */; };
 		BB2F792D24A3F905000567C9 /* Expo.plist in Resources */ = {isa = PBXBuildFile; fileRef = BB2F792C24A3F905000567C9 /* Expo.plist */; };
@@ -35,6 +38,13 @@
 			remoteGlobalIDString = 9722CD266C0941A0813BAB0B;
 			remoteInfo = LiveActivity;
 		};
+		6B6376322EEBB83B002262A8 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 83CBB9F71A601CBA00E9B192 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 6B6376202EEBB837002262A8;
+			remoteInfo = MuscleMetricWidgetsExtension;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -45,6 +55,7 @@
 			dstSubfolderSpec = 13;
 			files = (
 				39C7590214E749AB9B2C6728 /* LiveActivity.appex in Embed Foundation Extensions */,
+				6B6376342EEBB83B002262A8 /* MuscleMetricWidgetsExtension.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -63,6 +74,9 @@
 		59BE6B889E1938316D5BAF59 /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-MuscleMetric/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
 		67A3AA62853D4CE9BAE729DC /* Info.plist */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 4; includeInIndex = 0; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		69F25D4768F841ADABA0222E /* Assets.xcassets */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 9; includeInIndex = 0; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		6B6376212EEBB837002262A8 /* MuscleMetricWidgetsExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = MuscleMetricWidgetsExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		6B6376222EEBB837002262A8 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
+		6B6376242EEBB838002262A8 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 		70B0EFFC29BA4EB19737EB8C /* LiveActivity.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; fileEncoding = 9; includeInIndex = 0; path = LiveActivity.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		A1556A9D535E4E79B1A9C439 /* ViewHelpers.swift */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 4; includeInIndex = 0; lastKnownFileType = sourcecode.swift; path = ViewHelpers.swift; sourceTree = "<group>"; };
 		AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = SplashScreen.storyboard; path = MuscleMetric/SplashScreen.storyboard; sourceTree = "<group>"; };
@@ -80,6 +94,31 @@
 		FCA3278C7BFE45C3A76D5DF2 /* Date+toTimerInterval.swift */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 4; includeInIndex = 0; lastKnownFileType = sourcecode.swift; path = "Date+toTimerInterval.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		6B6376352EEBB83B002262A8 /* Exceptions for "MuscleMetricWidgets" folder in "MuscleMetricWidgetsExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 6B6376202EEBB837002262A8 /* MuscleMetricWidgetsExtension */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		6B6376262EEBB838002262A8 /* MuscleMetricWidgets */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				6B6376352EEBB83B002262A8 /* Exceptions for "MuscleMetricWidgets" folder in "MuscleMetricWidgetsExtension" target */,
+			);
+			explicitFileTypes = {
+			};
+			explicitFolders = (
+			);
+			path = MuscleMetricWidgets;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
 /* Begin PBXFrameworksBuildPhase section */
 		13B07F8C1A680F5B00A75B9A /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
@@ -93,6 +132,15 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		6B63761E2EEBB837002262A8 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				6B6376252EEBB838002262A8 /* SwiftUI.framework in Frameworks */,
+				6B6376232EEBB838002262A8 /* WidgetKit.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -127,6 +175,8 @@
 			children = (
 				ED297162215061F000B7C4FE /* JavaScriptCore.framework */,
 				F71FADBCAAD99B130A9BED39 /* libPods-MuscleMetric.a */,
+				6B6376222EEBB837002262A8 /* WidgetKit.framework */,
+				6B6376242EEBB838002262A8 /* SwiftUI.framework */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -143,6 +193,7 @@
 			children = (
 				13B07FAE1A68108700A75B9A /* MuscleMetric */,
 				832341AE1AAA6A7D00B99B32 /* Libraries */,
+				6B6376262EEBB838002262A8 /* MuscleMetricWidgets */,
 				83CBBA001A601CBA00E9B192 /* Products */,
 				2D16E6871FA4F8E400B85C8A /* Frameworks */,
 				8FA6A4ADA5EE45D9B3130BE4 /* LiveActivity */,
@@ -159,6 +210,7 @@
 			children = (
 				13B07F961A680F5B00A75B9A /* MuscleMetric.app */,
 				70B0EFFC29BA4EB19737EB8C /* LiveActivity.appex */,
+				6B6376212EEBB837002262A8 /* MuscleMetricWidgetsExtension.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -228,11 +280,32 @@
 			);
 			dependencies = (
 				7EFD4B31687D40919276C8B3 /* PBXTargetDependency */,
+				6B6376332EEBB83B002262A8 /* PBXTargetDependency */,
 			);
 			name = MuscleMetric;
 			productName = MuscleMetric;
 			productReference = 13B07F961A680F5B00A75B9A /* MuscleMetric.app */;
 			productType = "com.apple.product-type.application";
+		};
+		6B6376202EEBB837002262A8 /* MuscleMetricWidgetsExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 6B6376362EEBB83B002262A8 /* Build configuration list for PBXNativeTarget "MuscleMetricWidgetsExtension" */;
+			buildPhases = (
+				6B63761D2EEBB837002262A8 /* Sources */,
+				6B63761E2EEBB837002262A8 /* Frameworks */,
+				6B63761F2EEBB837002262A8 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				6B6376262EEBB838002262A8 /* MuscleMetricWidgets */,
+			);
+			name = MuscleMetricWidgetsExtension;
+			productName = MuscleMetricWidgetsExtension;
+			productReference = 6B6376212EEBB837002262A8 /* MuscleMetricWidgetsExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 		9722CD266C0941A0813BAB0B /* LiveActivity */ = {
 			isa = PBXNativeTarget;
@@ -257,13 +330,24 @@
 		83CBB9F71A601CBA00E9B192 /* Project object */ = {
 			isa = PBXProject;
 			attributes = {
-				LastUpgradeCheck = 1130;
+				BuildIndependentTargetsInParallel = YES;
+				LastSwiftUpdateCheck = 2610;
+				LastUpgradeCheck = 2610;
 				TargetAttributes = {
 					13B07F861A680F5B00A75B9A = {
+						DevelopmentTeam = YX6C46CC7Z;
 						LastSwiftMigration = 1250;
+						ProvisioningStyle = Automatic;
+					};
+					6B6376202EEBB837002262A8 = {
+						CreatedOnToolsVersion = 26.1.1;
+						DevelopmentTeam = YX6C46CC7Z;
+						ProvisioningStyle = Automatic;
 					};
 					9722CD266C0941A0813BAB0B = {
+						DevelopmentTeam = YX6C46CC7Z;
 						LastSwiftMigration = 1250;
+						ProvisioningStyle = Automatic;
 					};
 				};
 			};
@@ -282,6 +366,7 @@
 			targets = (
 				13B07F861A680F5B00A75B9A /* MuscleMetric */,
 				9722CD266C0941A0813BAB0B /* LiveActivity */,
+				6B6376202EEBB837002262A8 /* MuscleMetricWidgetsExtension */,
 			);
 		};
 /* End PBXProject section */
@@ -295,6 +380,13 @@
 				13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */,
 				3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */,
 				3544C6C8745CF670BF961E00 /* PrivacyInfo.xcprivacy in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		6B63761F2EEBB837002262A8 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -444,6 +536,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		6B63761D2EEBB837002262A8 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		91426AA3998C4D39B80FB3CC /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -463,6 +562,11 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		6B6376332EEBB83B002262A8 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 6B6376202EEBB837002262A8 /* MuscleMetricWidgetsExtension */;
+			targetProxy = 6B6376322EEBB83B002262A8 /* PBXContainerItemProxy */;
+		};
 		7EFD4B31687D40919276C8B3 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = 9722CD266C0941A0813BAB0B /* LiveActivity */;
@@ -479,6 +583,8 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = MuscleMetric/MuscleMetric.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = YX6C46CC7Z;
 				ENABLE_BITCODE = NO;
@@ -519,6 +625,8 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = MuscleMetric/MuscleMetric.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = YX6C46CC7Z;
 				INFOPLIST_FILE = MuscleMetric/Info.plist;
@@ -545,6 +653,103 @@
 			};
 			name = Release;
 		};
+		6B6376372EEBB83B002262A8 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = YX6C46CC7Z;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = MuscleMetricWidgets/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = MuscleMetricWidgets;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.1;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MARKETING_VERSION = 1.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_DEBUG";
+				PRODUCT_BUNDLE_IDENTIFIER = com.musclemetric.app.MuscleMetricWidgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		6B6376382EEBB83B002262A8 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = YX6C46CC7Z;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = MuscleMetricWidgets/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = MuscleMetricWidgets;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.1;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MARKETING_VERSION = 1.0;
+				MTL_FAST_MATH = YES;
+				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_RELEASE";
+				PRODUCT_BUNDLE_IDENTIFIER = com.musclemetric.app.MuscleMetricWidgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 		83CBBA201A601CBA00E9B192 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -568,6 +773,7 @@
 				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
 				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
 				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
 				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
 				CLANG_WARN_STRICT_PROTOTYPES = YES;
 				CLANG_WARN_SUSPICIOUS_MOVE = YES;
@@ -575,6 +781,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Developer";
 				COPY_PHASE_STRIP = NO;
+				DEVELOPMENT_TEAM = YX6C46CC7Z;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu99;
@@ -602,6 +809,7 @@
 				ONLY_ACTIVE_ARCH = YES;
 				REACT_NATIVE_PATH = "${PODS_ROOT}/../../node_modules/react-native";
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) DEBUG";
 				SWIFT_ENABLE_EXPLICIT_MODULES = NO;
 				USE_HERMES = true;
@@ -631,6 +839,7 @@
 				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
 				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
 				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
 				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
 				CLANG_WARN_STRICT_PROTOTYPES = YES;
 				CLANG_WARN_SUSPICIOUS_MOVE = YES;
@@ -638,6 +847,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Developer";
 				COPY_PHASE_STRIP = YES;
+				DEVELOPMENT_TEAM = YX6C46CC7Z;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu99;
@@ -657,6 +867,8 @@
 				MTL_ENABLE_DEBUG_INFO = NO;
 				REACT_NATIVE_PATH = "${PODS_ROOT}/../../node_modules/react-native";
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_ENABLE_EXPLICIT_MODULES = NO;
 				USE_HERMES = true;
 				VALIDATE_PRODUCT = YES;
@@ -668,6 +880,8 @@
 			buildSettings = {
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_ENTITLEMENTS = LiveActivity/LiveActivity.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = YX6C46CC7Z;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -690,6 +904,8 @@
 			buildSettings = {
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_ENTITLEMENTS = LiveActivity/LiveActivity.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = YX6C46CC7Z;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -715,6 +931,15 @@
 			buildConfigurations = (
 				13B07F941A680F5B00A75B9A /* Debug */,
 				13B07F951A680F5B00A75B9A /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		6B6376362EEBB83B002262A8 /* Build configuration list for PBXNativeTarget "MuscleMetricWidgetsExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				6B6376372EEBB83B002262A8 /* Debug */,
+				6B6376382EEBB83B002262A8 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

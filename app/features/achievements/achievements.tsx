@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Pressable,
   TextInput,
+  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { supabase } from "../../../lib/supabase";
@@ -39,6 +40,16 @@ export default function AchievementsScreen() {
   const [mode, setMode] = useState<FilterMode>("all");
   const [search, setSearch] = useState("");
 
+  const [profileSettings, setProfileSettings] = useState<any>({});
+  const [favouriteIds, setFavouriteIds] = useState<string[]>([]);
+  const [initialFavouriteIds, setInitialFavouriteIds] = useState<string[]>([]);
+  const [saving, setSaving] = useState(false);
+
+  const hasChanges = useMemo(
+    () => favouriteIds.join(",") !== initialFavouriteIds.join(","),
+    [favouriteIds, initialFavouriteIds]
+  );
+
   useEffect(() => {
     if (!userId) return;
 
@@ -46,21 +57,49 @@ export default function AchievementsScreen() {
       try {
         setLoading(true);
 
-        const [{ data: all }, { data: mine }] = await Promise.all([
-          supabase
-            .from("achievements")
-            .select("id, code, title, description, category, difficulty")
-            .order("difficulty")
-            .order("category"),
-          supabase
-            .from("user_achievements")
-            .select("achievement_id")
-            .eq("user_id", userId),
-        ]);
+        const [{ data: all }, { data: mine }, { data: profileRow }] =
+          await Promise.all([
+            supabase
+              .from("achievements")
+              .select("id, code, title, description, category, difficulty")
+              .order("difficulty")
+              .order("category"),
+            supabase
+              .from("user_achievements")
+              .select("achievement_id")
+              .eq("user_id", userId),
+            supabase
+              .from("profiles")
+              .select("settings")
+              .eq("id", userId)
+              .maybeSingle(),
+          ]);
 
         if (all) setList(all as Achievement[]);
-        if (mine)
-          setUnlockedIds(new Set(mine.map((m: any) => m.achievement_id)));
+
+        const unlockedSet = mine
+          ? new Set(mine.map((m: any) => m.achievement_id as string))
+          : new Set<string>();
+        setUnlockedIds(unlockedSet);
+
+        const settings = (profileRow?.settings ?? {}) as any;
+        setProfileSettings(settings);
+
+        const favRaw: string[] = Array.isArray(
+          (settings as any)?.favourite_achievements
+        )
+          ? (settings as any).favourite_achievements.filter(
+              (id: any) => typeof id === "string"
+            )
+          : [];
+
+        // Only keep favourites that are still unlocked, cap at 3
+        const favUnlocked = favRaw
+          .filter((id) => unlockedSet.has(id))
+          .slice(0, 3);
+
+        setFavouriteIds(favUnlocked);
+        setInitialFavouriteIds(favUnlocked);
       } finally {
         setLoading(false);
       }
@@ -133,6 +172,34 @@ export default function AchievementsScreen() {
     );
   }
 
+  async function handleSaveFavourites() {
+    if (!userId) return;
+    try {
+      setSaving(true);
+
+      const nextSettings = {
+        ...(profileSettings || {}),
+        favourite_achievements: favouriteIds,
+      };
+
+      const { error } = await supabase
+        .from("profiles")
+        .update({ settings: nextSettings })
+        .eq("id", userId);
+
+      if (error) throw error;
+
+      setProfileSettings(nextSettings);
+      setInitialFavouriteIds(favouriteIds);
+      // you could add a toast here if you have one
+    } catch (e) {
+      console.error("handleSaveFavourites error", e);
+      Alert.alert("Couldn’t save favourites", "Please try again in a moment.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <SafeAreaView
@@ -143,7 +210,6 @@ export default function AchievementsScreen() {
           backgroundColor: colors.background,
         }}
       >
-        {/* Header row – matches new screens style */}
         <View style={s.headerRow}>
           <Pressable
             onPress={() => router.back()}
@@ -154,8 +220,18 @@ export default function AchievementsScreen() {
           </Pressable>
 
           <Text style={s.header}>Achievements</Text>
-          {/* spacer to balance layout */}
-          <View style={{ width: 68 }} />
+
+          <Pressable
+            onPress={handleSaveFavourites}
+            disabled={!hasChanges || saving}
+            style={({ pressed }) => [
+              s.saveButton,
+              (!hasChanges || saving) && { opacity: 0.4 },
+              pressed && { opacity: 0.7 },
+            ]}
+          >
+            <Text style={s.saveLabel}>{saving ? "Saving" : "Save"}</Text>
+          </Pressable>
         </View>
 
         {/* Summary line */}
@@ -165,6 +241,16 @@ export default function AchievementsScreen() {
 
         {/* Search + filter row */}
         <View style={s.searchFilterRow}>
+          <View style={s.searchContainer}>
+            <TextInput
+              value={search}
+              onChangeText={setSearch}
+              placeholder="Search achievements…"
+              placeholderTextColor={colors.subtle}
+              style={s.searchInput}
+            />
+          </View>
+
           <View style={s.filterRow}>
             <FilterPill
               label={`All`}
@@ -197,7 +283,36 @@ export default function AchievementsScreen() {
         keyExtractor={(a) => a.id}
         renderItem={({ item }) => {
           const unlocked = unlockedIds.has(item.id);
-          return <AchievementCard a={item} unlocked={unlocked} />;
+          const isFavourite = favouriteIds.includes(item.id);
+
+          return (
+            <AchievementCard
+              a={item}
+              unlocked={unlocked}
+              favourite={isFavourite}
+              onToggleFavourite={() => {
+                if (!unlocked) return;
+
+                setFavouriteIds((prev) => {
+                  const already = prev.includes(item.id);
+                  if (already) {
+                    // Unselect
+                    return prev.filter((id) => id !== item.id);
+                  }
+
+                  if (prev.length >= 3) {
+                    Alert.alert(
+                      "Max favourites reached",
+                      "You can pin up to 3 favourite achievements. Remove one to add another."
+                    );
+                    return prev;
+                  }
+
+                  return [...prev, item.id];
+                });
+              }}
+            />
+          );
         }}
         ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
         ListEmptyComponent={
@@ -270,9 +385,13 @@ function FilterPill({
 function AchievementCard({
   a,
   unlocked,
+  favourite,
+  onToggleFavourite,
 }: {
   a: Achievement;
   unlocked: boolean;
+  favourite: boolean;
+  onToggleFavourite: () => void;
 }) {
   const { colors } = useAppTheme();
   const s = useMemo(() => makeStyles(colors), [colors]);
@@ -281,10 +400,37 @@ function AchievementCard({
   return (
     <View style={[s.card, !unlocked && { opacity: 0.55 }]}>
       <View style={s.badgeRow}>
-        <Text style={[s.badge, { backgroundColor: badge.bg, color: badge.fg }]}>
-          {badge.label}
-        </Text>
-        <Text style={s.cat}>{capitalize(a.category)}</Text>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+          <Text
+            style={[s.badge, { backgroundColor: badge.bg, color: badge.fg }]}
+          >
+            {badge.label}
+          </Text>
+          <Text style={s.cat}>{capitalize(a.category)}</Text>
+        </View>
+
+        <Pressable
+          disabled={!unlocked}
+          onPress={onToggleFavourite}
+          hitSlop={8}
+          style={[
+            s.favButton,
+            favourite && {
+              backgroundColor: colors.primaryBg ?? colors.card,
+              borderColor: colors.primary ?? colors.border,
+            },
+            !unlocked && { opacity: 0.3 },
+          ]}
+        >
+          <Text
+            style={[
+              s.favIcon,
+              favourite && { color: colors.primaryText ?? colors.primary },
+            ]}
+          >
+            {favourite ? "★" : "☆"}
+          </Text>
+        </Pressable>
       </View>
 
       <Text style={s.title}>{a.title}</Text>
@@ -425,6 +571,33 @@ const makeStyles = (colors: any) =>
       color: colors.subtle,
       textAlign: "center",
       paddingHorizontal: 16,
+    },
+    saveButton: {
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      borderRadius: 999,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+    },
+    saveLabel: {
+      fontSize: 12,
+      fontWeight: "700",
+      color: colors.text,
+    },
+    favButton: {
+      width: 28,
+      height: 28,
+      borderRadius: 14,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: colors.surface,
+    },
+    favIcon: {
+      fontSize: 16,
+      color: colors.subtle,
     },
   });
 

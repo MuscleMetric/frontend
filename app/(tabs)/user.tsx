@@ -15,6 +15,7 @@ import Svg, { Path } from "react-native-svg";
 import { supabase } from "../../lib/supabase";
 import { router } from "expo-router";
 import { useAuth } from "../../lib/useAuth";
+import { useFocusEffect } from "expo-router";
 
 import { SectionCard, RingProgress } from "../_components";
 import { useAppTheme } from "../../lib/useAppTheme";
@@ -31,6 +32,14 @@ type PlanRowType = {
   id: string;
   title: string;
   subtitle: string;
+};
+
+type FavouriteAchievement = {
+  id: string;
+  code: string;
+  title: string;
+  category: string;
+  difficulty: string;
 };
 
 export default function UserScreen() {
@@ -50,6 +59,10 @@ export default function UserScreen() {
   const [achievementsTotal, setAchievementsTotal] = useState<number>(0);
   const [achievementsUnlocked, setAchievementsUnlocked] = useState<number>(0);
   const [plans, setPlans] = useState<PlanRowType[]>([]);
+
+  const [favouriteAchievements, setFavouriteAchievements] = useState<
+    FavouriteAchievement[]
+  >([]);
 
   // steps + timezone
   const [stepsStreak, setStepsStreak] = useState<number>(0);
@@ -79,12 +92,13 @@ export default function UserScreen() {
     );
   }, [name]);
 
-  useEffect(() => {
-    if (userId) {
+  useFocusEffect(
+    React.useCallback(() => {
+      if (!userId) return;
       fetchProfile(userId);
       fetchTotals(userId);
-    }
-  }, [userId]);
+    }, [userId])
+  );
 
   // ---------- timezone + steps ----------
   useEffect(() => {
@@ -163,12 +177,16 @@ export default function UserScreen() {
 
       if (profileData) {
         setProfile(profileData);
+
         const streakFromDb =
           profileData.weekly_streak !== null &&
           profileData.weekly_streak !== undefined
             ? Number(profileData.weekly_streak)
             : 0;
         setWeeklyStreak(Number.isFinite(streakFromDb) ? streakFromDb : 0);
+
+        // 🔥 ADD THIS: load favourites from settings
+        await loadFavouriteAchievements(uid, profileData.settings);
       }
     } catch (e) {
       console.error("fetchProfile error", e);
@@ -255,6 +273,69 @@ export default function UserScreen() {
   async function onLogout() {
     await supabase.auth.signOut();
     router.replace("/(auth)/login");
+  }
+
+  async function loadFavouriteAchievements(uid: string, rawSettings: any) {
+    try {
+      const favIds: string[] = Array.isArray(
+        rawSettings?.favourite_achievements
+      )
+        ? rawSettings.favourite_achievements.filter(
+            (id: any) => typeof id === "string"
+          )
+        : [];
+
+      if (!favIds.length) {
+        setFavouriteAchievements([]);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("achievements")
+        .select("id, code, title, category, difficulty")
+        .in("id", favIds);
+
+      if (error) throw error;
+      if (!data) {
+        setFavouriteAchievements([]);
+        return;
+      }
+
+      // preserve order from settings and cap at 3
+      const ordered: FavouriteAchievement[] = favIds
+        .map((id) => (data as any[]).find((row) => row.id === id))
+        .filter(Boolean)
+        .slice(0, 3)
+        .map((row: any) => ({
+          id: row.id,
+          code: row.code,
+          title: row.title,
+          category: row.category,
+          difficulty: row.difficulty,
+        }));
+
+      setFavouriteAchievements(ordered);
+    } catch (e) {
+      console.error("loadFavouriteAchievements error", e);
+      setFavouriteAchievements([]);
+    }
+  }
+
+  function renderFavouriteBadge(a: FavouriteAchievement) {
+    return (
+      <View key={a.id} style={styles.favouriteBadge}>
+        <Text style={styles.favouriteBadgeEmoji}>
+          {difficultyEmoji(a.difficulty)}
+        </Text>
+        <Text
+          style={styles.favouriteBadgeTitle}
+          numberOfLines={1}
+          ellipsizeMode="tail"
+        >
+          {a.title}
+        </Text>
+      </View>
+    );
   }
 
   // ---------- Half donut gauge ----------
@@ -380,6 +461,62 @@ export default function UserScreen() {
             </Text>
 
             <Text style={styles.profileJoined}>Joined {joinedText}</Text>
+
+            {/* 🔥 Favourite achievements */}
+            {favouriteAchievements.length > 0 ? (
+              <View style={styles.favouritesContainer}>
+                <Text style={styles.favouritesHeading}>
+                  Favourite achievements
+                </Text>
+
+                <View style={styles.favouritesBadgesWrapper}>
+                  {favouriteAchievements.length <= 2 ? (
+                    // 1–2: single centered row
+                    <View style={styles.favouritesRow}>
+                      {favouriteAchievements.map((a) =>
+                        renderFavouriteBadge(a)
+                      )}
+                    </View>
+                  ) : (
+                    // 3: two on top row, one centered below
+                    <>
+                      <View style={styles.favouritesRow}>
+                        {favouriteAchievements
+                          .slice(0, 2)
+                          .map((a) => renderFavouriteBadge(a))}
+                      </View>
+                      <View style={styles.favouritesRowSingle}>
+                        {renderFavouriteBadge(favouriteAchievements[2])}
+                      </View>
+                    </>
+                  )}
+                </View>
+
+                <Pressable
+                  style={styles.favouritesEditButton}
+                  onPress={() =>
+                    router.push(
+                      "/features/achievements/achievements?fromProfile=1"
+                    )
+                  }
+                >
+                  <Text style={styles.favouritesEditText}>Edit favourites</Text>
+                </Pressable>
+              </View>
+            ) : (
+              <Pressable
+                style={styles.favouritesEmptyButton}
+                onPress={() =>
+                  router.push(
+                    "/features/achievements/achievements?fromProfile=1"
+                  )
+                }
+              >
+                <Text style={styles.favouritesEmptyText}>
+                  Pick your favourite achievements →
+                </Text>
+              </Pressable>
+            )}
           </View>
         </SectionCard>
 
@@ -873,6 +1010,85 @@ const makeStyles = (colors: any) =>
       marginTop: 2,
       textAlign: "center",
     },
+
+    favouritesContainer: {
+      marginTop: 12,
+      width: "100%",
+      alignItems: "center",
+      gap: 8,
+    },
+    favouritesHeading: {
+      fontSize: 13,
+      fontWeight: "700",
+      color: colors.text,
+    },
+    favouritesBadgesWrapper: {
+      marginTop: 4,
+      width: "100%",
+      gap: 6,
+    },
+    favouritesRow: {
+      flexDirection: "row",
+      justifyContent: "center",
+      gap: 8,
+      width: "100%",
+    },
+    favouritesRowSingle: {
+      marginTop: 4,
+      flexDirection: "row",
+      justifyContent: "center",
+      width: "100%",
+    },
+
+    favouriteBadge: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      borderRadius: 999,
+      backgroundColor: colors.surface,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      maxWidth: 180,
+      gap: 6,
+    },
+    favouriteBadgeEmoji: {
+      fontSize: 16,
+    },
+    favouriteBadgeTitle: {
+      fontSize: 13,
+      fontWeight: "700",
+      color: colors.text,
+    },
+
+    favouritesEditButton: {
+      marginTop: 4,
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: 999,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+    },
+    favouritesEditText: {
+      fontSize: 11,
+      fontWeight: "700",
+      color: colors.text,
+    },
+    favouritesEmptyButton: {
+      marginTop: 10,
+      paddingHorizontal: 14,
+      paddingVertical: 8,
+      borderRadius: 999,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+    },
+    favouritesEmptyText: {
+      fontSize: 12,
+      fontWeight: "600",
+      color: colors.subtle,
+    },
   });
 
 /* ---------- Helpers ---------- */
@@ -893,4 +1109,27 @@ function formatShortDate(iso?: string | null) {
   } catch {
     return "—";
   }
+}
+
+function difficultyEmoji(diff?: string | null) {
+  if (!diff) return "⭐️";
+  switch (diff.toLowerCase()) {
+    case "easy":
+      return "🟢";
+    case "medium":
+      return "🔵";
+    case "hard":
+      return "🟣";
+    case "elite":
+      return "🏆";
+    case "legendary":
+      return "🔥";
+    default:
+      return "⭐️";
+  }
+}
+
+function prettyAchievementCategory(category?: string | null) {
+  if (!category) return "";
+  return category.replace(/_/g, " ");
 }
