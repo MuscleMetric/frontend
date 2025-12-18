@@ -39,7 +39,7 @@
 			</dict>
 		</array>
 		<key>CFBundleVersion</key>
-		<string>7</string>
+		<string>8</string>
 		<key>ITSAppUsesNonExemptEncryption</key>
 		<false />
 		<key>LSMinimumSystemVersion</key>
@@ -83,7 +83,6 @@
 		<key>UISupportedInterfaceOrientations</key>
 		<array>
 			<string>UIInterfaceOrientationPortrait</string>
-			<string>UIInterfaceOrientationPortraitUpsideDown</string>
 		</array>
 		<key>UISupportedInterfaceOrientations~ipad</key>
 		<array>

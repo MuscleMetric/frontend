@@ -3,54 +3,7 @@
     "name": "MuscleMetric",
     "slug": "musclemetric",
     "version": "1.0.4",
-    "orientation": "portrait",
-    "icon": "./assets/icon.png",
-    "scheme": "musclemetric",
-    "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
-    "ios": {
-      "supportsTablet": true,
-      "bundleIdentifier": "com.musclemetric.app",
-      "buildNumber": "2",
-      "infoPlist": {
-        "NSMotionUsageDescription": "We use your motion data to show daily step counts.",
-        "NSSupportsLiveActivities": true,
-        "NSSupportsLiveActivitiesFrequentUpdates": false,
-        "ITSAppUsesNonExemptEncryption": false
-      },
-      "entitlements": {}
-    },
-    "android": {
-      "adaptiveIcon": {
-        "foregroundImage": "./assets/icon.png",
-        "backgroundColor": "#E6F4FE"
-      },
-      "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false,
-      "package": "com.musclemetric.app",
-      "permissions": ["ACTIVITY_RECOGNITION"]
-    },
-    "web": {
-      "output": "static",
-      "favicon": "./assets/icon.png"
-    },
-    "plugins": [
-      "expo-live-activity",
-      "expo-router",
-      [
-        "expo-splash-screen",
-        {
-          "image": "./assets/icon.png",
-          "imageWidth": 200,
-          "resizeMode": "contain",
-          "backgroundColor": "#ffffff",
-          "dark": {
-            "backgroundColor": "#000000"
-          }
-        }
-      ],
-      "expo-font"
-    ],
     "experiments": {
       "typedRoutes": false,
       "reactCompiler": false
@@ -59,6 +12,7 @@
       "supabaseUrl": "https://cpzgnhchdpkxnebjsyyi.supabase.co",
       "supabaseAnonKey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNwemduaGNoZHBreG5lYmpzeXlpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjAwMzU1NTYsImV4cCI6MjA3NTYxMTU1Nn0.hmDtqnRzofHJ2Zg2AMyF1jY1Et6MPocJehZAfJYHzK8",
       "eas": {
+        "projectId": "1e89dfbc-feae-4387-82bd-a1d3252bd76d",
         "build": {
           "experimental": {
             "ios": {
@@ -71,8 +25,7 @@
               ]
             }
           }
-        },
-        "projectId": "1e89dfbc-feae-4387-82bd-a1d3252bd76d"
+        }
       },
       "router": {}
     }

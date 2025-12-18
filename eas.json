@@ -7,28 +7,25 @@
     "development": {
       "developmentClient": true,
       "ios": {
-        "distribution": "internal"
+        "distribution": "internal",
+        "scheme": "MuscleMetric"
       },
-      "env": {
-        "EXPO_NO_CAPABILITY_SYNC": "1"
-      }
+      "env": { "EXPO_NO_CAPABILITY_SYNC": "1" }
     },
     "preview": {
       "distribution": "internal",
       "ios": {
-        "simulator": false
+        "simulator": false,
+        "scheme": "MuscleMetric"
       },
-      "env": {
-        "EXPO_NO_CAPABILITY_SYNC": "1"
-      }
+      "env": { "EXPO_NO_CAPABILITY_SYNC": "1" }
     },
     "production": {
       "ios": {
-        "distribution": "store"
+        "distribution": "store",
+        "scheme": "MuscleMetric"
       },
-      "env": {
-        "EXPO_NO_CAPABILITY_SYNC": "1"
-      }
+      "env": { "EXPO_NO_CAPABILITY_SYNC": "1" }
     }
   },
   "submit": {
