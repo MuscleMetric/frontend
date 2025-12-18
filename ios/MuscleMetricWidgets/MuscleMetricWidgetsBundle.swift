@@ -3,7 +3,7 @@ import SwiftUI
 
 @main
 struct MuscleMetricWidgetsBundle: WidgetBundle {
-    var body: some Widget {
-        MuscleMetricLogoWidget()
-    }
+  var body: some Widget {
+    MuscleMetricLogoWidget()
+  }
 }
