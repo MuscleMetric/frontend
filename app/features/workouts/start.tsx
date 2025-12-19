@@ -32,6 +32,7 @@ import {
   stopLiveWorkout,
 } from "../../../lib/liveWorkout";
 import { setReviewPayload } from "../../../lib/sessionStore";
+import { ExercisePickerModal } from "../../_components/ExercisePickerModal";
 
 /* ---------- types ---------- */
 type Workout = {
@@ -324,6 +325,24 @@ export default function StartWorkoutScreen() {
   const nav = useNavigation();
   const insets = useSafeAreaInsets();
 
+  const fmtDate = (iso?: string | null) => {
+    if (!iso) return "";
+    try {
+      return new Intl.DateTimeFormat("en-GB").format(new Date(iso)); // dd/mm/yyyy
+    } catch {
+      return "";
+    }
+  };
+
+  type DatedNote = { date: string; text: string };
+
+  const [workoutNotesHistory, setWorkoutNotesHistory] = useState<DatedNote[]>(
+    []
+  );
+  const [exerciseNotesHistoryByWeId, setExerciseNotesHistoryByWeId] = useState<
+    Record<string, DatedNote[]>
+  >({});
+
   // Disable gestures + header
   useEffect(() => {
     nav.setOptions?.({ headerShown: false, gestureEnabled: false });
@@ -386,6 +405,52 @@ export default function StartWorkoutScreen() {
     null
   );
   const isReplaceMode = !!replaceTargetWeId;
+
+  const [usageByExerciseId, setUsageByExerciseId] = useState<
+    Record<string, number>
+  >({});
+
+  useEffect(() => {
+    let alive = true;
+    if (!exerciseModalVisible || !userId) return;
+
+    (async () => {
+      const { data, error } = await supabase
+        .from("exercise_usage")
+        .select("exercise_id,sessions_count")
+        .eq("user_id", userId);
+
+      if (error) {
+        console.warn("usage load error", error);
+        if (alive) setUsageByExerciseId({});
+        return;
+      }
+
+      const map: Record<string, number> = {};
+      (data ?? []).forEach((r: any) => {
+        map[r.exercise_id] = r.sessions_count ?? 0;
+      });
+
+      if (alive) setUsageByExerciseId(map);
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [exerciseModalVisible, userId]);
+
+  const alreadyInWorkoutIds = useMemo(() => {
+    const ids = (workout?.workout_exercises ?? []).map((we) => we.exercise_id);
+    if (!replaceTargetWeId) return ids;
+
+    const target = workout?.workout_exercises?.find(
+      (we) => we.id === replaceTargetWeId
+    );
+    if (!target) return ids;
+
+    // allow picking the same exercise as the one being replaced (optional)
+    return ids.filter((id) => id !== target.exercise_id);
+  }, [workout, replaceTargetWeId]);
 
   // ----- muscle filter toggle -----
   const toggleMuscleGroup = (groupId: string) => {
@@ -553,17 +618,6 @@ export default function StartWorkoutScreen() {
       (opt.name || "").toLowerCase().includes(q)
     );
   }, [exerciseOptions, exerciseSearch]);
-
-  const toggleModalSelect = (id: string) => {
-    setModalSelectedIds((prev) => {
-      if (isReplaceMode) {
-        // single-select behaviour in replace mode
-        return prev[0] === id ? [] : [id];
-      }
-      // multi-select when adding new exercises
-      return prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id];
-    });
-  };
 
   // ---------- Existing live activity effects ----------
   useEffect(() => {
@@ -759,6 +813,68 @@ export default function StartWorkoutScreen() {
           .limit(1)
           .maybeSingle();
 
+        // workout notes history (last 10)
+        const { data: noteRows, error: noteErr } = await supabase
+          .from("workout_history")
+          .select("completed_at, notes")
+          .eq("user_id", userId)
+          .eq("workout_id", workoutId)
+          .not("notes", "is", null)
+          .order("completed_at", { ascending: false })
+          .limit(10);
+
+        if (!noteErr) {
+          const list: DatedNote[] = (noteRows ?? [])
+            .map((r: any) => {
+              const text = (r.notes ?? "").trim();
+              if (!text) return null; // guards against empty-string notes
+              return { date: fmtDate(r.completed_at), text };
+            })
+            .filter(Boolean) as DatedNote[];
+
+          setWorkoutNotesHistory(list);
+        } else {
+          console.warn("workoutNotesHistory load error", noteErr);
+          setWorkoutNotesHistory([]);
+        }
+
+        const { data: weNotes, error: weNotesErr } = await supabase
+          .from("workout_exercise_history")
+          .select(
+            `
+    workout_exercise_id,
+    notes,
+    workout_history:workout_history_id (
+      completed_at,
+      workout_id,
+      user_id
+    )
+  `
+          )
+          // filter through the joined workout_history
+          .eq("workout_history.workout_id", workoutId)
+          .eq("workout_history.user_id", userId)
+          .not("notes", "is", null)
+          .order("workout_history.completed_at", { ascending: false })
+          .limit(500); // enough to build per-exercise lists
+
+        if (!weNotesErr) {
+          const map: Record<string, DatedNote[]> = {};
+          (weNotes ?? []).forEach((row: any) => {
+            const text = (row.notes ?? "").trim();
+            if (!text) return;
+
+            const weId = String(row.workout_exercise_id); // template workout_exercises.id
+            const dt = fmtDate(row.workout_history?.completed_at);
+
+            if (!map[weId]) map[weId] = [];
+            // keep last 10 per exercise
+            if (map[weId].length < 10) map[weId].push({ date: dt, text });
+          });
+
+          setExerciseNotesHistoryByWeId(map);
+        }
+
         if (!lastErr && lastHist) {
           setLastWorkoutNotes(lastHist.notes ?? null);
 
@@ -940,15 +1056,16 @@ export default function StartWorkoutScreen() {
   }, [load]);
 
   // ---------- Add / replace ad-hoc exercises (from exercises table) ----------
-  const handleConfirmAddExercises = () => {
-    if (!workout || modalSelectedIds.length === 0) {
+  const handleConfirmAddExercises = (selectedIds: string[]) => {
+    if (!workout || selectedIds.length === 0) {
       setExerciseModalVisible(false);
       return;
     }
 
     const selected = exerciseOptions.filter((opt) =>
-      modalSelectedIds.includes(opt.id)
+      selectedIds.includes(opt.id)
     );
+
     if (!selected.length) {
       setExerciseModalVisible(false);
       return;
@@ -2420,6 +2537,32 @@ export default function StartWorkoutScreen() {
                     placeholderTextColor={colors.subtle}
                     multiline
                   />
+                  {(() => {
+                    const hist = exerciseNotesHistoryByWeId[we.id] ?? [];
+                    if (!hist.length) return null;
+
+                    return (
+                      <View style={{ marginTop: 10 }}>
+                        <Text
+                          style={[
+                            styles.mutedSmall,
+                            { marginBottom: 6, fontWeight: "800" },
+                          ]}
+                        >
+                          Previous notes
+                        </Text>
+
+                        {hist.map((n, i) => (
+                          <Text
+                            key={i}
+                            style={[styles.mutedSmall, { marginBottom: 6 }]}
+                          >
+                            {n.date} — {n.text}
+                          </Text>
+                        ))}
+                      </View>
+                    );
+                  })()}
                 </View>
               ) : null}
             </View>
@@ -2461,7 +2604,16 @@ export default function StartWorkoutScreen() {
         {/* NEW: Add ad-hoc exercises for this workout only */}
         <View style={{ marginTop: 12, alignItems: "center" }}>
           <Pressable
-            onPress={() => setExerciseModalVisible(true)}
+            onPress={() => {
+              setReplaceTargetWeId(null);
+              setModalSelectedIds([]);
+              setExerciseSearch("");
+              setSelectedMuscleGroups([]);
+              setSelectedEquipment([]);
+              setMuscleFilterOpen(false);
+              setEquipmentFilterOpen(false);
+              setExerciseModalVisible(true);
+            }}
             style={[styles.pill, { paddingHorizontal: 18 }]}
           >
             <Text style={{ color: colors.text, fontWeight: "800" }}>
@@ -2529,315 +2681,127 @@ export default function StartWorkoutScreen() {
         </Pressable>
       </View>
 
-      {/* FULL-SCREEN EXERCISE PICKER MODAL */}
       <Modal
-        visible={exerciseModalVisible}
+        visible={notesOverlayVisible}
         animationType="slide"
         presentationStyle="fullScreen"
-        onRequestClose={() => setExerciseModalVisible(false)}
+        onRequestClose={() => setNotesOverlayVisible(false)}
       >
-        <SafeAreaView
-          style={[
-            s.modalSafeArea,
-            {
+        <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "space-between",
+              paddingHorizontal: 16,
               paddingTop: insets.top,
-              backgroundColor: colors.background,
-            },
-          ]}
-        >
-          {/* Header row */}
-          <View style={s.modalHeader}>
-            <Text style={s.modalTitle}>
-              {isReplaceMode ? "Replace exercise" : "Select exercises"}
+              paddingBottom: 12,
+              borderBottomWidth: StyleSheet.hairlineWidth,
+              borderBottomColor: colors.border,
+            }}
+          >
+            <Text
+              style={{ color: colors.text, fontWeight: "900", fontSize: 18 }}
+            >
+              Workout Notes
             </Text>
+
             <Pressable
-              onPress={() => setExerciseModalVisible(false)}
+              onPress={() => setNotesOverlayVisible(false)}
               hitSlop={10}
             >
-              <Text style={[s.modalClose, { color: colors.primary }]}>
-                Close
+              <Text style={{ color: colors.primary, fontWeight: "800" }}>
+                Done
               </Text>
             </Pressable>
           </View>
 
-          {/* Search */}
-          <TextInput
-            value={exerciseSearch}
-            onChangeText={setExerciseSearch}
-            placeholder="Search exercises…"
-            placeholderTextColor={colors.subtle}
-            style={[
-              s.modalSearchInput,
-              { color: colors.text, backgroundColor: colors.surface },
-            ]}
-          />
-
-          {/* FILTER BAR — muscles & equipment on same line */}
-          <View style={{ marginTop: 8 }}>
-            <View style={s.filterBar}>
-              {/* Muscles pill */}
-              <Pressable
-                onPress={() => setMuscleFilterOpen((open) => !open)}
-                style={[
-                  s.filterPill,
-                  muscleFilterOpen && {
-                    backgroundColor: colors.primaryBg ?? colors.primary,
-                    borderColor: colors.primary,
-                  },
-                ]}
-                hitSlop={8}
-              >
-                <Text
-                  style={[
-                    s.filterPillLabel,
-                    muscleFilterOpen && {
-                      color: colors.primaryText ?? "#fff",
-                    },
-                  ]}
-                >
-                  Muscles
-                </Text>
-                {selectedMuscleGroups.length > 0 && (
-                  <Text
-                    style={[
-                      s.filterPillCount,
-                      muscleFilterOpen && {
-                        color: colors.primaryText ?? "#fff",
-                      },
-                    ]}
-                  >
-                    {selectedMuscleGroups.length}
-                  </Text>
-                )}
-              </Pressable>
-
-              {/* Equipment pill */}
-              <Pressable
-                onPress={() => setEquipmentFilterOpen((open) => !open)}
-                style={[
-                  s.filterPill,
-                  equipmentFilterOpen && {
-                    backgroundColor: colors.primaryBg ?? colors.primary,
-                    borderColor: colors.primary,
-                  },
-                ]}
-                hitSlop={8}
-              >
-                <Text
-                  style={[
-                    s.filterPillLabel,
-                    equipmentFilterOpen && {
-                      color: colors.primaryText ?? "#fff",
-                    },
-                  ]}
-                >
-                  Equipment
-                </Text>
-                {selectedEquipment.length > 0 && (
-                  <Text
-                    style={[
-                      s.filterPillCount,
-                      equipmentFilterOpen && {
-                        color: colors.primaryText ?? "#fff",
-                      },
-                    ]}
-                  >
-                    {selectedEquipment.length}
-                  </Text>
-                )}
-              </Pressable>
-            </View>
-
-            {/* Summary text under the pills */}
-            <Text style={s.filterSummaryText}>
-              {selectedMuscleGroups.length
-                ? `${selectedMuscleGroups.length} muscle group${
-                    selectedMuscleGroups.length === 1 ? "" : "s"
-                  }`
-                : "No Muscles"}
-              {" · "}
-              {selectedEquipment.length
-                ? `${selectedEquipment.length} equipment option${
-                    selectedEquipment.length === 1 ? "" : "s"
-                  }`
-                : "No Equipment"}{" "}
-              selected
-            </Text>
-          </View>
-
-          {/* MUSCLE CHIPS (when open) */}
-          {muscleFilterOpen && (
-            <View style={s.chipSection}>
-              <View style={s.chipGrid}>
-                {MUSCLE_GROUPS.map((g) => {
-                  const active = selectedMuscleGroups.includes(g.id);
-                  return (
-                    <Pressable
-                      key={g.id}
-                      onPress={() => toggleMuscleGroup(g.id)}
-                      style={[
-                        s.chip,
-                        active && {
-                          backgroundColor: colors.primaryBg ?? colors.primary,
-                          borderColor: colors.primary,
-                        },
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          s.chipLabel,
-                          active && {
-                            color: colors.primaryText ?? "#fff",
-                            fontWeight: "700",
-                          },
-                        ]}
-                      >
-                        {g.label}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
-            </View>
-          )}
-
-          {/* EQUIPMENT CHIPS (when open) */}
-          {equipmentFilterOpen && (
-            <View style={s.chipSection}>
-              <View style={s.chipGrid}>
-                {EQUIPMENT_OPTIONS.map((eq) => {
-                  const active = selectedEquipment.includes(eq);
-                  return (
-                    <Pressable
-                      key={eq}
-                      onPress={() => toggleEquipment(eq)}
-                      style={[
-                        s.chip,
-                        active && {
-                          backgroundColor: colors.primaryBg ?? colors.primary,
-                          borderColor: colors.primary,
-                        },
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          s.chipLabel,
-                          active && {
-                            color: colors.primaryText ?? "#fff",
-                            fontWeight: "700",
-                          },
-                        ]}
-                      >
-                        {eq}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
-            </View>
-          )}
-
-          {/* List */}
-          {exLoading ? (
-            <ActivityIndicator style={{ marginTop: 16 }} />
-          ) : (
-            <FlatList
-              data={filteredExerciseOptions}
-              keyExtractor={(item) => item.id}
-              keyboardShouldPersistTaps="handled"
-              contentContainerStyle={{ paddingBottom: 12 }}
-              renderItem={({ item }) => {
-                const isSelected = modalSelectedIds.includes(item.id);
-                return (
-                  <Pressable
-                    onPress={() => toggleModalSelect(item.id)}
-                    style={[
-                      s.modalRow,
-                      isSelected && {
-                        borderColor: colors.primary,
-                        backgroundColor: colors.card,
-                      },
-                    ]}
-                  >
-                    <View style={{ flex: 1 }}>
-                      <Text
-                        style={[
-                          s.modalExerciseName,
-                          isSelected && { color: colors.primary },
-                        ]}
-                      >
-                        {item.name}
-                      </Text>
-                      <Text style={s.modalExerciseMeta}>
-                        {item.type || ""}
-                        {item.equipment ? ` • ${item.equipment}` : ""}
-                      </Text>
-                    </View>
-
-                    <View
-                      style={[
-                        s.checkbox,
-                        {
-                          borderColor: isSelected
-                            ? colors.primary
-                            : colors.border,
-                          backgroundColor: isSelected
-                            ? colors.primary
-                            : "transparent",
-                        },
-                      ]}
-                    >
-                      {isSelected && (
-                        <Text
-                          style={{
-                            color: colors.subtle,
-                            fontSize: 10,
-                            fontWeight: "700",
-                          }}
-                        >
-                          ✓
-                        </Text>
-                      )}
-                    </View>
-                  </Pressable>
-                );
-              }}
-            />
-          )}
-
-          {/* Confirm */}
-          <Pressable
-            style={[
-              s.modalDoneBtn,
-              {
-                backgroundColor: modalSelectedIds.length
-                  ? colors.primary
-                  : colors.surface,
-                borderColor: colors.border,
-              },
-            ]}
-            disabled={modalSelectedIds.length === 0}
-            onPress={handleConfirmAddExercises}
+          <ScrollView
+            contentContainerStyle={{ padding: 16, paddingBottom: 40 }}
           >
-            <Text
-              style={{
-                color:
-                  modalSelectedIds.length > 0
-                    ? colors.subtle ?? "#fff"
-                    : colors.subtle,
-                fontWeight: "700",
-              }}
-            >
-              {isReplaceMode ? "Replace exercise" : "Add "}{" "}
-              {isReplaceMode
-                ? ""
-                : `${modalSelectedIds.length || ""} exercise${
-                    modalSelectedIds.length === 1 ? "" : "s"
-                  }`}
-            </Text>
-          </Pressable>
+            {/* Editor */}
+            <TextInput
+              placeholder="Write notes for this workout…"
+              value={state.workoutNotes ?? ""}
+              onChangeText={(t) =>
+                setState((s2) => (s2 ? { ...s2, workoutNotes: t } : s2))
+              }
+              style={[
+                styles.notesInput,
+                { minHeight: 160, textAlignVertical: "top" },
+              ]}
+              placeholderTextColor={colors.subtle}
+              multiline
+            />
+
+            {/* History */}
+            <View style={{ marginTop: 16 }}>
+              <Text style={[styles.h3, { marginBottom: 8 }]}>
+                Previous notes
+              </Text>
+
+              {workoutNotesHistory.length === 0 ? (
+                <Text style={styles.muted}>No previous workout notes yet.</Text>
+              ) : (
+                workoutNotesHistory.map((n, i) => (
+                  <View
+                    key={i}
+                    style={{
+                      paddingVertical: 10,
+                      borderBottomWidth: StyleSheet.hairlineWidth,
+                      borderBottomColor: colors.border,
+                    }}
+                  >
+                    <Text style={[styles.mutedSmall, { marginBottom: 4 }]}>
+                      {n.date} —{" "}
+                    </Text>
+                    <Text style={{ color: colors.text, fontWeight: "600" }}>
+                      {n.text}
+                    </Text>
+                  </View>
+                ))
+              )}
+            </View>
+          </ScrollView>
         </SafeAreaView>
       </Modal>
+
+      {/* FULL-SCREEN EXERCISE PICKER MODAL */}
+      <ExercisePickerModal
+        userId={userId}
+        alreadyInWorkoutIds={alreadyInWorkoutIds}
+        usageByExerciseId={usageByExerciseId}
+        visible={exerciseModalVisible}
+        title={isReplaceMode ? "Replace exercise" : "Select exercises"}
+        loading={exLoading}
+        exerciseOptions={filteredExerciseOptions}
+        muscleGroups={MUSCLE_GROUPS as any}
+        equipmentOptions={EQUIPMENT_OPTIONS}
+        initialSelectedIds={modalSelectedIds}
+        multiSelect={!isReplaceMode}
+        onClose={() => {
+          setExerciseModalVisible(false);
+          setReplaceTargetWeId(null);
+        }}
+        onConfirm={(ids) => {
+          setModalSelectedIds(ids);
+          requestAnimationFrame(() => handleConfirmAddExercises(ids));
+        }}
+        styles={s}
+        colors={colors}
+        safeAreaTop={insets.top}
+        // ✅ NEW required controlled props
+        search={exerciseSearch}
+        onChangeSearch={setExerciseSearch}
+        selectedMuscleGroups={selectedMuscleGroups}
+        toggleMuscleGroup={toggleMuscleGroup}
+        muscleFilterOpen={muscleFilterOpen}
+        setMuscleFilterOpen={setMuscleFilterOpen}
+        selectedEquipment={selectedEquipment}
+        toggleEquipment={toggleEquipment}
+        equipmentFilterOpen={equipmentFilterOpen}
+        setEquipmentFilterOpen={setEquipmentFilterOpen}
+      />
     </SafeAreaView>
   );
 }

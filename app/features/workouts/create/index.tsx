@@ -21,10 +21,11 @@ import DraggableFlatList, {
 import { supabase } from "../../../../lib/supabase";
 import { useAuth } from "../../../../lib/useAuth";
 import { useAppTheme } from "../../../../lib/useAppTheme";
+import { ExercisePickerModal } from "../../../_components/ExercisePickerModal";
 
 type ExerciseOption = {
   id: string;
-  name: string;
+  name: string | null;
   type: string | null;
   equipment: string | null;
 };
@@ -163,7 +164,6 @@ export default function CreateWorkoutScreen() {
   const [exerciseSearch, setExerciseSearch] = useState("");
   const [exerciseOptions, setExerciseOptions] = useState<ExerciseOption[]>([]);
   const [exLoading, setExLoading] = useState(false);
-  const [modalSelectedIds, setModalSelectedIds] = useState<string[]>([]);
 
   // NEW: multi-select filters
   const [selectedMuscleGroups, setSelectedMuscleGroups] = useState<string[]>(
@@ -174,6 +174,39 @@ export default function CreateWorkoutScreen() {
   // NEW: collapsible filters
   const [muscleFilterOpen, setMuscleFilterOpen] = useState(false);
   const [equipmentFilterOpen, setEquipmentFilterOpen] = useState(false);
+
+  const [usageByExerciseId, setUsageByExerciseId] = useState<
+    Record<string, number>
+  >({});
+
+  useEffect(() => {
+    let alive = true;
+    if (!exerciseModalVisible || !userId) return;
+
+    (async () => {
+      const { data, error } = await supabase
+        .from("exercise_usage")
+        .select("exercise_id,sessions_count")
+        .eq("user_id", userId);
+
+      if (error) {
+        console.warn("usage load error", error);
+        if (alive) setUsageByExerciseId({});
+        return;
+      }
+
+      const map: Record<string, number> = {};
+      (data ?? []).forEach((r: any) => {
+        map[r.exercise_id] = r.sessions_count ?? 0;
+      });
+
+      if (alive) setUsageByExerciseId(map);
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [exerciseModalVisible, userId]);
 
   // ----- derived -----
   const canSave =
@@ -270,8 +303,8 @@ export default function CreateWorkoutScreen() {
         if (alive) {
           setExerciseOptions(
             (data ?? []).map((row: any) => ({
-              id: row.id,
-              name: row.name,
+              id: String(row.id),
+              name: row.name ?? null,
               type: row.type ?? null,
               equipment: row.equipment ?? null,
             }))
@@ -292,32 +325,15 @@ export default function CreateWorkoutScreen() {
     selectedEquipment,
   ]);
 
-  // ----- modal selection handler (multi-select + ordering) -----
-  const toggleModalSelect = (exerciseId: string) => {
-    setModalSelectedIds((prev) =>
-      prev.includes(exerciseId)
-        ? prev.filter((id) => id !== exerciseId)
-        : [...prev, exerciseId]
-    );
-  };
-
-  const handleConfirmAddExercises = () => {
-    if (!modalSelectedIds.length) return;
-
-    console.log("modalSelectedIds at confirm:", modalSelectedIds);
-    console.log(
-      "resolved exercises:",
-      modalSelectedIds.map(
-        (id) => exerciseOptions.find((e) => e.id === id)?.name
-      )
-    );
+  const handleConfirmAddExercises = (selectedIds: string[]) => {
+    if (!selectedIds.length) return;
 
     setSelectedExercises((prev) => {
       const existingIds = new Set(prev.map((e) => e.exerciseId));
       const now = Date.now();
 
       const newItems: WorkoutExercise[] = [];
-      modalSelectedIds.forEach((id, idx) => {
+      selectedIds.forEach((id, idx) => {
         if (existingIds.has(id)) return;
         const ex = exerciseOptions.find((er) => er.id === id);
         if (!ex) return;
@@ -325,15 +341,21 @@ export default function CreateWorkoutScreen() {
         newItems.push({
           key: `${id}-${now}-${idx}`,
           exerciseId: id,
-          name: ex.name,
+          name: ex.name ?? "Exercise",
         });
       });
 
       return [...prev, ...newItems];
     });
 
-    setModalSelectedIds([]);
     setExerciseModalVisible(false);
+
+    // optional reset like before
+    setExerciseSearch("");
+    setSelectedMuscleGroups([]);
+    setSelectedEquipment([]);
+    setMuscleFilterOpen(false);
+    setEquipmentFilterOpen(false);
   };
 
   const handleRemoveExercise = (key: string) => {
@@ -524,308 +546,35 @@ export default function CreateWorkoutScreen() {
       </ScrollView>
 
       {/* FULL-SCREEN EXERCISE PICKER MODAL */}
-      <Modal
+      <ExercisePickerModal
+        userId={userId}
+        alreadyInWorkoutIds={selectedExercises.map((e) => e.exerciseId)}
+        usageByExerciseId={usageByExerciseId}
         visible={exerciseModalVisible}
-        animationType="slide"
-        presentationStyle="fullScreen"
-        onRequestClose={() => setExerciseModalVisible(false)}
-      >
-        <SafeAreaView
-          style={[
-            s.modalSafeArea,
-            {
-              paddingTop: insets.top,
-              backgroundColor: colors.background,
-            },
-          ]}
-        >
-          {/* Header row */}
-          <View style={s.modalHeader}>
-            <Text style={s.modalTitle}>Select exercises</Text>
-            <Pressable
-              onPress={() => setExerciseModalVisible(false)}
-              hitSlop={10}
-            >
-              <Text style={[s.modalClose, { color: colors.primary }]}>
-                Close
-              </Text>
-            </Pressable>
-          </View>
-
-          {/* Search */}
-          <TextInput
-            value={exerciseSearch}
-            onChangeText={setExerciseSearch}
-            placeholder="Search exercises…"
-            placeholderTextColor={colors.subtle}
-            style={[
-              s.modalSearchInput,
-              { color: colors.text, backgroundColor: colors.surface },
-            ]}
-          />
-
-          {/* FILTER BAR — muscles & equipment on same line */}
-          <View style={{ marginTop: 8 }}>
-            <View style={s.filterBar}>
-              {/* Muscles pill */}
-              <Pressable
-                onPress={() => setMuscleFilterOpen((open) => !open)}
-                style={[
-                  s.filterPill,
-                  muscleFilterOpen && {
-                    backgroundColor: colors.primaryBg ?? colors.primary,
-                    borderColor: colors.primary,
-                  },
-                ]}
-                hitSlop={8}
-              >
-                <Text
-                  style={[
-                    s.filterPillLabel,
-                    muscleFilterOpen && {
-                      color: colors.primaryText ?? "#fff",
-                    },
-                  ]}
-                >
-                  Muscles
-                </Text>
-                {selectedMuscleGroups.length > 0 && (
-                  <Text
-                    style={[
-                      s.filterPillCount,
-                      muscleFilterOpen && {
-                        color: colors.primaryText ?? "#fff",
-                      },
-                    ]}
-                  >
-                    {selectedMuscleGroups.length}
-                  </Text>
-                )}
-              </Pressable>
-
-              {/* Equipment pill */}
-              <Pressable
-                onPress={() => setEquipmentFilterOpen((open) => !open)}
-                style={[
-                  s.filterPill,
-                  equipmentFilterOpen && {
-                    backgroundColor: colors.primaryBg ?? colors.primary,
-                    borderColor: colors.primary,
-                  },
-                ]}
-                hitSlop={8}
-              >
-                <Text
-                  style={[
-                    s.filterPillLabel,
-                    equipmentFilterOpen && {
-                      color: colors.primaryText ?? "#fff",
-                    },
-                  ]}
-                >
-                  Equipment
-                </Text>
-                {selectedEquipment.length > 0 && (
-                  <Text
-                    style={[
-                      s.filterPillCount,
-                      equipmentFilterOpen && {
-                        color: colors.primaryText ?? "#fff",
-                      },
-                    ]}
-                  >
-                    {selectedEquipment.length}
-                  </Text>
-                )}
-              </Pressable>
-            </View>
-
-            {/* Summary text under the pills */}
-            <Text style={s.filterSummaryText}>
-              {selectedMuscleGroups.length
-                ? `${selectedMuscleGroups.length} muscle group${
-                    selectedMuscleGroups.length === 1 ? "" : "s"
-                  }`
-                : "No Muscles"}
-              {" · "}
-              {selectedEquipment.length
-                ? `${selectedEquipment.length} equipment option${
-                    selectedEquipment.length === 1 ? "" : "s"
-                  }`
-                : "No Equipment"}{" "}
-              selected
-            </Text>
-          </View>
-
-          {/* MUSCLE CHIPS (when open) */}
-          {muscleFilterOpen && (
-            <View style={s.chipSection}>
-              <View style={s.chipGrid}>
-                {MUSCLE_GROUPS.map((g) => {
-                  const active = selectedMuscleGroups.includes(g.id);
-                  return (
-                    <Pressable
-                      key={g.id}
-                      onPress={() => toggleMuscleGroup(g.id)}
-                      style={[
-                        s.chip,
-                        active && {
-                          backgroundColor: colors.primaryBg ?? colors.primary,
-                          borderColor: colors.primary,
-                        },
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          s.chipLabel,
-                          active && {
-                            color: colors.primaryText ?? "#fff",
-                            fontWeight: "700",
-                          },
-                        ]}
-                      >
-                        {g.label}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
-            </View>
-          )}
-
-          {/* EQUIPMENT CHIPS (when open) */}
-          {equipmentFilterOpen && (
-            <View style={s.chipSection}>
-              <View style={s.chipGrid}>
-                {EQUIPMENT_OPTIONS.map((eq) => {
-                  const active = selectedEquipment.includes(eq);
-                  return (
-                    <Pressable
-                      key={eq}
-                      onPress={() => toggleEquipment(eq)}
-                      style={[
-                        s.chip,
-                        active && {
-                          backgroundColor: colors.primaryBg ?? colors.primary,
-                          borderColor: colors.primary,
-                        },
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          s.chipLabel,
-                          active && {
-                            color: colors.primaryText ?? "#fff",
-                            fontWeight: "700",
-                          },
-                        ]}
-                      >
-                        {eq}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
-            </View>
-          )}
-
-          {/* List */}
-          {exLoading ? (
-            <ActivityIndicator style={{ marginTop: 16 }} />
-          ) : (
-            <FlatList
-              data={exerciseOptions}
-              keyExtractor={(item) => item.id}
-              keyboardShouldPersistTaps="handled"
-              contentContainerStyle={{ paddingBottom: 12 }}
-              renderItem={({ item }) => {
-                const isSelected = modalSelectedIds.includes(item.id);
-                return (
-                  <Pressable
-                    onPress={() => toggleModalSelect(item.id)}
-                    style={[
-                      s.modalRow,
-                      isSelected && {
-                        borderColor: colors.primary,
-                        backgroundColor: colors.card,
-                      },
-                    ]}
-                  >
-                    <View style={{ flex: 1 }}>
-                      <Text
-                        style={[
-                          s.modalExerciseName,
-                          isSelected && { color: colors.primary },
-                        ]}
-                      >
-                        {item.name}
-                      </Text>
-                      <Text style={s.modalExerciseMeta}>
-                        {item.type || ""}
-                        {item.equipment ? ` • ${item.equipment}` : ""}
-                      </Text>
-                    </View>
-
-                    <View
-                      style={[
-                        s.checkbox,
-                        {
-                          borderColor: isSelected
-                            ? colors.primary
-                            : colors.border,
-                          backgroundColor: isSelected
-                            ? colors.primary
-                            : "transparent",
-                        },
-                      ]}
-                    >
-                      {isSelected && (
-                        <Text
-                          style={{
-                            color: colors.subtle,
-                            fontSize: 10,
-                            fontWeight: "700",
-                          }}
-                        >
-                          ✓
-                        </Text>
-                      )}
-                    </View>
-                  </Pressable>
-                );
-              }}
-            />
-          )}
-
-          {/* Confirm */}
-          <Pressable
-            style={[
-              s.modalDoneBtn,
-              {
-                backgroundColor: modalSelectedIds.length
-                  ? colors.primary
-                  : colors.surface,
-                borderColor: colors.border,
-              },
-            ]}
-            disabled={modalSelectedIds.length === 0}
-            onPress={handleConfirmAddExercises}
-          >
-            <Text
-              style={{
-                color:
-                  modalSelectedIds.length > 0
-                    ? colors.subtle ?? "#fff"
-                    : colors.subtle,
-                fontWeight: "700",
-              }}
-            >
-              Add {modalSelectedIds.length || ""} exercise
-              {modalSelectedIds.length === 1 ? "" : "s"}
-            </Text>
-          </Pressable>
-        </SafeAreaView>
-      </Modal>
+        title="Select exercises"
+        loading={exLoading}
+        exerciseOptions={exerciseOptions}
+        muscleGroups={MUSCLE_GROUPS as any}
+        equipmentOptions={EQUIPMENT_OPTIONS}
+        multiSelect={true}
+        initialSelectedIds={[]}
+        onClose={() => setExerciseModalVisible(false)}
+        onConfirm={(ids) => handleConfirmAddExercises(ids)}
+        // controlled search + filters (from this screen)
+        search={exerciseSearch}
+        onChangeSearch={setExerciseSearch}
+        selectedMuscleGroups={selectedMuscleGroups}
+        toggleMuscleGroup={toggleMuscleGroup}
+        muscleFilterOpen={muscleFilterOpen}
+        setMuscleFilterOpen={setMuscleFilterOpen}
+        selectedEquipment={selectedEquipment}
+        toggleEquipment={toggleEquipment}
+        equipmentFilterOpen={equipmentFilterOpen}
+        setEquipmentFilterOpen={setEquipmentFilterOpen}
+        styles={s}
+        colors={colors}
+        safeAreaTop={insets.top}
+      />
     </SafeAreaView>
   );
 }
