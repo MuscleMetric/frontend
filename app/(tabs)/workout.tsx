@@ -319,48 +319,68 @@ export default function WorkoutScreen() {
     try {
       setLoading(true);
 
-      // 1) Active plan (else most recent)
-      let { data: activePlan, error: pErr } = await supabase
-        .from("plans")
-        .select("id, title, start_date, end_date, is_completed")
-        .eq("user_id", userId)
-        .eq("is_completed", false)
-        .order("start_date", { ascending: false })
-        .limit(1)
+      // -------------------------
+      // 0) Get active_plan_id + timezone (source of truth)
+      // -------------------------
+      const { data: profile, error: profErr } = await supabase
+        .from("profiles")
+        .select("active_plan_id, timezone")
+        .eq("id", userId)
         .maybeSingle();
 
-      if (!activePlan && !pErr) {
-        const { data } = await supabase
+      if (cancelled) return;
+
+      const activePlanId = profile?.active_plan_id ?? null;
+      const userTz = profile?.timezone ?? "UTC";
+
+      // -------------------------
+      // 1) Active plan (ONLY via active_plan_id)
+      // -------------------------
+      let activePlan: any = null;
+
+      if (activePlanId) {
+        const { data: p, error: pErr } = await supabase
           .from("plans")
-          .select("id, title, start_date, end_date, is_completed")
+          .select(
+            "id, title, start_date, end_date, is_completed, completed_at, created_at"
+          )
+          .eq("id", activePlanId)
           .eq("user_id", userId)
-          .order("created_at", { ascending: false })
-          .limit(1)
           .maybeSingle();
-        activePlan = data ?? null;
+
+        if (!pErr && p && p.is_completed === false) {
+          activePlan = p;
+        } else {
+          // Safety net: active_plan_id exists but plan is missing/completed -> clear local state
+          activePlan = null;
+        }
       }
 
       if (cancelled) return;
-      setPlan(activePlan ?? null);
+      setPlan(activePlan);
 
-      // 2) plan_workouts + nested exercises
+      // -------------------------
+      // 2) plan_workouts + nested exercises (only if active plan)
+      // -------------------------
       let planWorkoutIds: string[] = [];
+
       if (activePlan?.id) {
         const { data: pws, error: pwErr } = await supabase
           .from("plan_workouts")
           .select(
             `
-              id, title, order_index, weekly_complete, workout_id,
-              workouts!inner (
-                id,
-                workout_exercises (
-                  order_index,
-                  exercises ( name )
-                )
+            id, title, order_index, weekly_complete, workout_id, is_archived,
+            workouts!inner (
+              id,
+              workout_exercises (
+                order_index,
+                exercises ( name )
               )
-            `
+            )
+          `
           )
           .eq("plan_id", activePlan.id)
+          .eq("is_archived", false)
           .order("order_index", { ascending: true });
 
         if (!pwErr) {
@@ -394,13 +414,16 @@ export default function WorkoutScreen() {
           }
         }
 
+        // -------------------------
         // 3) Completed count for those workouts
+        // -------------------------
         if (planWorkoutIds.length && !cancelled) {
           const { count } = await supabase
             .from("workout_history")
             .select("*", { count: "exact", head: true })
             .eq("user_id", userId)
             .in("workout_id", planWorkoutIds);
+
           if (!cancelled) setCompletedCount(count ?? 0);
         } else if (!cancelled) {
           setCompletedCount(0);
@@ -412,7 +435,9 @@ export default function WorkoutScreen() {
         }
       }
 
-      // 4) Loose workouts
+      // -------------------------
+      // 4) Loose workouts (unchanged)
+      // -------------------------
       if (!cancelled) {
         if (planWorkoutIds.length) {
           const { data: loose } = await supabase
@@ -426,6 +451,7 @@ export default function WorkoutScreen() {
             )
             .order("updated_at", { ascending: false })
             .limit(20);
+
           if (!cancelled) setLooseWorkouts(loose ?? []);
         } else {
           const { data: loose } = await supabase
@@ -434,8 +460,24 @@ export default function WorkoutScreen() {
             .eq("user_id", userId)
             .order("updated_at", { ascending: false })
             .limit(20);
+
           if (!cancelled) setLooseWorkouts(loose ?? []);
         }
+      }
+
+      // -------------------------
+      // 5) Check for "plan_completed" event for modal (do NOT consume here)
+      // -------------------------
+      if (!cancelled) {
+        const { data: evt } = await supabase
+          .from("user_events")
+          .select("id, type, payload, created_at")
+          .eq("user_id", userId)
+          .eq("type", "plan_completed")
+          .is("consumed_at", null)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
       }
     } catch (e) {
       console.warn("workout tab load error:", e);

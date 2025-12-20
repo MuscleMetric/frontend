@@ -32,6 +32,7 @@ type PlanRowType = {
   id: string;
   title: string;
   subtitle: string;
+  status: "active" | "completed";
 };
 
 type FavouriteAchievement = {
@@ -58,7 +59,9 @@ export default function UserScreen() {
 
   const [achievementsTotal, setAchievementsTotal] = useState<number>(0);
   const [achievementsUnlocked, setAchievementsUnlocked] = useState<number>(0);
-  const [plans, setPlans] = useState<PlanRowType[]>([]);
+
+  const [recentPlans, setRecentPlans] = useState<PlanRowType[]>([]);
+  const [hasMorePlans, setHasMorePlans] = useState(false);
 
   const [favouriteAchievements, setFavouriteAchievements] = useState<
     FavouriteAchievement[]
@@ -206,12 +209,13 @@ export default function UserScreen() {
 
       setWorkoutsCompleted(Number(totals?.workouts_completed ?? 0));
 
-      // 2) planned workouts = all workouts in active plans
+      // 2) planned workouts = all workouts in active plans (exclude archived)
       const { data: planned, error: plannedErr } = await supabase
         .from("plan_workouts")
         .select(
           `
           id,
+          is_archived,
           plans!inner(
             id,
             user_id,
@@ -220,7 +224,8 @@ export default function UserScreen() {
         `
         )
         .eq("plans.user_id", uid)
-        .eq("plans.is_completed", false);
+        .eq("plans.is_completed", false)
+        .eq("is_archived", false);
 
       if (plannedErr) throw plannedErr;
       setPlannedWorkouts(Array.isArray(planned) ? planned.length : 0);
@@ -240,33 +245,65 @@ export default function UserScreen() {
       setAchievementsTotal(totalCount ?? 0);
       setAchievementsUnlocked(unlockedCount ?? 0);
 
-      // 4) recent completed plans
-      const { data: plansData, error: plansErr } = await supabase
-        .from("plans")
-        .select("id, title, updated_at")
-        .eq("user_id", uid)
-        .eq("is_completed", true)
-        .order("updated_at", { ascending: false })
-        .limit(5);
+      // 4) recent plans: show active (if any) + last completed (up to 3)
+      const [
+        { data: activePlan, error: activeErr },
+        { data: completedPlans, error: completedErr },
+      ] = await Promise.all([
+        supabase
+          .from("plans")
+          .select("id, title, start_date, end_date")
+          .eq("user_id", uid)
+          .eq("is_completed", false)
+          .order("start_date", { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+        // fetch 4 completed so we can show 3 and decide if "View all" should appear
+        supabase
+          .from("plans")
+          .select("id, title, completed_at")
+          .eq("user_id", uid)
+          .eq("is_completed", true)
+          .order("completed_at", { ascending: false })
+          .limit(4),
+      ]);
 
-      if (plansErr) throw plansErr;
+      if (activeErr) throw activeErr;
+      if (completedErr) throw completedErr;
 
-      if (Array.isArray(plansData) && plansData.length > 0) {
-        const rows: PlanRowType[] = plansData.map((p) => ({
+      const completedArr = Array.isArray(completedPlans) ? completedPlans : [];
+      setHasMorePlans(completedArr.length > 3);
+
+      const rows: PlanRowType[] = [];
+
+      // active plan first (if exists)
+      if (activePlan?.id) {
+        rows.push({
+          id: activePlan.id,
+          title: activePlan.title ?? "Active plan",
+          subtitle: `Active • Ends ${formatShortDate(activePlan.end_date)}`,
+          status: "active",
+        });
+      }
+
+      // then up to 3 completed plans
+      rows.push(
+        ...completedArr.slice(0, 3).map((p: any) => ({
           id: p.id,
           title: p.title ?? "Plan",
-          subtitle: `Completed • Last active: ${formatShortDate(p.updated_at)}`,
-        }));
-        setPlans(rows);
-      } else {
-        setPlans([]);
-      }
+          subtitle: `Completed • ${formatShortDate(p.completed_at)}`,
+          status: "completed" as const,
+        }))
+      );
+
+      setRecentPlans(rows);
     } catch (e) {
       console.error("fetchTotals error", e);
       setPlannedWorkouts(0);
       setAchievementsTotal(0);
       setAchievementsUnlocked(0);
-      setPlans([]);
+      setRecentPlans([]);
+      setHasMorePlans(false);
     }
   }
 
@@ -642,29 +679,74 @@ export default function UserScreen() {
               {/* --- divider before plan history --- */}
               <View style={styles.activityDivider} />
 
-              {/* Plan history */}
               <Text style={styles.subSectionHeading}>Recent plans</Text>
-              {plans.length === 0 ? (
+
+              {recentPlans.length === 0 ? (
                 <Text style={styles.subtle}>
                   No plans have been completed yet.
                 </Text>
               ) : (
                 <View style={{ marginTop: 4 }}>
-                  {plans.slice(0, 3).map((p) => (
+                  {recentPlans.map((p) => (
                     <Pressable
                       key={p.id}
                       style={styles.planRow}
-                      onPress={() => Alert.alert(p.title)}
+                      onPress={() =>
+                        router.push(
+                          p.status === "active"
+                            ? {
+                                pathname: "/features/plans/history/view",
+                                params: { planId: p.id },
+                              }
+                            : {
+                                pathname: "/features/plans/history/view",
+                                params: { planId: p.id },
+                              }
+                        )
+                      }
                     >
                       <View style={{ flex: 1 }}>
                         <Text style={styles.planTitle}>{p.title}</Text>
                         <Text style={styles.planSubtitle}>{p.subtitle}</Text>
                       </View>
-                      <View style={styles.planStatusPill}>
-                        <Text style={styles.planStatusText}>Completed</Text>
+
+                      <View
+                        style={[
+                          styles.planStatusPill,
+                          p.status === "active"
+                            ? styles.planStatusPillActive
+                            : null,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.planStatusText,
+                            p.status === "active"
+                              ? styles.planStatusTextActive
+                              : null,
+                          ]}
+                        >
+                          {p.status === "active" ? "Active" : "Completed"}
+                        </Text>
                       </View>
                     </Pressable>
                   ))}
+
+                  {hasMorePlans && (
+                    <Pressable
+                      style={[
+                        styles.smallButton,
+                        { backgroundColor: colors.primaryBg ?? colors.card },
+                      ]}
+                      onPress={() => router.push("/features/plans/history/all")}
+                    >
+                      <Text
+                        style={[styles.smallButtonText, { color: colors.text }]}
+                      >
+                        View all plans →
+                      </Text>
+                    </Pressable>
+                  )}
                 </View>
               )}
             </>
@@ -1088,6 +1170,12 @@ const makeStyles = (colors: any) =>
       fontSize: 12,
       fontWeight: "600",
       color: colors.subtle,
+    },
+    planStatusPillActive: {
+      backgroundColor: "rgba(59,130,246,0.12)", // blue tint
+    },
+    planStatusTextActive: {
+      color: colors.primary ?? "#3b82f6",
     },
   });
 

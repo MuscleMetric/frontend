@@ -94,7 +94,19 @@ export default function Home() {
   const [christmasOpen, setChristmasOpen] = useState(false);
   const [christmasName, setChristmasName] = useState<string | null>(null);
 
-  type Celebration = "birthday" | "christmas";
+  // Plan completed
+  const [planCompleteEventId, setPlanCompleteEventId] = useState<string | null>(
+    null
+  );
+  const [completedPlanId, setCompletedPlanId] = useState<string | null>(null);
+  const [completedPlanTitle, setCompletedPlanTitle] = useState<string | null>(
+    null
+  );
+  const [completedPlanNumber, setCompletedPlanNumber] = useState<number | null>(
+    null
+  );
+
+  type Celebration = "birthday" | "christmas" | "plan_completed";
 
   const [celebrationQueue, setCelebrationQueue] = useState<Celebration[]>([]);
   const [activeCelebration, setActiveCelebration] =
@@ -106,12 +118,143 @@ export default function Home() {
 
       // birthday always comes before christmas
       const next = [...q, type].sort((a, b) => {
-        const rank: Record<Celebration, number> = { birthday: 0, christmas: 1 };
+        const rank: Record<Celebration, number> = {
+          birthday: 0,
+          christmas: 1,
+          plan_completed: 2,
+        };
         return rank[a] - rank[b];
       });
 
       return next;
     });
+  }
+
+  function ordinal(n: number) {
+    const s = ["th", "st", "nd", "rd"];
+    const v = n % 100;
+    return `${n}${s[(v - 20) % 10] || s[v] || s[0]}`;
+  }
+
+  useEffect(() => {
+    if (!userId) return;
+
+    let cancelled = false;
+
+    async function checkPlanCompleted() {
+      try {
+        // 1) find unconsumed plan_completed event
+        const { data: evt, error: evtErr } = await supabase
+          .from("user_events")
+          .select("id, payload, created_at")
+          .eq("user_id", userId)
+          .eq("type", "plan_completed")
+          .is("consumed_at", null)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (cancelled) return;
+
+        if (evtErr) {
+          console.warn("plan_completed event fetch error:", evtErr.message);
+          return;
+        }
+
+        if (!evt?.id) return;
+
+        const planId = (evt.payload as any)?.plan_id as string | undefined;
+        if (!planId) return;
+
+        // 2) fetch plan details (title)
+        const { data: planRow, error: planErr } = await supabase
+          .from("plans")
+          .select("id, title, completed_at")
+          .eq("id", planId)
+          .eq("user_id", userId)
+          .maybeSingle();
+
+        if (cancelled) return;
+
+        if (planErr) {
+          console.warn("completed plan fetch error:", planErr.message);
+          return;
+        }
+
+        // 3) compute nth plan number = count of completed plans (including this one)
+        // If you ever allow "abandoned" states later, we’ll adjust.
+        const { count: completedCount, error: countErr } = await supabase
+          .from("plans")
+          .select("*", { count: "exact", head: true })
+          .eq("user_id", userId)
+          .eq("is_completed", true);
+
+        if (cancelled) return;
+
+        if (countErr) {
+          console.warn("completed plans count error:", countErr.message);
+        }
+
+        setPlanCompleteEventId(evt.id);
+        setCompletedPlanId(planId);
+        setCompletedPlanTitle(planRow?.title ?? "Your plan");
+        setCompletedPlanNumber(completedCount ?? null);
+
+        // 4) queue the celebration modal
+        enqueueCelebration("plan_completed");
+      } catch (e) {
+        console.warn("plan completed check failed:", e);
+      }
+    }
+
+    checkPlanCompleted();
+
+    const sub = AppState.addEventListener("change", (s) => {
+      if (s === "active") checkPlanCompleted();
+    });
+
+    return () => {
+      cancelled = true;
+      sub?.remove?.();
+    };
+  }, [userId]);
+
+  async function consumePlanCompleteEvent() {
+    if (!planCompleteEventId || !userId) return;
+    try {
+      await supabase
+        .from("user_events")
+        .update({ consumed_at: new Date().toISOString() })
+        .eq("id", planCompleteEventId)
+        .eq("user_id", userId);
+    } catch (e) {
+      console.warn("consume plan_complete event failed:", e);
+    } finally {
+      setPlanCompleteEventId(null);
+    }
+  }
+
+  async function onViewPlanHistory() {
+    if (!completedPlanId) {
+      closeCelebration();
+      return;
+    }
+
+    // consume first so it doesn't re-open if nav is slow
+    await consumePlanCompleteEvent();
+
+    closeCelebration();
+
+    // adjust route to your actual plan history route
+    router.push({
+      pathname: "/features/plans/history/view",
+      params: { planId: completedPlanId },
+    });
+  }
+
+  async function onDismissPlanComplete() {
+    await consumePlanCompleteEvent();
+    closeCelebration();
   }
 
   function startNextCelebration() {
@@ -1011,6 +1154,169 @@ export default function Home() {
                     }}
                   >
                     Let’s go
+                  </Text>
+                </Pressable>
+              </View>
+            </Pressable>
+          </Pressable>
+        </Modal>
+
+        <Modal
+          visible={activeCelebration === "plan_completed"}
+          transparent
+          animationType="fade"
+          onRequestClose={onDismissPlanComplete}
+        >
+          <Pressable
+            onPress={onDismissPlanComplete}
+            style={{
+              flex: 1,
+              backgroundColor: "rgba(0,0,0,0.38)",
+              justifyContent: "center",
+              alignItems: "center",
+              padding: 18,
+            }}
+          >
+            {/* You can reuse confetti or make a new one later */}
+            <BirthdayConfetti active={activeCelebration === "plan_completed"} />
+
+            <Pressable
+              onPress={() => {}}
+              style={{
+                width: "100%",
+                maxWidth: 460,
+                backgroundColor: colors.card,
+                borderRadius: 22,
+                borderWidth: StyleSheet.hairlineWidth,
+                borderColor: colors.border,
+                padding: 20,
+                shadowColor: "#000",
+                shadowOpacity: 0.12,
+                shadowRadius: 18,
+                shadowOffset: { width: 0, height: 10 },
+                elevation: 10,
+              }}
+            >
+              <View style={{ alignItems: "center", gap: 16 }}>
+                <Text
+                  style={{
+                    color: colors.muted,
+                    fontWeight: "800",
+                    textAlign: "center",
+                  }}
+                >
+                  Achievement unlocked
+                </Text>
+
+                <Text
+                  style={{
+                    fontSize: 26,
+                    fontWeight: "900",
+                    color: colors.text,
+                    textAlign: "center",
+                  }}
+                >
+                  Well done 💪
+                </Text>
+
+                <Text
+                  style={{
+                    color: colors.text,
+                    fontWeight: "800",
+                    lineHeight: 24,
+                    textAlign: "center",
+                  }}
+                >
+                  You’ve completed{" "}
+                  <Text style={{ fontWeight: "900" }}>
+                    {completedPlanNumber
+                      ? `your ${ordinal(completedPlanNumber)} plan`
+                      : "a plan"}
+                  </Text>{" "}
+                  on Muscle Metrics.
+                </Text>
+
+                <Text
+                  style={{
+                    color: colors.muted,
+                    fontWeight: "700",
+                    lineHeight: 22,
+                    textAlign: "center",
+                  }}
+                >
+                  Tap below to see your accomplishments while completing{" "}
+                  <Text style={{ fontWeight: "900", color: colors.text }}>
+                    {completedPlanTitle ?? "your plan"}
+                  </Text>
+                  .
+                </Text>
+
+                {/* Signature */}
+                <View style={{ alignItems: "center", gap: 6 }}>
+                  <Text
+                    style={{
+                      color: colors.muted,
+                      fontWeight: "800",
+                      textAlign: "center",
+                    }}
+                  >
+                    Thank you,
+                  </Text>
+
+                  <Text
+                    style={{
+                      color: colors.text,
+                      fontWeight: "900",
+                      textAlign: "center",
+                    }}
+                  >
+                    The Muscle Metrics Team
+                  </Text>
+
+                  <Image
+                    source={logo}
+                    style={{
+                      width: 46,
+                      height: 46,
+                      marginTop: 6,
+                      opacity: 0.95,
+                    }}
+                    resizeMode="contain"
+                  />
+                </View>
+
+                {/* CTA */}
+                <Pressable
+                  onPress={onViewPlanHistory}
+                  style={{
+                    alignSelf: "stretch",
+                    marginTop: 8,
+                    paddingVertical: 13,
+                    borderRadius: 14,
+                    alignItems: "center",
+                    backgroundColor: "rgba(59,130,246,0.12)",
+                    borderWidth: StyleSheet.hairlineWidth,
+                    borderColor: "rgba(59,130,246,0.25)",
+                  }}
+                >
+                  <Text
+                    style={{
+                      color: colors.primary,
+                      fontWeight: "900",
+                      fontSize: 16,
+                    }}
+                  >
+                    View plan summary
+                  </Text>
+                </Pressable>
+
+                {/* Secondary */}
+                <Pressable
+                  onPress={onDismissPlanComplete}
+                  style={{ paddingVertical: 6 }}
+                >
+                  <Text style={{ color: colors.muted, fontWeight: "800" }}>
+                    Not now
                   </Text>
                 </Pressable>
               </View>

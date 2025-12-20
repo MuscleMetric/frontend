@@ -6,7 +6,7 @@ export default function PlansLayout() {
   return (
     <Stack
       screenOptions={{
-        headerShown: false,   // 🔥 No headers anywhere in plan creation
+        headerShown: false, // 🔥 No headers anywhere in plan creation
         gestureEnabled: true,
       }}
     >
@@ -15,6 +15,8 @@ export default function PlansLayout() {
       <Stack.Screen name="create/goals" />
       <Stack.Screen name="create/review" />
       <Stack.Screen name="edit" />
+      <Stack.Screen name="history/view" />
+      <Stack.Screen name="history/all" />
     </Stack>
   );
 }
