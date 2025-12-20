@@ -3,8 +3,15 @@ import React, { useMemo } from "react";
 import { Tabs } from "expo-router";
 import { View, Text, StyleSheet } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { House, LineChart, Dumbbell, User2 } from "lucide-react-native";
+import {
+  House,
+  LineChart,
+  Dumbbell,
+  User2,
+  BarChart3,
+} from "lucide-react-native";
 import { useAppTheme } from "../../lib/useAppTheme";
+import { useAuth } from "../../lib/useAuth"; // 👈 you already have this
 
 function CustomHeader({ title }: { title: string }) {
   const insets = useSafeAreaInsets();
@@ -23,6 +30,9 @@ function CustomHeader({ title }: { title: string }) {
 export default function TabsLayout() {
   const { colors } = useAppTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
+  const { profile } = useAuth(); // 👈 must include role
+
+  const isAdmin = profile?.role === "admin";
 
   return (
     <Tabs
@@ -44,7 +54,7 @@ export default function TabsLayout() {
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.muted,
         tabBarLabelStyle: { fontSize: 12, fontWeight: "600" },
-        sceneStyle: { backgroundColor: colors.background }, // screen bg
+        sceneStyle: { backgroundColor: colors.background },
       }}
     >
       <Tabs.Screen
@@ -55,6 +65,7 @@ export default function TabsLayout() {
           tabBarIcon: ({ color, size }) => <House color={color} size={size} />,
         }}
       />
+
       <Tabs.Screen
         name="progress"
         options={{
@@ -65,6 +76,7 @@ export default function TabsLayout() {
           ),
         }}
       />
+
       <Tabs.Screen
         name="workout"
         options={{
@@ -75,6 +87,20 @@ export default function TabsLayout() {
           ),
         }}
       />
+
+      {isAdmin && (
+        <Tabs.Screen
+          name="admin"
+          options={{
+            headerTitle: "Admin Dashboard",
+            tabBarLabel: "Admin",
+            tabBarIcon: ({ color, size }) => (
+              <BarChart3 color={color} size={size} />
+            ),
+          }}
+        />
+      )}
+
       <Tabs.Screen
         name="user"
         options={{
@@ -90,7 +116,7 @@ export default function TabsLayout() {
 const makeStyles = (colors: any) =>
   StyleSheet.create({
     headerContainer: {
-      backgroundColor: colors.card, // covers notch area
+      backgroundColor: colors.card,
       borderBottomWidth: StyleSheet.hairlineWidth,
       borderBottomColor: colors.border,
     },
