@@ -8,9 +8,120 @@ import {
   TextInput,
   ActivityIndicator,
   FlatList,
+  StyleSheet,
+  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { supabase } from "../../lib/supabase";
+import CreateExerciseModal, { CreatedExercise } from "./CreateExerciseModal";
+
+const capFirst = (v: string) =>
+  v ? v.charAt(0).toUpperCase() + v.slice(1) : v;
+
+const local = (colors: any) =>
+  StyleSheet.create({
+    filterWrap: {
+      marginTop: 8,
+      paddingHorizontal: 16,
+    },
+
+    // ✅ centered pills row
+    filterBar: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 8,
+      flexWrap: "wrap",
+    },
+
+    filterPill: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: 999,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+    },
+    filterPillLabel: {
+      fontSize: 13,
+      color: colors.text,
+      fontWeight: "600",
+    },
+    filterPillCount: {
+      marginLeft: 6,
+      fontSize: 12,
+      color: colors.subtle,
+    },
+
+    // centered summary
+    filterSummaryText: {
+      marginTop: 6,
+      fontSize: 12,
+      color: colors.subtle,
+      textAlign: "center",
+    },
+
+    chipSection: {
+      marginTop: 10,
+      paddingHorizontal: 16,
+    },
+
+    // ✅ center chips horizontally
+    chipGrid: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      justifyContent: "center",
+      gap: 8,
+    },
+
+    chip: {
+      borderRadius: 999,
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+    },
+    chipLabel: {
+      fontSize: 13,
+      color: colors.text,
+    },
+
+    // ✅ CTA block below chips and before list
+    ctaWrap: {
+      marginTop: 10,
+      paddingHorizontal: 16,
+      alignItems: "center",
+    },
+    ctaTitle: {
+      fontSize: 13,
+      fontWeight: "800",
+      color: colors.text,
+      textAlign: "center",
+    },
+    ctaSub: {
+      marginTop: 4,
+      fontSize: 12,
+      color: colors.subtle,
+      textAlign: "center",
+    },
+    ctaBtn: {
+      marginTop: 10,
+      borderRadius: 999,
+      borderWidth: 1,
+      borderColor: colors.primary,
+      paddingHorizontal: 14,
+      paddingVertical: 8,
+      backgroundColor: colors.primaryBg ?? colors.primary,
+    },
+    ctaBtnText: {
+      color: colors.primaryText ?? "#fff",
+      fontWeight: "900",
+      fontSize: 13,
+    },
+  });
 
 export type ExerciseOption = {
   id: string;
@@ -130,6 +241,15 @@ export function ExercisePickerModal({
   const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
   const [favoritesOnly, setFavoritesOnly] = useState(false);
 
+  const [createVisible, setCreateVisible] = useState(false);
+
+  // so the new exercise appears immediately even before parent refetches
+  const [createdOptions, setCreatedOptions] = useState<ExerciseOption[]>([]);
+
+  useEffect(() => {
+    if (!visible) setCreatedOptions([]);
+  }, [visible]);
+
   const alreadyInSet = useMemo(
     () => new Set(alreadyInWorkoutIds),
     [alreadyInWorkoutIds]
@@ -182,6 +302,8 @@ export function ExercisePickerModal({
       alive = false;
     };
   }, [visible, userId]);
+
+  const L = useMemo(() => local(colors), [colors]);
 
   const toggleId = (id: string) => {
     setSelectedIds((prev) => {
@@ -238,12 +360,20 @@ export function ExercisePickerModal({
     [userId, favoriteIds]
   );
 
+  const mergedExerciseOptions = useMemo(() => {
+    // de-dupe by id (created options win)
+    const map = new Map<string, ExerciseOption>();
+    for (const ex of exerciseOptions) map.set(ex.id, ex);
+    for (const ex of createdOptions) map.set(ex.id, ex);
+    return Array.from(map.values());
+  }, [exerciseOptions, createdOptions]);
+
   // Local filtering: search + equipment + favourites-only
   // (muscle filter assumed to be handled upstream in the parent query)
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
 
-    const out = exerciseOptions.filter((ex) => {
+    const out = mergedExerciseOptions.filter((ex) => {
       if (favoritesOnly && !favoriteIds.has(ex.id)) return false;
 
       const matchesSearch =
@@ -360,12 +490,12 @@ export function ExercisePickerModal({
         />
 
         {/* Filter bar */}
-        <View style={{ marginTop: 8 }}>
-          <View style={s.filterBar}>
+        <View style={L.filterWrap}>
+          <View style={L.filterBar}>
             <Pressable
               onPress={() => setMuscleFilterOpen(!muscleFilterOpen)}
               style={[
-                s.filterPill,
+                L.filterPill,
                 muscleFilterOpen && {
                   backgroundColor: colors.primaryBg ?? colors.primary,
                   borderColor: colors.primary,
@@ -375,16 +505,17 @@ export function ExercisePickerModal({
             >
               <Text
                 style={[
-                  s.filterPillLabel,
+                  L.filterPillLabel,
                   muscleFilterOpen && { color: colors.primaryText ?? "#fff" },
                 ]}
               >
                 Muscles
               </Text>
+
               {!!selectedMuscleGroups.length && (
                 <Text
                   style={[
-                    s.filterPillCount,
+                    L.filterPillCount,
                     muscleFilterOpen && { color: colors.primaryText ?? "#fff" },
                   ]}
                 >
@@ -396,7 +527,7 @@ export function ExercisePickerModal({
             <Pressable
               onPress={() => setEquipmentFilterOpen(!equipmentFilterOpen)}
               style={[
-                s.filterPill,
+                L.filterPill,
                 equipmentFilterOpen && {
                   backgroundColor: colors.primaryBg ?? colors.primary,
                   borderColor: colors.primary,
@@ -406,7 +537,7 @@ export function ExercisePickerModal({
             >
               <Text
                 style={[
-                  s.filterPillLabel,
+                  L.filterPillLabel,
                   equipmentFilterOpen && {
                     color: colors.primaryText ?? "#fff",
                   },
@@ -414,10 +545,11 @@ export function ExercisePickerModal({
               >
                 Equipment
               </Text>
+
               {!!selectedEquipment.length && (
                 <Text
                   style={[
-                    s.filterPillCount,
+                    L.filterPillCount,
                     equipmentFilterOpen && {
                       color: colors.primaryText ?? "#fff",
                     },
@@ -434,7 +566,7 @@ export function ExercisePickerModal({
                 setFavoritesOnly((v) => !v);
               }}
               style={[
-                s.filterPill,
+                L.filterPill,
                 favoritesOnly && {
                   backgroundColor: colors.primaryBg ?? colors.primary,
                   borderColor: colors.primary,
@@ -445,16 +577,17 @@ export function ExercisePickerModal({
             >
               <Text
                 style={[
-                  s.filterPillLabel,
+                  L.filterPillLabel,
                   favoritesOnly && { color: colors.primaryText ?? "#fff" },
                 ]}
               >
                 Favourites
               </Text>
+
               {favLoading ? (
                 <Text
                   style={[
-                    s.filterPillCount,
+                    L.filterPillCount,
                     favoritesOnly && { color: colors.primaryText ?? "#fff" },
                   ]}
                 >
@@ -464,7 +597,7 @@ export function ExercisePickerModal({
             </Pressable>
           </View>
 
-          <Text style={s.filterSummaryText}>
+          <Text style={L.filterSummaryText}>
             {selectedMuscleGroups.length
               ? `${selectedMuscleGroups.length} muscle group${
                   selectedMuscleGroups.length === 1 ? "" : "s"
@@ -482,8 +615,8 @@ export function ExercisePickerModal({
         </View>
 
         {muscleFilterOpen && (
-          <View style={s.chipSection}>
-            <View style={s.chipGrid}>
+          <View style={L.chipSection}>
+            <View style={L.chipGrid}>
               {muscleGroups.map((g) => {
                 const active = selectedMuscleGroups.includes(g.id);
                 return (
@@ -491,7 +624,7 @@ export function ExercisePickerModal({
                     key={g.id}
                     onPress={() => toggleMuscleGroup(g.id)}
                     style={[
-                      s.chip,
+                      L.chip,
                       active && {
                         backgroundColor: colors.primaryBg ?? colors.primary,
                         borderColor: colors.primary,
@@ -500,7 +633,7 @@ export function ExercisePickerModal({
                   >
                     <Text
                       style={[
-                        s.chipLabel,
+                        L.chipLabel,
                         active && {
                           color: colors.primaryText ?? "#fff",
                           fontWeight: "700",
@@ -517,8 +650,8 @@ export function ExercisePickerModal({
         )}
 
         {equipmentFilterOpen && (
-          <View style={s.chipSection}>
-            <View style={s.chipGrid}>
+          <View style={L.chipSection}>
+            <View style={L.chipGrid}>
               {equipmentOptions.map((eq) => {
                 const active = selectedEquipment.includes(eq);
                 return (
@@ -526,7 +659,7 @@ export function ExercisePickerModal({
                     key={eq}
                     onPress={() => toggleEquipment(eq)}
                     style={[
-                      s.chip,
+                      L.chip,
                       active && {
                         backgroundColor: colors.primaryBg ?? colors.primary,
                         borderColor: colors.primary,
@@ -535,14 +668,14 @@ export function ExercisePickerModal({
                   >
                     <Text
                       style={[
-                        s.chipLabel,
+                        L.chipLabel,
                         active && {
                           color: colors.primaryText ?? "#fff",
                           fontWeight: "700",
                         },
                       ]}
                     >
-                      {eq}
+                      {capFirst(eq)}
                     </Text>
                   </Pressable>
                 );
@@ -550,6 +683,29 @@ export function ExercisePickerModal({
             </View>
           </View>
         )}
+
+        {/* ✅ CTA below chips & above list */}
+        <View style={L.ctaWrap}>
+          <Text style={L.ctaTitle}>Can’t find what you need?</Text>
+          <Text style={L.ctaSub}>
+            Create a custom exercise and it’ll show up in your list.
+          </Text>
+
+          <Pressable
+            onPress={() => {
+              if (!userId)
+                return Alert.alert(
+                  "Please log in",
+                  "You need to be logged in to create exercises."
+                );
+              setCreateVisible(true);
+            }}
+            style={L.ctaBtn}
+            hitSlop={10}
+          >
+            <Text style={L.ctaBtnText}>＋ Create exercise</Text>
+          </Pressable>
+        </View>
 
         {/* List */}
         {loading ? (
@@ -616,7 +772,7 @@ export function ExercisePickerModal({
                     </Text>
                     <Text style={s.modalExerciseMeta}>
                       {item.type || ""}
-                      {item.equipment ? ` • ${item.equipment}` : ""}
+                      {item.equipment ? ` • ${capFirst(item.equipment)}` : ""}
                       {` • used ${used}x`}
                     </Text>
 
@@ -754,6 +910,37 @@ export function ExercisePickerModal({
               : "Select exercise"}
           </Text>
         </Pressable>
+        <CreateExerciseModal
+          visible={createVisible}
+          onClose={() => setCreateVisible(false)}
+          userId={userId ?? ""}
+          colors={colors}
+          safeAreaTop={safeAreaTop}
+          equipmentOptions={equipmentOptions}
+          onCreated={(ex: CreatedExercise) => {
+            // 1) close create modal
+            setCreateVisible(false);
+
+            // 2) inject into list instantly
+            const opt: ExerciseOption = {
+              id: ex.id,
+              name: ex.name,
+              type: ex.type,
+              equipment: ex.equipment,
+            };
+            setCreatedOptions((prev) => [opt, ...prev]);
+
+            // 3) auto-select it
+            setSelectedIds((prev) => {
+              if (prev.includes(ex.id)) return prev;
+              if (!multiSelect) return [ex.id];
+              return [...prev, ex.id];
+            });
+
+            // 4) make it easy to see (optional)
+            onChangeSearch(ex.name ?? "");
+          }}
+        />
       </SafeAreaView>
     </Modal>
   );

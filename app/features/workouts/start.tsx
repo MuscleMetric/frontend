@@ -553,6 +553,7 @@ export default function StartWorkoutScreen() {
               equipment
             `
           )
+          .or(`is_public.eq.true,user_id.eq.${userId}`)
           .order("name", { ascending: true })
           .limit(600);
 
