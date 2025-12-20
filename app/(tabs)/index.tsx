@@ -10,6 +10,8 @@ import {
   Platform,
   PermissionsAndroid,
   AppState,
+  Modal,
+  Image,
 } from "react-native";
 import { useAuth } from "../../lib/useAuth";
 import { useAppTheme } from "../../lib/useAppTheme";
@@ -19,14 +21,15 @@ import { GreetingHeader } from "../../components/cards/GreetingHeader";
 import { StatsRings } from "../../components/cards/StatsRings";
 import { TopMuscleCardContent } from "../../components/cards/TopMuscleCard";
 import { PersonalBestCardContent } from "../../components/cards/PersonalBestCard";
-import { GoalProgressCard } from "../../components/cards/GoalProgressCard";
 import { NextWorkoutSection } from "../../components/cards/NextWorkoutSection";
-import { Sparkline } from "../../components/ui/Sparkline";
 import { useRouter } from "expo-router";
-import { QUOTES, quoteOfTheDay } from "../../lib/quotes";
+import { quoteOfTheDay } from "../../lib/quotes";
 import Svg, { Polyline, Line } from "react-native-svg";
 import { RingProgress } from "../features/home/RingProgress";
-import { Pedometer } from "expo-sensors";
+import { BirthdayConfetti } from "../_components/Confetti/BirthdayConfetti";
+import { ChristmasConfetti } from "../_components/Confetti/ChristmasConfetti";
+const logo = require("../../assets/icon.png");
+
 import {
   registerBackgroundFetch,
   onAppActiveSync,
@@ -82,6 +85,59 @@ export default function Home() {
   const router = useRouter();
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
+  // Birthday
+  const [birthdayOpen, setBirthdayOpen] = useState(false);
+  const [birthdayAge, setBirthdayAge] = useState<number | null>(null);
+  const [birthdayName, setBirthdayName] = useState<string | null>(null);
+
+  // Christmas
+  const [christmasOpen, setChristmasOpen] = useState(false);
+  const [christmasName, setChristmasName] = useState<string | null>(null);
+
+  type Celebration = "birthday" | "christmas";
+
+  const [celebrationQueue, setCelebrationQueue] = useState<Celebration[]>([]);
+  const [activeCelebration, setActiveCelebration] =
+    useState<Celebration | null>(null);
+
+  function enqueueCelebration(type: Celebration) {
+    setCelebrationQueue((q) => {
+      if (q.includes(type)) return q;
+
+      // birthday always comes before christmas
+      const next = [...q, type].sort((a, b) => {
+        const rank: Record<Celebration, number> = { birthday: 0, christmas: 1 };
+        return rank[a] - rank[b];
+      });
+
+      return next;
+    });
+  }
+
+  function startNextCelebration() {
+    setCelebrationQueue((q) => {
+      if (q.length === 0) {
+        setActiveCelebration(null);
+        return q;
+      }
+      const [next, ...rest] = q;
+      setActiveCelebration(next);
+      return rest;
+    });
+  }
+
+  function closeCelebration() {
+    setActiveCelebration(null);
+    // slight tick so the next modal doesn’t fight the fade animation
+    setTimeout(() => startNextCelebration(), 200);
+  }
+
+  useEffect(() => {
+    if (!activeCelebration && celebrationQueue.length > 0) {
+      startNextCelebration();
+    }
+  }, [celebrationQueue, activeCelebration]);
+
   // NEW: use plan goals hook
   const { plan, goals } = usePlanGoals(userId);
 
@@ -114,6 +170,76 @@ export default function Home() {
     steps7,
     topMuscle,
   } = useWeeklyHomeData(userId);
+
+  useEffect(() => {
+    if (!userId) return;
+
+    let cancelled = false;
+
+    async function checkBirthday() {
+      try {
+        const { data, error } = await supabase.rpc("birthday_check_and_mark");
+        if (cancelled) return;
+        if (error) {
+          console.warn("birthday_check_and_mark error:", error.message);
+          return;
+        }
+
+        if (data?.shouldShow) {
+          setBirthdayAge(typeof data.age === "number" ? data.age : null);
+          setBirthdayName(typeof data.name === "string" ? data.name : null);
+          enqueueCelebration("birthday");
+        }
+      } catch (e) {
+        console.warn("birthday check failed:", e);
+      }
+    }
+
+    // Run once on screen mount
+    checkBirthday();
+
+    // Optional: also run when app comes to foreground
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") checkBirthday();
+    });
+
+    return () => {
+      cancelled = true;
+      sub?.remove?.();
+    };
+  }, [userId]);
+
+  useEffect(() => {
+    if (!userId) return;
+
+    let cancelled = false;
+
+    async function checkChristmas() {
+      const { data, error } = await supabase.rpc("christmas_check_and_mark");
+      if (cancelled) return;
+
+      if (error) {
+        console.warn("christmas_check_and_mark:", error.message);
+        return;
+      }
+
+      if (data?.shouldShow) {
+        setChristmasName(typeof data.name === "string" ? data.name : null);
+        enqueueCelebration("christmas");
+      }
+    }
+
+    checkChristmas();
+
+    const sub = AppState.addEventListener("change", (s) => {
+      if (s === "active") checkChristmas();
+    });
+
+    return () => {
+      cancelled = true;
+      sub?.remove?.();
+    };
+  }, [userId]);
 
   const todayKey = new Date().toISOString().slice(0, 10);
   const seed = `${session?.user?.id ?? "anon"}|${todayKey}`;
@@ -617,6 +743,280 @@ export default function Home() {
             })
           }
         />
+
+        <Modal
+          visible={activeCelebration === "birthday"}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setBirthdayOpen(false)}
+        >
+          <Pressable
+            onPress={() => setBirthdayOpen(false)}
+            style={{
+              flex: 1,
+              backgroundColor: "rgba(0,0,0,0.38)",
+              justifyContent: "center",
+              alignItems: "center",
+              padding: 18,
+            }}
+          >
+            {/* Confetti behind the card */}
+            <BirthdayConfetti active={activeCelebration === "birthday"} />
+
+            {/* Card */}
+            <Pressable
+              onPress={() => {}}
+              style={{
+                width: "100%",
+                maxWidth: 460,
+                backgroundColor: colors.card,
+                borderRadius: 22,
+                borderWidth: StyleSheet.hairlineWidth,
+                borderColor: colors.border,
+                padding: 20,
+                shadowColor: "#000",
+                shadowOpacity: 0.12,
+                shadowRadius: 18,
+                shadowOffset: { width: 0, height: 10 },
+                elevation: 10,
+              }}
+            >
+              <View style={{ alignItems: "center", gap: 16 }}>
+                {/* To line */}
+                <Text
+                  style={{
+                    color: colors.muted,
+                    fontWeight: "800",
+                    textAlign: "center",
+                  }}
+                >
+                  To {birthdayName || "you"},
+                </Text>
+
+                {/* Title */}
+                <Text
+                  style={{
+                    fontSize: 24,
+                    fontWeight: "900",
+                    color: colors.text,
+                    textAlign: "center",
+                  }}
+                >
+                  Happy Birthday 🎉
+                </Text>
+
+                {/* Body */}
+                <Text
+                  style={{
+                    color: colors.text,
+                    fontWeight: "700",
+                    lineHeight: 24,
+                    textAlign: "center",
+                  }}
+                >
+                  We hope you have the best day and year. We wish you all the
+                  best.
+                </Text>
+
+                {/* Age line */}
+                {birthdayAge !== null && (
+                  <Text
+                    style={{
+                      color: colors.muted,
+                      fontWeight: "800",
+                      textAlign: "center",
+                    }}
+                  >
+                    Hope {birthdayAge} is your strongest year yet.
+                  </Text>
+                )}
+
+                {/* Sign-off */}
+                <View style={{ alignItems: "center", gap: 6 }}>
+                  <Text
+                    style={{
+                      color: colors.muted,
+                      fontWeight: "800",
+                      textAlign: "center",
+                    }}
+                  >
+                    Best Wishes,
+                  </Text>
+
+                  <Text
+                    style={{
+                      color: colors.text,
+                      fontWeight: "900",
+                      textAlign: "center",
+                    }}
+                  >
+                    The Muscle Metrics Team
+                  </Text>
+
+                  {/* Logo under signature */}
+                  <Image
+                    source={logo}
+                    style={{
+                      width: 46,
+                      height: 46,
+                      marginTop: 6,
+                      opacity: 0.95,
+                    }}
+                    resizeMode="contain"
+                  />
+                </View>
+
+                {/* CTA */}
+                <Pressable
+                  onPress={closeCelebration}
+                  style={{
+                    alignSelf: "stretch",
+                    marginTop: 8,
+                    paddingVertical: 13,
+                    borderRadius: 14,
+                    alignItems: "center",
+                    backgroundColor: "rgba(59,130,246,0.12)",
+                    borderWidth: StyleSheet.hairlineWidth,
+                    borderColor: "rgba(59,130,246,0.25)",
+                  }}
+                >
+                  <Text
+                    style={{
+                      color: colors.primary,
+                      fontWeight: "900",
+                      fontSize: 16,
+                    }}
+                  >
+                    Let’s go
+                  </Text>
+                </Pressable>
+              </View>
+            </Pressable>
+          </Pressable>
+        </Modal>
+
+        <Modal
+          visible={activeCelebration === "christmas"}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setChristmasOpen(false)}
+        >
+          <Pressable
+            onPress={() => setChristmasOpen(false)}
+            style={{
+              flex: 1,
+              backgroundColor: "rgba(0,0,0,0.38)",
+              justifyContent: "center",
+              alignItems: "center",
+              padding: 18,
+            }}
+          >
+            <ChristmasConfetti active={activeCelebration === "christmas"} />
+
+            <Pressable
+              onPress={() => {}}
+              style={{
+                width: "100%",
+                maxWidth: 460,
+                backgroundColor: colors.card,
+                borderRadius: 22,
+                borderWidth: StyleSheet.hairlineWidth,
+                borderColor: colors.border,
+                padding: 20,
+                shadowColor: "#000",
+                shadowOpacity: 0.12,
+                shadowRadius: 18,
+                shadowOffset: { width: 0, height: 10 },
+                elevation: 10,
+              }}
+            >
+              <View style={{ alignItems: "center", gap: 16 }}>
+                <Text
+                  style={{
+                    color: colors.muted,
+                    fontWeight: "800",
+                    textAlign: "center",
+                  }}
+                >
+                  To {christmasName || "you"},
+                </Text>
+
+                <Text
+                  style={{
+                    fontSize: 24,
+                    fontWeight: "900",
+                    color: colors.text,
+                    textAlign: "center",
+                  }}
+                >
+                  Merry Christmas 🎄
+                </Text>
+
+                <Text
+                  style={{
+                    color: colors.text,
+                    fontWeight: "700",
+                    lineHeight: 24,
+                    textAlign: "center",
+                  }}
+                >
+                  Wishing you a peaceful day, great food, and a strong finish to
+                  the year.
+                </Text>
+
+                <Text
+                  style={{
+                    color: colors.muted,
+                    fontWeight: "800",
+                    textAlign: "center",
+                  }}
+                >
+                  Best Wishes,
+                </Text>
+
+                <Text
+                  style={{
+                    color: colors.text,
+                    fontWeight: "900",
+                    textAlign: "center",
+                  }}
+                >
+                  The Muscle Metrics Team
+                </Text>
+
+                <Image
+                  source={logo}
+                  style={{ width: 46, height: 46, marginTop: 6 }}
+                  resizeMode="contain"
+                />
+
+                <Pressable
+                  onPress={closeCelebration}
+                  style={{
+                    alignSelf: "stretch",
+                    marginTop: 8,
+                    paddingVertical: 13,
+                    borderRadius: 14,
+                    alignItems: "center",
+                    backgroundColor: "rgba(34,197,94,0.12)", // festive green tint
+                    borderWidth: StyleSheet.hairlineWidth,
+                    borderColor: "rgba(34,197,94,0.25)",
+                  }}
+                >
+                  <Text
+                    style={{
+                      color: "#16a34a",
+                      fontWeight: "900",
+                      fontSize: 16,
+                    }}
+                  >
+                    Let’s go
+                  </Text>
+                </Pressable>
+              </View>
+            </Pressable>
+          </Pressable>
+        </Modal>
       </ScrollView>
     </SafeAreaView>
   );
