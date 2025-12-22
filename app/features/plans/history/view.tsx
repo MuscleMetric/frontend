@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useRef } from "react";
 import {
   View,
   Text,
@@ -6,6 +6,7 @@ import {
   ActivityIndicator,
   ScrollView,
   Pressable,
+  Animated,
 } from "react-native";
 import { useLocalSearchParams, router } from "expo-router";
 import { supabase } from "../../../../lib/supabase";
@@ -41,6 +42,7 @@ type GoalRow = {
 
 type SessionRow = {
   id: string;
+  workout_id: string | null;
   completed_at: string;
   duration_seconds: number | null;
   workout_exercise_history: Array<{
@@ -80,9 +82,29 @@ type Stats = {
 
   weeklySessions: { week: string; count: number }[];
 
+  // Best set overall
   bestSet: BestSet | null;
-  topExercise: { exerciseId: string; name: string; volume: number } | null;
-  mostImproved: { exerciseId: string; name: string; delta: number } | null;
+
+  // Top exercise by SETS (not volume)
+  topExerciseBySets: { exerciseId: string; name: string; sets: number } | null;
+
+  // Strength improvement details (first -> best + %)
+  mostImproved: {
+    exerciseId: string;
+    name: string;
+    from: { weight: number; reps: number; completed_at: string } | null;
+    to: { weight: number; reps: number; completed_at: string } | null;
+    pct: number; // 0..1
+  } | null;
+
+  // Consistency most/least completed workout in plan
+  workoutCounts: {
+    most: { workoutId: string; title: string; count: number } | null;
+    least: { workoutId: string; title: string; count: number } | null;
+  };
+
+  // Biggest volume session
+  biggestSession: { workoutId: string; title: string; volume: number } | null;
 
   goalSummaries: Array<{
     id: string;
@@ -166,15 +188,17 @@ function weeksCeilInclusive(aIso: string, bIso: string) {
 }
 
 function MiniBarChart({
+  width,
   values,
   height = 44,
   fill,
 }: {
+  width: number;
   values: number[];
   height?: number;
   fill: string;
 }) {
-  const w = 220;
+  const w = width;
   const gap = 4;
   const n = Math.max(values.length, 1);
   const barW = Math.max(6, Math.floor((w - gap * (n - 1)) / n));
@@ -247,9 +271,12 @@ export default function PlanHistoryViewScreen() {
   const [plan, setPlan] = useState<PlanRow | null>(null);
 
   const [planWorkouts, setPlanWorkouts] = useState<PlanWorkoutRow[]>([]);
-  const [sessions, setSessions] = useState<SessionRow[]>([]);
+  const [planSessions, setPlanSessions] = useState<SessionRow[]>([]);
+  const [timeSessions, setTimeSessions] = useState<SessionRow[]>([]);
   const [goals, setGoals] = useState<GoalRow[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
+
+  const [chartWidth, setChartWidth] = useState(0);
 
   // extra for active view
   const [workoutsWithExercises, setWorkoutsWithExercises] = useState<
@@ -258,6 +285,14 @@ export default function PlanHistoryViewScreen() {
 
   // CTA rule: only show “Start a new plan” if user has NO active plan now
   const [hasActivePlanNow, setHasActivePlanNow] = useState<boolean>(false);
+
+  const ctaScale = useRef(new Animated.Value(1)).current;
+
+  const pressIn = () =>
+    Animated.spring(ctaScale, { toValue: 0.96, useNativeDriver: true }).start();
+
+  const pressOut = () =>
+    Animated.spring(ctaScale, { toValue: 1, useNativeDriver: true }).start();
 
   const isActivePlan = useMemo(() => {
     if (!plan) return false;
@@ -285,8 +320,8 @@ export default function PlanHistoryViewScreen() {
     > = {};
 
     // sessions are fetched ascending currently; easiest is iterate from end (most recent)
-    for (let i = sessions.length - 1; i >= 0; i--) {
-      const sess = sessions[i];
+    for (let i = timeSessions.length - 1; i >= 0; i--) {
+      const sess = timeSessions[i];
       for (const eh of sess.workout_exercise_history ?? []) {
         const exId = eh.exercise_id;
         if (out[exId]) continue; // already have the most recent occurrence
@@ -299,7 +334,7 @@ export default function PlanHistoryViewScreen() {
       }
     }
     return out;
-  }, [sessions]);
+  }, [timeSessions]);
 
   // For the active plan “where you’re at” goals section (simple summary)
   const activeGoalSummaries = useMemo(() => {
@@ -311,8 +346,8 @@ export default function PlanHistoryViewScreen() {
     const byExercise: Record<string, number> = {};
 
     // compute latest value per exercise based on most recent session (so it feels “current”)
-    for (let i = sessions.length - 1; i >= 0; i--) {
-      const sess = sessions[i];
+    for (let i = timeSessions.length - 1; i >= 0; i--) {
+      const sess = timeSessions[i];
       for (const eh of sess.workout_exercise_history ?? []) {
         const exId = eh.exercise_id;
         if (byExercise[exId] != null) continue; // already got newest
@@ -382,7 +417,7 @@ export default function PlanHistoryViewScreen() {
         label,
       };
     });
-  }, [goals, sessions]);
+  }, [goals, planSessions]);
 
   useEffect(() => {
     if (!userId || !planId) return;
@@ -425,10 +460,20 @@ export default function PlanHistoryViewScreen() {
         const p = planData as any as PlanRow | null;
         setPlan(p);
 
+        console.log("[PlanHistory] plan", {
+          id: p?.id,
+          title: p?.title,
+          start_date: p?.start_date,
+          end_date: p?.end_date,
+          completed_at: p?.completed_at,
+          is_completed: p?.is_completed,
+          weekly_target_sessions: p?.weekly_target_sessions,
+        });
+
         if (!p?.id) {
           if (!cancelled) {
             setPlanWorkouts([]);
-            setSessions([]);
+            setPlanSessions([]);
             setGoals([]);
             setStats(null);
             setWorkoutsWithExercises([]);
@@ -454,11 +499,29 @@ export default function PlanHistoryViewScreen() {
             }))
           : [];
 
-        const activePw = pwRows.filter((r) => !r.is_archived);
-        setPlanWorkouts(activePw);
+        const isPlanActive =
+          p?.is_completed === false || (p?.completed_at == null && p != null);
 
-        const workoutIds = activePw.map((r) => r.workout_id).filter(Boolean);
+        const visiblePw = isPlanActive
+          ? pwRows.filter((r) => !r.is_archived) // active plan: hide archived
+          : pwRows; // completed plan: include everything
+
+        setPlanWorkouts(visiblePw);
+
+        const workoutTitleById: Record<string, string> = {};
+        visiblePw.forEach((w) => {
+          workoutTitleById[w.workout_id] = String(w.title ?? "Workout");
+        });
+
+        const workoutIds = visiblePw.map((r) => r.workout_id).filter(Boolean);
         const plannedWorkouts = workoutIds.length;
+
+        console.log("[PlanHistory] pw visibility", {
+          isPlanActive,
+          total: pwRows.length,
+          visible: visiblePw.length,
+          workoutIds,
+        });
 
         // read weekly goal fallback if needed
         const { data: prof } = await supabase
@@ -477,9 +540,31 @@ export default function PlanHistoryViewScreen() {
         // plan boundaries
         const lower = p.start_date ?? null;
         // For active plans, allow up to "now" so sessions load even if end_date is in the future
-        const upper = (p.completed_at ??
-          (p.is_completed ? p.end_date : null) ??
-          new Date().toISOString()) as string;
+        const upperExclusive = (() => {
+          if (p.completed_at) return null; // we’ll use lte with completed_at timestamp
+          if (p.is_completed && p.end_date) {
+            const d = new Date(p.end_date + "T00:00:00.000Z");
+            d.setUTCDate(d.getUTCDate() + 1); // next day
+            return d.toISOString(); // use .lt()
+          }
+          return null;
+        })();
+
+        const start = lower ?? "1970-01-01";
+        const endTs = p.completed_at
+          ? p.completed_at
+          : upperExclusive
+          ? upperExclusive
+          : new Date().toISOString();
+
+        console.log("[PlanHistory] bounds", {
+          lower,
+          completed_at: p.completed_at,
+          end_date: p.end_date,
+          is_completed: p.is_completed,
+          upperExclusive,
+          now: new Date().toISOString(),
+        });
 
         // 2) goals linked to this plan
         const { data: gData, error: gErr } = await supabase
@@ -517,67 +602,93 @@ export default function PlanHistoryViewScreen() {
         }
 
         // 3) sessions with nested set data
-        let sessRows: SessionRow[] = [];
+        let planSessRows: SessionRow[] = [];
 
         if (workoutIds.length) {
-          const { data: sData, error: sErr } = await supabase
+          let qPlan = supabase
             .from("workout_history")
             .select(
               `
-              id,
-              completed_at,
-              duration_seconds,
-              workout_exercise_history!inner(
-                exercise_id,
-                workout_set_history(
-                  reps,
-                  weight,
-                  time_seconds,
-                  distance
-                )
-              )
-            `
+    id,
+    workout_id,
+    completed_at,
+    duration_seconds,
+    workout_exercise_history(
+      exercise_id,
+      workout_set_history(reps, weight, time_seconds, distance)
+    )
+  `
             )
             .eq("user_id", userId)
             .in("workout_id", workoutIds)
-            .gte("completed_at", lower ?? "1970-01-01")
-            .lte("completed_at", upper)
+            .gte("completed_at", start)
+            .lte("completed_at", endTs)
             .order("completed_at", { ascending: true });
 
+          const { data: sData, error: sErr } = await qPlan;
           if (sErr) throw sErr;
 
-          sessRows = Array.isArray(sData)
-            ? (sData as any[]).map((r: any) => ({
-                id: String(r.id),
-                completed_at: String(r.completed_at),
-                duration_seconds:
-                  r.duration_seconds != null
-                    ? Number(r.duration_seconds)
-                    : null,
-                workout_exercise_history: Array.isArray(
-                  r.workout_exercise_history
-                )
-                  ? r.workout_exercise_history.map((eh: any) => ({
-                      exercise_id: String(eh.exercise_id),
-                      workout_set_history: Array.isArray(eh.workout_set_history)
-                        ? eh.workout_set_history.map((s: any) => ({
-                            reps: s.reps != null ? Number(s.reps) : null,
-                            weight: s.weight != null ? Number(s.weight) : null,
-                            time_seconds:
-                              s.time_seconds != null
-                                ? Number(s.time_seconds)
-                                : null,
-                            distance:
-                              s.distance != null ? Number(s.distance) : null,
-                          }))
-                        : [],
-                    }))
-                  : [],
-              }))
-            : [];
+          planSessRows = Array.isArray(sData) ? mapSessions(sData) : [];
         }
 
-        if (!cancelled) setSessions(sessRows);
+        let timeSessRows: SessionRow[] = [];
+
+        {
+          const { data: tData, error: tErr } = await supabase
+            .from("workout_history")
+            .select(
+              `
+    id,
+    workout_id,
+    completed_at,
+    duration_seconds,
+    workout_exercise_history(
+      exercise_id,
+      workout_set_history(reps, weight, time_seconds, distance)
+    )
+  `
+            )
+            .eq("user_id", userId)
+            .gte("completed_at", start)
+            .lte("completed_at", endTs)
+            .order("completed_at", { ascending: true });
+
+          if (tErr) throw tErr;
+
+          timeSessRows = Array.isArray(tData) ? mapSessions(tData) : [];
+        }
+
+        function mapSessions(rows: any[]): SessionRow[] {
+          return rows.map((r: any) => ({
+            id: String(r.id),
+            workout_id: r.workout_id != null ? String(r.workout_id) : null,
+            completed_at: String(r.completed_at),
+            duration_seconds:
+              r.duration_seconds != null ? Number(r.duration_seconds) : null,
+            workout_exercise_history: Array.isArray(r.workout_exercise_history)
+              ? r.workout_exercise_history.map((eh: any) => ({
+                  exercise_id: String(eh.exercise_id),
+                  workout_set_history: Array.isArray(eh.workout_set_history)
+                    ? eh.workout_set_history.map((s: any) => ({
+                        reps: s.reps != null ? Number(s.reps) : null,
+                        weight: s.weight != null ? Number(s.weight) : null,
+                        time_seconds:
+                          s.time_seconds != null
+                            ? Number(s.time_seconds)
+                            : null,
+                        distance:
+                          s.distance != null ? Number(s.distance) : null,
+                      }))
+                    : [],
+                }))
+              : [],
+          }));
+        }
+
+        if (!cancelled) {
+          setPlanSessions(planSessRows);
+          setTimeSessions(timeSessRows);
+        }
 
         // 3b) For ACTIVE plan: also fetch workout -> exercises to show list
         // (we do this for completed too, but you mainly asked for active)
@@ -633,13 +744,12 @@ export default function PlanHistoryViewScreen() {
         }
 
         // 4) compute stats (still useful for completed; lightweight for active)
-        const sessionsCompleted = sessRows.length;
+        const sessionsCompleted = planSessRows.length;
 
         // sessions planned = weeks * workoutsPerWeek (only meaningful if end_date exists)
         const startForWeeks = p.start_date ?? lower ?? "1970-01-01";
-        const endForWeeks = (p.end_date ?? (p.is_completed ? upper : null)) as
-          | string
-          | null;
+        const endForWeeks = (p.end_date ??
+          (p.is_completed ? upperExclusive : null)) as string | null;
 
         const weeks =
           startForWeeks && endForWeeks
@@ -665,7 +775,7 @@ export default function PlanHistoryViewScreen() {
             .eq("user_id", userId)
             .in("workout_id", workoutIds)
             .gte("completed_at", lower ?? "1970-01-01")
-            .lte("completed_at", upper);
+            .lte("completed_at", upperExclusive);
 
           if (Array.isArray(uniq)) {
             const set = new Set(uniq.map((r: any) => String(r.workout_id)));
@@ -681,21 +791,32 @@ export default function PlanHistoryViewScreen() {
         let totalTimeSeconds = 0;
 
         const volumeByExercise: Record<string, number> = {};
+
+        const firstBestWeightByExercise: Record<string, number> = {};
+        const lastBestWeightByExercise: Record<string, number> = {};
+
+        const setsByExercise: Record<string, number> = {};
         const bestSetByExercise: Record<
           string,
           { weight: number; reps: number; completed_at: string }
         > = {};
 
-        const firstBestWeightByExercise: Record<string, number> = {};
-        const lastBestWeightByExercise: Record<string, number> = {};
+        const firstBestSetByExercise: Record<
+          string,
+          { weight: number; reps: number; completed_at: string }
+        > = {};
 
-        sessRows.forEach((sess) => {
+        let biggestSessionWorkoutId: string | null = null;
+        let biggestSessionVolume = 0;
+
+        planSessRows.forEach((sess) => {
           totalTimeSeconds += Number(sess.duration_seconds ?? 0);
+
+          let sessionVolume = 0;
 
           (sess.workout_exercise_history ?? []).forEach((eh) => {
             const exId = eh.exercise_id;
             const sets = eh.workout_set_history ?? [];
-            let sessionBestWeight = 0;
 
             sets.forEach((s) => {
               totalSets += 1;
@@ -704,13 +825,14 @@ export default function PlanHistoryViewScreen() {
               const weight = Number(s.weight ?? 0);
 
               totalReps += reps;
-              totalVolume += reps * weight;
 
-              volumeByExercise[exId] =
-                (volumeByExercise[exId] ?? 0) + reps * weight;
+              const vol = reps * weight;
+              totalVolume += vol;
+              sessionVolume += vol;
 
-              if (weight > sessionBestWeight) sessionBestWeight = weight;
+              setsByExercise[exId] = (setsByExercise[exId] ?? 0) + 1;
 
+              // best set per exercise across plan (by weight)
               const existing = bestSetByExercise[exId];
               if (!existing || weight > existing.weight) {
                 bestSetByExercise[exId] = {
@@ -721,11 +843,29 @@ export default function PlanHistoryViewScreen() {
               }
             });
 
-            if (firstBestWeightByExercise[exId] == null) {
-              firstBestWeightByExercise[exId] = sessionBestWeight;
+            // first "best set we saw for this exercise" (uses the best set in this session)
+            if (firstBestSetByExercise[exId] == null && sets.length) {
+              let bestW = 0;
+              let bestR = 0;
+              sets.forEach((s) => {
+                const w = Number(s.weight ?? 0);
+                if (w > bestW) {
+                  bestW = w;
+                  bestR = Number(s.reps ?? 0);
+                }
+              });
+              firstBestSetByExercise[exId] = {
+                weight: bestW,
+                reps: bestR,
+                completed_at: sess.completed_at,
+              };
             }
-            lastBestWeightByExercise[exId] = sessionBestWeight;
           });
+
+          if (sessionVolume > biggestSessionVolume) {
+            biggestSessionVolume = sessionVolume;
+            biggestSessionWorkoutId = sess.workout_id ?? null;
+          }
         });
 
         // Best single set across all exercises (force correct typing)
@@ -779,11 +919,38 @@ export default function PlanHistoryViewScreen() {
           }
         });
 
+        let topExerciseSetsId: string | null = null;
+        let topSets = 0;
+
+        Object.entries(setsByExercise).forEach(([exId, c]) => {
+          if (c > topSets) {
+            topSets = c;
+            topExerciseSetsId = exId;
+          }
+        });
+
+        let bestPct = 0;
+        let bestImprovedId: string | null = null;
+
+        Object.keys(bestSetByExercise).forEach((exId) => {
+          const from = firstBestSetByExercise[exId];
+          const to = bestSetByExercise[exId];
+          if (!from || !to) return;
+
+          const denom = Math.max(1, from.weight);
+          const pct = (to.weight - from.weight) / denom;
+
+          if (pct > bestPct && to.weight > from.weight) {
+            bestPct = pct;
+            bestImprovedId = exId;
+          }
+        });
+
         // Resolve names for only the IDs we need
         const needIds: string[] = [];
         if (bestSet) needIds.push(bestSet.exerciseId);
-        if (topExerciseId) needIds.push(topExerciseId);
-        if (bestDeltaExerciseId) needIds.push(bestDeltaExerciseId);
+        if (topExerciseSetsId) needIds.push(topExerciseSetsId);
+        if (bestImprovedId) needIds.push(bestImprovedId);
 
         const uniqueNeedIds = Array.from(new Set(needIds));
 
@@ -801,27 +968,63 @@ export default function PlanHistoryViewScreen() {
           }
         }
 
-        const topExercise =
-          topExerciseId != null
+        const topExerciseBySets =
+          topExerciseSetsId != null
             ? {
-                exerciseId: topExerciseId,
-                name: nameById[topExerciseId] ?? "Top exercise",
-                volume: topVol,
+                exerciseId: topExerciseSetsId,
+                name: nameById[topExerciseSetsId] ?? "Top exercise",
+                sets: topSets,
               }
             : null;
 
         const mostImproved =
-          bestDeltaExerciseId != null
+          bestImprovedId != null
             ? {
-                exerciseId: bestDeltaExerciseId,
-                name: nameById[bestDeltaExerciseId] ?? "Most improved",
-                delta: bestDelta,
+                exerciseId: bestImprovedId,
+                name: nameById[bestImprovedId] ?? "Most improved",
+                from: firstBestSetByExercise[bestImprovedId] ?? null,
+                to: bestSetByExercise[bestImprovedId] ?? null,
+                pct: bestPct,
+              }
+            : null;
+
+        const workoutCounts: Record<string, number> = {};
+        planSessRows.forEach((s) => {
+          const wid = s.workout_id;
+          if (!wid) return;
+          workoutCounts[wid] = (workoutCounts[wid] ?? 0) + 1;
+        });
+
+        // ensure we consider workouts that were in plan but maybe never completed
+        workoutIds.forEach((wid) => {
+          if (workoutCounts[wid] == null) workoutCounts[wid] = 0;
+        });
+
+        let most: { workoutId: string; title: string; count: number } | null =
+          null;
+        let least: { workoutId: string; title: string; count: number } | null =
+          null;
+
+        Object.entries(workoutCounts).forEach(([wid, count]) => {
+          const title = workoutTitleById[wid] ?? "Workout";
+          if (!most || count > most.count)
+            most = { workoutId: wid, title, count };
+          if (!least || count < least.count)
+            least = { workoutId: wid, title, count };
+        });
+
+        const biggestSession =
+          biggestSessionWorkoutId != null
+            ? {
+                workoutId: biggestSessionWorkoutId,
+                title: workoutTitleById[biggestSessionWorkoutId] ?? "Workout",
+                volume: biggestSessionVolume,
               }
             : null;
 
         // Weekly histogram
         const weeklyCounts: Record<string, number> = {};
-        sessRows.forEach((s) => {
+        planSessRows.forEach((s) => {
           const wk = weekStartKeySunday(s.completed_at);
           weeklyCounts[wk] = (weeklyCounts[wk] ?? 0) + 1;
         });
@@ -840,7 +1043,7 @@ export default function PlanHistoryViewScreen() {
           const ids = exerciseGoals.map((g: any) => String(g.exercises.id));
           const latestByExercise: Record<string, number> = {};
 
-          sessRows.forEach((row) => {
+          timeSessRows.forEach((row) => {
             (row.workout_exercise_history ?? []).forEach((eh) => {
               const exId = eh.exercise_id;
               if (!ids.includes(exId)) return;
@@ -934,14 +1137,21 @@ export default function PlanHistoryViewScreen() {
             sessionsMissed,
             uniqueWorkoutsHit,
             missedWorkouts,
+
             totalSets,
             totalReps,
             totalVolume,
             totalTimeSeconds,
+
             weeklySessions,
+
             bestSet,
-            topExercise,
+            topExerciseBySets,
             mostImproved,
+
+            workoutCounts: { most, least },
+            biggestSession,
+
             goalSummaries,
             consistencyPct,
             avgVolumePerSession,
@@ -952,7 +1162,7 @@ export default function PlanHistoryViewScreen() {
         if (!cancelled) {
           setPlan(null);
           setPlanWorkouts([]);
-          setSessions([]);
+          setPlanSessions([]);
           setGoals([]);
           setStats(null);
           setWorkoutsWithExercises([]);
@@ -962,7 +1172,6 @@ export default function PlanHistoryViewScreen() {
         if (!cancelled) setLoading(false);
       }
     }
-
     load();
     return () => {
       cancelled = true;
@@ -1000,16 +1209,6 @@ export default function PlanHistoryViewScreen() {
           {/* right spacer so title stays centered */}
           <View style={styles.rightSpacer} />
         </View>
-
-        {/* CTA under header, before graphs/data. Only if completed + no new active plan exists */}
-        {showStartNewPlanCta && (
-          <Pressable
-            onPress={() => router.push("/features/plans/create/planInfo")}
-            style={styles.startPlanCta}
-          >
-            <Text style={styles.startPlanCtaText}>Start a new plan →</Text>
-          </Pressable>
-        )}
 
         <SectionCard>
           {loading ? (
@@ -1072,7 +1271,9 @@ export default function PlanHistoryViewScreen() {
                       </Text>
                       <Text style={styles.kpiLine}>
                         Sessions logged so far:{" "}
-                        <Text style={styles.kpiStrong}>{sessions.length}</Text>
+                        <Text style={styles.kpiStrong}>
+                          {planSessions.length}
+                        </Text>
                       </Text>
                     </View>
                   </View>
@@ -1204,27 +1405,57 @@ export default function PlanHistoryViewScreen() {
                     </View>
                   </View>
 
+                  {showStartNewPlanCta && (
+                    <View style={styles.ctaWrap}>
+                      <Animated.View
+                        style={{ transform: [{ scale: ctaScale }] }}
+                      >
+                        <Pressable
+                          onPress={() =>
+                            router.push("/features/plans/create/planInfo")
+                          }
+                          onPressIn={pressIn}
+                          onPressOut={pressOut}
+                          style={styles.startPlanCtaBig}
+                        >
+                          <Text style={styles.startPlanCtaBigText}>
+                            Start a new plan →
+                          </Text>
+                        </Pressable>
+                      </Animated.View>
+                    </View>
+                  )}
+
                   {/* “You improved most in…” 3-card section */}
                   <View style={styles.sectionBox}>
                     <Text style={styles.sectionTitle}>
                       You improved most in
                     </Text>
 
-                    <View style={styles.improvedRow}>
-                      <View style={styles.improvedCard}>
+                    <View style={styles.improvedStack}>
+                      <View style={styles.improvedRowCard}>
                         <Text style={styles.improvedLabel}>Strength</Text>
-                        <Text style={styles.improvedValue}>
-                          {stats?.mostImproved && stats.mostImproved.delta > 0
-                            ? `+${Math.round(stats.mostImproved.delta)}`
-                            : "—"}
+                        <Text style={styles.improvedValue} numberOfLines={2}>
+                          {stats?.mostImproved?.name ?? "—"}
                         </Text>
-                        <Text style={styles.subtle} numberOfLines={1}>
-                          {stats?.mostImproved?.name ??
-                            "Most improved exercise"}
+                        <Text style={styles.subtle}>
+                          {stats?.mostImproved?.from && stats?.mostImproved?.to
+                            ? `${Math.round(
+                                stats.mostImproved.from.weight
+                              )} × ${Math.round(
+                                stats.mostImproved.from.reps
+                              )} → ${Math.round(
+                                stats.mostImproved.to.weight
+                              )} × ${Math.round(
+                                stats.mostImproved.to.reps
+                              )} (+${Math.round(
+                                (stats.mostImproved.pct ?? 0) * 100
+                              )}%)`
+                            : "No improvement data yet."}
                         </Text>
                       </View>
 
-                      <View style={styles.improvedCard}>
+                      <View style={styles.improvedRowCard}>
                         <Text style={styles.improvedLabel}>Consistency</Text>
                         <Text style={styles.improvedValue}>
                           {Math.round((stats?.consistencyPct ?? 0) * 100)}%
@@ -1233,17 +1464,47 @@ export default function PlanHistoryViewScreen() {
                           {stats?.sessionsCompleted ?? 0} /{" "}
                           {stats?.sessionsPlanned ?? 0} sessions
                         </Text>
+                        <Text style={styles.subtle}>
+                          Most:{" "}
+                          <Text style={styles.strong}>
+                            {stats?.workoutCounts?.most
+                              ? `${stats.workoutCounts.most.title} (${stats.workoutCounts.most.count})`
+                              : "—"}
+                          </Text>
+                        </Text>
+                        <Text style={styles.subtle}>
+                          Least:{" "}
+                          <Text style={styles.strong}>
+                            {stats?.workoutCounts?.least
+                              ? `${stats.workoutCounts.least.title} (${stats.workoutCounts.least.count})`
+                              : "—"}
+                          </Text>
+                        </Text>
                       </View>
 
-                      <View style={styles.improvedCard}>
+                      <View style={styles.improvedRowCard}>
                         <Text style={styles.improvedLabel}>Volume</Text>
                         <Text style={styles.improvedValue}>
-                          {stats ? Math.round(stats.totalVolume) : 0}
+                          {stats
+                            ? `${Math.round(stats.totalVolume)} kg`
+                            : "0 kg"}
                         </Text>
                         <Text style={styles.subtle}>
                           Avg{" "}
-                          {stats ? Math.round(stats.avgVolumePerSession) : 0} /
-                          session
+                          {stats
+                            ? `${Math.round(stats.avgVolumePerSession)} kg`
+                            : "0 kg"}{" "}
+                          / session
+                        </Text>
+                        <Text style={styles.subtle}>
+                          Biggest session:{" "}
+                          <Text style={styles.strong}>
+                            {stats?.biggestSession
+                              ? `${stats.biggestSession.title} · ${Math.round(
+                                  stats.biggestSession.volume
+                                )} kg`
+                              : "—"}
+                          </Text>
                         </Text>
                       </View>
                     </View>
@@ -1254,7 +1515,7 @@ export default function PlanHistoryViewScreen() {
                     <View style={styles.kpiCard}>
                       <Text style={styles.kpiLabel}>Total volume</Text>
                       <Text style={styles.kpiValue}>
-                        {Math.round(stats?.totalVolume ?? 0)}
+                        {Math.round(stats?.totalVolume ?? 0)} kg
                       </Text>
                     </View>
 
@@ -1286,11 +1547,20 @@ export default function PlanHistoryViewScreen() {
                   <View style={styles.sectionBox}>
                     <Text style={styles.sectionTitle}>Weekly consistency</Text>
                     {stats?.weeklySessions?.length ? (
-                      <View style={{ gap: 8 }}>
-                        <MiniBarChart
-                          values={stats.weeklySessions.map((w) => w.count)}
-                          fill={colors.primaryText ?? colors.text}
-                        />
+                      <View
+                        onLayout={(e) =>
+                          setChartWidth(e.nativeEvent.layout.width)
+                        }
+                        style={{ width: "100%" }}
+                      >
+                        {chartWidth > 0 && (
+                          <MiniBarChart
+                            width={chartWidth}
+                            values={stats.weeklySessions.map((w) => w.count)}
+                            fill={colors.primaryText ?? colors.text}
+                          />
+                        )}
+
                         <Text style={styles.subtle}>
                           {stats.weeklySessions.length} training week
                           {stats.weeklySessions.length === 1 ? "" : "s"} logged
@@ -1300,42 +1570,6 @@ export default function PlanHistoryViewScreen() {
                     ) : (
                       <Text style={styles.subtle}>No sessions recorded.</Text>
                     )}
-                  </View>
-
-                  {/* Highlights */}
-                  <View style={styles.sectionBox}>
-                    <Text style={styles.sectionTitle}>Highlights</Text>
-
-                    <Text style={styles.subtle}>
-                      Best set:{" "}
-                      <Text style={styles.strong}>
-                        {stats?.bestSet
-                          ? `${Math.round(stats.bestSet.weight)} × ${Math.round(
-                              stats.bestSet.reps
-                            )}`
-                          : "—"}
-                      </Text>
-                    </Text>
-
-                    <Text style={styles.subtle}>
-                      Top exercise by volume:{" "}
-                      <Text style={styles.strong}>
-                        {stats?.topExercise
-                          ? `${stats.topExercise.name} (${Math.round(
-                              stats.topExercise.volume
-                            )})`
-                          : "—"}
-                      </Text>
-                    </Text>
-
-                    <Text style={styles.subtle}>
-                      Workouts hit:{" "}
-                      <Text style={styles.strong}>
-                        {stats?.uniqueWorkoutsHit ?? 0} /{" "}
-                        {stats?.plannedWorkouts ?? 0}
-                      </Text>{" "}
-                      (missed {stats?.missedWorkouts ?? 0})
-                    </Text>
                   </View>
 
                   {/* Goals mini */}
@@ -1619,5 +1853,35 @@ const makeStyles = (colors: any) =>
       fontSize: 13,
       fontWeight: "800",
       color: colors.text,
+    },
+
+    ctaWrap: { alignItems: "center" },
+
+    startPlanCtaBig: {
+      width: "100%",
+      maxWidth: 360,
+      paddingVertical: 14,
+      paddingHorizontal: 18,
+      borderRadius: 16,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: colors.primaryBg ?? colors.card,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+    },
+    startPlanCtaBigText: {
+      fontSize: 14,
+      fontWeight: "900",
+      color: colors.text,
+    },
+
+    improvedStack: { gap: 10 },
+    improvedRowCard: {
+      borderRadius: 12,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      backgroundColor: colors.surface ?? colors.card,
+      padding: 12,
+      gap: 6,
     },
   });
