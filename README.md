@@ -3,6 +3,25 @@
 MuscleMetric is a full-stack fitness tracking application focused on **structured workout logging**, **training consistency**, and **long-term performance analysis**.  
 This repository contains the **mobile frontend**, built with **Expo + React Native (TypeScript)**.
 
+## Contents
+- [Product overview](#product-overview)
+- [Quick start](#quick-start)
+- [Core features](#core-features)
+- [Tech stack](#tech-stack)
+- [Architecture overview](#architecture-overview)
+- [Project structure](#project-structure)
+- [Getting started](#getting-started)
+- [Environment variables](#environment-variables)
+- [Backend overview (Supabase)](#backend-overview-supabase)
+- [State & data flow](#state--data-flow)
+- [Build & release (EAS)](#build--release-eas)
+- [Troubleshooting](#troubleshooting)
+- [Testing](#testing)
+- [Contributing](#contributing)
+- [Roadmap](#roadmap)
+- [License](#license)
+
+
 ## Product overview
 
 MuscleMetric is designed for users who want **more than basic workout logs**.
