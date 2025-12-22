@@ -83,6 +83,7 @@ export function usePlanGoals(userId?: string | null) {
             )
             .eq("plan_id", activePlan.id)
             .eq("user_id", userId)
+            .eq("is_active", true)
             .order("created_at", { ascending: true });
 
           if (gErr) throw gErr;
@@ -91,9 +92,14 @@ export function usePlanGoals(userId?: string | null) {
             let ex: { id: string; name: string | null } | null = null;
             if (Array.isArray(r.exercises)) {
               const first = r.exercises[0];
-              ex = first ? { id: String(first.id), name: first.name ?? null } : null;
+              ex = first
+                ? { id: String(first.id), name: first.name ?? null }
+                : null;
             } else if (r.exercises) {
-              ex = { id: String(r.exercises.id), name: r.exercises.name ?? null };
+              ex = {
+                id: String(r.exercises.id),
+                name: r.exercises.name ?? null,
+              };
             }
             return {
               id: String(r.id),
@@ -128,10 +134,7 @@ export function usePlanGoals(userId?: string | null) {
     };
   }, [userId]);
 
-  const planTitle = useMemo(
-    () => (plan?.title ?? "Active Plan"),
-    [plan?.title]
-  );
+  const planTitle = useMemo(() => plan?.title ?? "Active Plan", [plan?.title]);
 
   return { loading, error, plan, planTitle, goals };
 }

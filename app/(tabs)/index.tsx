@@ -28,6 +28,7 @@ import Svg, { Polyline, Line } from "react-native-svg";
 import { RingProgress } from "../features/home/RingProgress";
 import { BirthdayConfetti } from "../_components/Confetti/BirthdayConfetti";
 import { ChristmasConfetti } from "../_components/Confetti/ChristmasConfetti";
+import { MiniMonthCalendar } from "../_components/Calendar/MiniMonthCalendar";
 const logo = require("../../assets/icon.png");
 
 import {
@@ -45,6 +46,14 @@ function weekKeySundayLocal(d: Date) {
   const y = copy.getFullYear();
   const m = String(copy.getMonth() + 1).padStart(2, "0");
   const day = String(copy.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function localDayKeyFromIso(iso: string) {
+  const d = new Date(iso); // converts to local time automatically
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
 }
 
@@ -84,6 +93,42 @@ export default function Home() {
   const { colors } = useAppTheme();
   const router = useRouter();
   const styles = useMemo(() => makeStyles(colors), [colors]);
+
+  // Consistency calendar (no-plan + full width card)
+  const [trainedKeys, setTrainedKeys] = useState<Set<string>>(new Set());
+  const [calendarOpen, setCalendarOpen] = useState(false);
+  const [selectedDayKey, setSelectedDayKey] = useState<string | null>(null);
+
+  // month shown in modal (default = current month start)
+  const [calendarMonth, setCalendarMonth] = useState(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1);
+  });
+
+  // workouts list for selected day
+  type DayWorkoutRow = {
+    id: string;
+    completed_at: string;
+    duration_seconds: number | null;
+    workout_id: string | null;
+    workout_title: string;
+  };
+
+  const [selectedDayWorkouts, setSelectedDayWorkouts] = useState<
+    DayWorkoutRow[]
+  >([]);
+  const [selectedDayLoading, setSelectedDayLoading] = useState(false);
+
+  function monthStartLocal(d: Date) {
+    return new Date(d.getFullYear(), d.getMonth(), 1);
+  }
+  function addMonths(d: Date, delta: number) {
+    return new Date(d.getFullYear(), d.getMonth() + delta, 1);
+  }
+
+  const currentMonthStart = monthStartLocal(new Date());
+  const canGoNextMonth =
+    monthStartLocal(calendarMonth).getTime() < currentMonthStart.getTime();
 
   // Birthday
   const [birthdayOpen, setBirthdayOpen] = useState(false);
@@ -135,6 +180,103 @@ export default function Home() {
     const v = n % 100;
     return `${n}${s[(v - 20) % 10] || s[v] || s[0]}`;
   }
+
+  async function loadWorkoutsForDay(dayKey: string) {
+    if (!userId) return;
+
+    setSelectedDayLoading(true);
+    try {
+      // dayKey is local yyyy-mm-dd
+      const startLocal = new Date(`${dayKey}T00:00:00`);
+      const endLocal = new Date(startLocal);
+      endLocal.setDate(endLocal.getDate() + 1);
+
+      const { data, error } = await supabase
+        .from("workout_history")
+        .select(
+          `
+        id,
+        completed_at,
+        duration_seconds,
+        workout_id,
+        workouts(title)
+      `
+        )
+        .eq("user_id", userId)
+        .gte("completed_at", startLocal.toISOString())
+        .lt("completed_at", endLocal.toISOString())
+        .order("completed_at", { ascending: false });
+
+      if (error) throw error;
+
+      const rows: DayWorkoutRow[] = (data ?? []).map((r: any) => ({
+        id: String(r.id),
+        completed_at: String(r.completed_at),
+        duration_seconds:
+          r.duration_seconds != null ? Number(r.duration_seconds) : null,
+        workout_id: r.workout_id ? String(r.workout_id) : null,
+        workout_title: String(r.workouts?.title ?? "Workout"),
+      }));
+
+      setSelectedDayWorkouts(rows);
+    } catch (e) {
+      console.warn("loadWorkoutsForDay error:", e);
+      setSelectedDayWorkouts([]);
+    } finally {
+      setSelectedDayLoading(false);
+    }
+  }
+
+  function onPickDay(k: string) {
+    setSelectedDayKey(k);
+    loadWorkoutsForDay(k);
+  }
+
+  useEffect(() => {
+    if (!userId) {
+      setTrainedKeys(new Set());
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadTrainedDays() {
+      try {
+        // Pull last ~120 days so the modal can scroll back a few months without refetch
+        const end = new Date();
+        const start = new Date();
+        start.setDate(start.getDate() - 120);
+
+        const { data, error } = await supabase
+          .from("workout_history")
+          .select("completed_at")
+          .eq("user_id", userId)
+          .gte("completed_at", start.toISOString())
+          .lte("completed_at", end.toISOString())
+          .order("completed_at", { ascending: true });
+
+        if (error) throw error;
+        if (cancelled) return;
+
+        const keys = new Set<string>();
+        (data ?? []).forEach((r: any) => {
+          if (!r?.completed_at) return;
+          keys.add(localDayKeyFromIso(String(r.completed_at))); // local day key
+        });
+
+        setTrainedKeys(keys);
+      } catch (e) {
+        console.warn("loadTrainedDays error:", e);
+        if (!cancelled) setTrainedKeys(new Set());
+      }
+    }
+
+    loadTrainedDays();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
 
   useEffect(() => {
     if (!userId) return;
@@ -281,15 +423,37 @@ export default function Home() {
     }
   }, [celebrationQueue, activeCelebration]);
 
+  function formatLongDate(iso?: string | null) {
+    if (!iso) return "—";
+    try {
+      const d = new Date(iso);
+      return d.toLocaleDateString("en-US", {
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      });
+    } catch {
+      return "—";
+    }
+  }
+
   // NEW: use plan goals hook
   const { plan, goals } = usePlanGoals(userId);
+
+  const isActivePlan = !!plan && (plan as any).is_completed === false;
+  const activePlan = isActivePlan ? plan : null;
+  const activePlanGoals = isActivePlan ? goals : [];
 
   // NEW: ring state
   const [goalsRingProgress, setGoalsRingProgress] = useState(0); // 0–1
   const [goalsRingLabel, setGoalsRingLabel] = useState("0%");
   const [goalsRingLoading, setGoalsRingLoading] = useState(true);
 
-  const ringModeLabel = plan && goals && goals.length > 0 ? "Plan" : "Weekly";
+  const ringModeLabel =
+    activePlan && activePlanGoals && activePlanGoals.length > 0
+      ? "Plan"
+      : "Weekly";
 
   const ringColor =
     goalsRingProgress < 1 / 3
@@ -402,8 +566,8 @@ export default function Home() {
       setGoalsRingLoading(true);
       try {
         // ---- CASE 1: user has a plan with goals -> average progress over up to 3 exercises ----
-        if (plan && goals && goals.length > 0) {
-          const exerciseGoals = goals
+        if (activePlan && activePlanGoals && activePlanGoals.length > 0) {
+          const exerciseGoals = activePlanGoals
             .filter((g: any) => g.exercises?.id)
             .slice(0, 3);
 
@@ -441,8 +605,8 @@ export default function Home() {
           `
             )
             .eq("user_id", userId)
-            .gte("completed_at", plan.start_date)
-            .lte("completed_at", plan.end_date)
+            .gte("completed_at", activePlan.start_date)
+            .lte("completed_at", activePlan.end_date)
             .order("completed_at", { ascending: true });
 
           if (error) throw error;
@@ -584,7 +748,7 @@ export default function Home() {
     return () => {
       cancelled = true;
     };
-  }, [userId, plan?.id, goals]);
+  }, [userId, (activePlan as any)?.id, goals]);
 
   useEffect(() => {
     let sub: any;
@@ -760,6 +924,8 @@ export default function Home() {
     );
   }
 
+  const hasActivePlan = !plan?.id;
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
       <ScrollView
@@ -852,12 +1018,12 @@ export default function Home() {
               ) : (
                 <>
                   <RingProgress
-                    size={45} // larger ring
+                    size={45}
                     stroke={8}
                     progress={goalsRingProgress}
                     color={ringColor}
                     trackColor={colors.border}
-                    label="" // we show text below instead
+                    label=""
                   />
 
                   <Text style={[styles.bigCenteredText, { color: ringColor }]}>
@@ -870,6 +1036,84 @@ export default function Home() {
             </View>
           </CardPressable>
         </View>
+
+        {/* Full-width consistency card */}
+        {!hasActivePlan && (
+          <View style={[styles.gridCard, { width: "100%" }]}>
+            <Text style={styles.title}>CONSISTENCY</Text>
+
+            <MiniMonthCalendar
+              colors={colors}
+              trainedKeys={trainedKeys} // Set<string> is OK now
+              monthDate={calendarMonth} // show current modal month in the big card too (optional)
+              onPressHeader={() => setCalendarOpen(true)}
+              onPressDay={onPickDay}
+              selectedDayKey={selectedDayKey}
+              compact={false}
+            />
+
+            {/* Space below calendar = selected day list */}
+            <View style={{ marginTop: 12, gap: 8 }}>
+              {!selectedDayKey ? (
+                <Text style={{ color: colors.subtle, fontWeight: "700" }}>
+                  Tap a day to see workouts.
+                </Text>
+              ) : selectedDayLoading ? (
+                <ActivityIndicator />
+              ) : selectedDayWorkouts.length === 0 ? (
+                <Text style={{ color: colors.subtle, fontWeight: "700" }}>
+                  No workouts on {selectedDayKey}.
+                </Text>
+              ) : (
+                selectedDayWorkouts.slice(0, 4).map((w) => (
+                  <Pressable
+                    key={w.id}
+                    onPress={() => {
+                      // open the workout session if you want
+                      // router.push({ pathname: "/features/workouts/history/view", params: { sessionId: w.id } })
+                    }}
+                    style={{
+                      paddingVertical: 10,
+                      paddingHorizontal: 12,
+                      borderRadius: 12,
+                      borderWidth: StyleSheet.hairlineWidth,
+                      borderColor: colors.border,
+                      backgroundColor: colors.surface ?? colors.card,
+                    }}
+                  >
+                    <Text
+                      style={{ color: colors.text, fontWeight: "900" }}
+                      numberOfLines={1}
+                    >
+                      {w.workout_title}
+                    </Text>
+                    <Text
+                      style={{ color: colors.subtle, marginTop: 2 }}
+                      numberOfLines={1}
+                    >
+                      {formatLongDate(w.completed_at)}{" "}
+                      {w.duration_seconds
+                        ? `· ${Math.round(w.duration_seconds / 60)}m`
+                        : ""}
+                    </Text>
+                  </Pressable>
+                ))
+              )}
+
+              {selectedDayWorkouts.length > 4 && (
+                <Pressable
+                  onPress={() => setCalendarOpen(true)}
+                  style={{ paddingVertical: 6 }}
+                >
+                  <Text style={{ color: colors.primary, fontWeight: "900" }}>
+                    View all →
+                  </Text>
+                </Pressable>
+              )}
+            </View>
+          </View>
+        )}
+
         {/* Next workout */}
         <NextWorkoutSection
           colors={colors}
@@ -1323,6 +1567,162 @@ export default function Home() {
             </Pressable>
           </Pressable>
         </Modal>
+
+        <Modal
+          visible={calendarOpen}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setCalendarOpen(false)}
+        >
+          <Pressable
+            onPress={() => setCalendarOpen(false)}
+            style={{
+              flex: 1,
+              backgroundColor: "rgba(0,0,0,0.38)",
+              justifyContent: "center",
+              alignItems: "center",
+              padding: 18,
+            }}
+          >
+            <Pressable
+              onPress={() => {}}
+              style={{
+                width: "100%",
+                maxWidth: 520,
+                backgroundColor: colors.card,
+                borderRadius: 22,
+                borderWidth: StyleSheet.hairlineWidth,
+                borderColor: colors.border,
+                padding: 16,
+              }}
+            >
+              {/* Month controls */}
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  marginBottom: 10,
+                }}
+              >
+                <Pressable
+                  onPress={() => setCalendarMonth((m) => addMonths(m, -1))}
+                  hitSlop={10}
+                  style={{ padding: 8 }}
+                >
+                  <Text
+                    style={{
+                      color: colors.text,
+                      fontWeight: "900",
+                      fontSize: 18,
+                    }}
+                  >
+                    ←
+                  </Text>
+                </Pressable>
+
+                <Text
+                  style={{
+                    color: colors.text,
+                    fontWeight: "900",
+                    fontSize: 18,
+                  }}
+                >
+                  {calendarMonth.toLocaleDateString(undefined, {
+                    month: "long",
+                    year: "numeric",
+                  })}
+                </Text>
+
+                <Pressable
+                  disabled={!canGoNextMonth}
+                  onPress={() =>
+                    canGoNextMonth && setCalendarMonth((m) => addMonths(m, 1))
+                  }
+                  hitSlop={10}
+                  style={{ padding: 8, opacity: canGoNextMonth ? 1 : 0.35 }}
+                >
+                  <Text
+                    style={{
+                      color: colors.text,
+                      fontWeight: "900",
+                      fontSize: 18,
+                    }}
+                  >
+                    →
+                  </Text>
+                </Pressable>
+              </View>
+
+              <MiniMonthCalendar
+                colors={colors}
+                trainedKeys={trainedKeys}
+                monthDate={calendarMonth}
+                onPressDay={(k) => onPickDay(k)}
+                selectedDayKey={selectedDayKey}
+                compact={false}
+              />
+
+              {/* Selected day list inside modal too (optional but nice) */}
+              <View style={{ marginTop: 14, gap: 8 }}>
+                {!selectedDayKey ? null : selectedDayLoading ? (
+                  <ActivityIndicator />
+                ) : selectedDayWorkouts.length === 0 ? (
+                  <Text style={{ color: colors.subtle, fontWeight: "700" }}>
+                    No workouts on {selectedDayKey}.
+                  </Text>
+                ) : (
+                  selectedDayWorkouts.map((w) => (
+                    <View
+                      key={w.id}
+                      style={{
+                        paddingVertical: 10,
+                        paddingHorizontal: 12,
+                        borderRadius: 12,
+                        borderWidth: StyleSheet.hairlineWidth,
+                        borderColor: colors.border,
+                        backgroundColor: colors.surface ?? colors.card,
+                      }}
+                    >
+                      <Text
+                        style={{ color: colors.text, fontWeight: "900" }}
+                        numberOfLines={1}
+                      >
+                        {w.workout_title}
+                      </Text>
+                      <Text
+                        style={{ color: colors.subtle, marginTop: 2 }}
+                        numberOfLines={1}
+                      >
+                        {formatLongDate(w.completed_at)}{" "}
+                        {w.duration_seconds
+                          ? `· ${Math.round(w.duration_seconds / 60)}m`
+                          : ""}
+                      </Text>
+                    </View>
+                  ))
+                )}
+              </View>
+
+              <Pressable
+                onPress={() => setCalendarOpen(false)}
+                style={{
+                  marginTop: 14,
+                  paddingVertical: 12,
+                  borderRadius: 14,
+                  alignItems: "center",
+                  backgroundColor: "rgba(59,130,246,0.12)",
+                  borderWidth: StyleSheet.hairlineWidth,
+                  borderColor: "rgba(59,130,246,0.25)",
+                }}
+              >
+                <Text style={{ color: colors.primary, fontWeight: "900" }}>
+                  Done
+                </Text>
+              </Pressable>
+            </Pressable>
+          </Pressable>
+        </Modal>
       </ScrollView>
     </SafeAreaView>
   );
@@ -1412,5 +1812,26 @@ const makeStyles = (colors: any) =>
       fontWeight: "500",
       color: "#9CA3AF", // gray-400-ish, replace with theme if needed
       textAlign: "center",
+    },
+
+    fullWidthCard: {
+      width: "100%",
+      backgroundColor: colors.card,
+      padding: 16,
+      borderRadius: 16,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+    },
+
+    fullWidthHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+    },
+
+    fullWidthHint: {
+      color: colors.subtle,
+      fontSize: 12,
+      fontWeight: "700",
     },
   });
