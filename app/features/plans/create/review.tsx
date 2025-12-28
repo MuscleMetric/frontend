@@ -12,7 +12,7 @@ import {
 import { useRouter } from "expo-router";
 import { usePlanDraft } from "./store";
 import { supabase } from "../../../../lib/supabase";
-import { useAuth } from "../../../../lib/useAuth";
+import { useAuth } from "../../../../lib/authContext";
 import { useAppTheme } from "../../../../lib/useAppTheme";
 import { SafeAreaView } from "react-native-safe-area-context";
 

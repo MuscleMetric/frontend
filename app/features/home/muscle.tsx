@@ -10,7 +10,7 @@ import {
   Pressable,
 } from "react-native";
 import Svg, { G, Path, Circle, Line, Text as SvgText } from "react-native-svg";
-import { useAuth } from "../../../lib/useAuth";
+import { useAuth } from "../../../lib/authContext";
 import { useAppTheme } from "../../../lib/useAppTheme";
 import { supabase } from "../../../lib/supabase";
 import { router, useRouter } from "expo-router";

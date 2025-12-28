@@ -13,7 +13,7 @@ import {
   Modal,
   Image,
 } from "react-native";
-import { useAuth } from "../../lib/useAuth";
+import { useAuth } from "../../lib/authContext";
 import { useAppTheme } from "../../lib/useAppTheme";
 import { useDeviceSteps } from "../../lib/hooks/useDeviceSteps";
 import { useWeeklyHomeData } from "../../lib/hooks/useWeeklyHomeData";

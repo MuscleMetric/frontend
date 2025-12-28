@@ -9,7 +9,7 @@ import {
   Pressable,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useAuth } from "../../../lib/useAuth";
+import { useAuth } from "../../../lib/authContext";
 import { supabase } from "../../../lib/supabase";
 import { useAppTheme } from "../../../lib/useAppTheme";
 // at top with other imports

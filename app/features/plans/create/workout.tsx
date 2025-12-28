@@ -23,7 +23,7 @@ import {
   useSafeAreaInsets,
 } from "react-native-safe-area-context";
 import { ExercisePickerModal } from "../../../_components/ExercisePickerModal";
-import { useAuth } from "../../../../lib/useAuth";
+import { useAuth } from "../../../../lib/authContext";
 
 /* ---------- local row types ---------- */
 

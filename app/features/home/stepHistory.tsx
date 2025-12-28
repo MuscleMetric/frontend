@@ -12,7 +12,7 @@ import Svg, { Polyline, Line, Circle } from "react-native-svg";
 import { useAppTheme } from "../../../lib/useAppTheme";
 import { router, useLocalSearchParams } from "expo-router";
 import { supabase } from "../../../lib/supabase";
-import { useAuth } from "../../../lib/useAuth";
+import { useAuth } from "../../../lib/authContext";
 
 type Props = {
   steps7?: number[];

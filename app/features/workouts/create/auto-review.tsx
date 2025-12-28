@@ -18,7 +18,7 @@ import DraggableFlatList, {
   RenderItemParams,
 } from "react-native-draggable-flatlist";
 import { supabase } from "../../../../lib/supabase";
-import { useAuth } from "../../../../lib/useAuth";
+import { useAuth } from "../../../../lib/authContext";
 import { useAppTheme } from "../../../../lib/useAppTheme";
 import type {
   GeneratedWorkout,

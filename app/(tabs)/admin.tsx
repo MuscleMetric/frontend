@@ -16,7 +16,7 @@ import {
 } from "react-native";
 import { supabase } from "../../lib/supabase";
 import { useAppTheme } from "../../lib/useAppTheme";
-import { useAuth } from "../../lib/useAuth";
+import { useAuth } from "../../lib/authContext";
 
 type DashboardPayload = {
   kpis: {

@@ -18,7 +18,7 @@ import DateTimePicker, {
   DateTimePickerEvent,
 } from "@react-native-community/datetimepicker";
 import { useAppTheme } from "../../lib/useAppTheme";
-import { useAuth } from "../../lib/useAuth";
+import { useAuth } from "../../lib/authContext";
 import { supabase } from "../../lib/supabase";
 import { router } from "expo-router";
 import { toISODateUTC } from "../utils/dates";

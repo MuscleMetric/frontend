@@ -15,7 +15,7 @@ import {
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { supabase } from "../../../../lib/supabase";
-import { useAuth } from "../../../../lib/useAuth";
+import { useAuth } from "../../../../lib/authContext";
 import { useAppTheme } from "../../../../lib/useAppTheme";
 import {
   useEditPlan,

@@ -25,7 +25,7 @@ import {
 import { useLocalSearchParams, router, useNavigation } from "expo-router";
 import { useAppTheme } from "../../../lib/useAppTheme";
 import { supabase } from "../../../lib/supabase";
-import { useAuth } from "../../../lib/useAuth";
+import { useAuth } from "../../../lib/authContext";
 import {
   startLiveWorkout,
   updateLiveWorkout,

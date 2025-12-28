@@ -13,7 +13,7 @@ import {
 import { useLocalSearchParams, router } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { supabase } from "../../../lib/supabase";
-import { useAuth } from "../../../lib/useAuth";
+import { useAuth } from "../../../lib/authContext";
 import { useAppTheme } from "../../../lib/useAppTheme";
 
 /* ---------- Types ---------- */

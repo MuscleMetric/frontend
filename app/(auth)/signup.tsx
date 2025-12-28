@@ -11,7 +11,7 @@ import {
 import * as Linking from "expo-linking";
 import { supabase } from "../../lib/supabase";
 import { useAppTheme } from "../../lib/useAppTheme";
-import { useAuth } from "../../lib/useAuth";
+import { useAuth } from "../../lib/authContext";
 import { router } from "expo-router";
 
 export default function Signup() {

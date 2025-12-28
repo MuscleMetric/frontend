@@ -11,7 +11,7 @@ import {
   BarChart3,
 } from "lucide-react-native";
 import { useAppTheme } from "../../lib/useAppTheme";
-import { useAuth } from "../../lib/useAuth"; // 👈 you already have this
+import { useAuth } from "../../lib/authContext"; // 👈 you already have this
 
 function CustomHeader({ title }: { title: string }) {
   const insets = useSafeAreaInsets();

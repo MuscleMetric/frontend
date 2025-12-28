@@ -20,9 +20,10 @@ import {
   type StrengthSet,
   type CardioSet,
 } from "../../../lib/sessionStore";
-import { useAuth } from "../../../lib/useAuth";
+import { useAuth } from "../../../lib/authContext";
 import { saveCompletedWorkout } from "../../../lib/saveWorkout";
 import { supabase } from "../../../lib/supabase";
+import { requireUserId } from "../../../lib/authGuards";
 
 /* ---------- utils ---------- */
 function secondsToHMS(total: number) {
@@ -402,22 +403,32 @@ export default function ReviewWorkoutScreen() {
         <Pressable
           disabled={saving}
           onPress={async () => {
-            if (!userId || !payload) {
-              Alert.alert("Not signed in", "Please log in first.");
+            // ✅ payload missing is a real issue (not auth)
+            if (!payload) {
+              Alert.alert(
+                "Nothing to save",
+                "Your workout data isn't ready yet."
+              );
               return;
             }
+
             try {
               setSaving(true);
+
+              // ✅ Ask Supabase for the session *right now* (avoids session flicker)
+              const uid = await requireUserId();
+
               await saveCompletedWorkout({
-                userId,
+                userId: uid,
                 payload,
                 totalDurationSec: totalSec,
                 completedAt: new Date(),
                 planWorkoutIdToComplete: planWorkoutId,
               });
 
+              // best-effort extras (don’t block success)
               try {
-                await bumpWeeklyCompleted(userId);
+                await bumpWeeklyCompleted(uid);
               } catch (e) {
                 console.warn("bumpWeeklyCompleted failed:", e);
               }
@@ -426,7 +437,7 @@ export default function ReviewWorkoutScreen() {
                 const { error } = await supabase.rpc(
                   "check_and_award_achievements",
                   {
-                    p_user_id: userId,
+                    p_user_id: uid,
                   }
                 );
                 if (error) console.warn("award achievements error:", error);
@@ -442,7 +453,32 @@ export default function ReviewWorkoutScreen() {
                 },
               ]);
             } catch (e: any) {
-              Alert.alert("Save failed", e?.message ?? "Something went wrong.");
+              const msg = String(e?.message ?? "");
+
+              // ✅ Clearer UX: session problems are not “random logout”
+              if (msg === "auth_missing" || msg === "auth_session_error") {
+                Alert.alert(
+                  "Session expired",
+                  "Please log in again to save your workout."
+                );
+                return;
+              }
+
+              // ✅ Clearer UX: gym signal issues
+              const lower = msg.toLowerCase();
+              if (
+                lower.includes("network request failed") ||
+                lower.includes("failed to fetch") ||
+                lower.includes("timeout")
+              ) {
+                Alert.alert(
+                  "No connection",
+                  "Couldn't reach the server. Check your signal and try again."
+                );
+                return;
+              }
+
+              Alert.alert("Save failed", msg || "Something went wrong.");
             } finally {
               setSaving(false);
             }

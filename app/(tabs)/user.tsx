@@ -14,7 +14,7 @@ import {
 import Svg, { Path } from "react-native-svg";
 import { supabase } from "../../lib/supabase";
 import { router } from "expo-router";
-import { useAuth } from "../../lib/useAuth";
+import { useAuth } from "../../lib/authContext";
 import { useFocusEffect } from "expo-router";
 
 import { SectionCard, RingProgress } from "../_components";

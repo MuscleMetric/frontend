@@ -1,7 +1,15 @@
-// lib/useAuth.ts
-import { useEffect, useState, useCallback, useRef } from "react";
-import { supabase } from "./supabase";
+// lib/authContext.tsx
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type { Session } from "@supabase/supabase-js";
+import { supabase } from "./supabase";
 
 export type UserRole = "user" | "pt" | "admin";
 
@@ -12,12 +20,22 @@ export type Profile = {
   role: UserRole | null;
 };
 
-export function useAuth() {
+type AuthValue = {
+  session: Session | null;
+  profile: Profile | null;
+  loading: boolean;
+  // optional helpers if you want them later:
+  userId: string | null;
+};
+
+const AuthContext = createContext<AuthValue | undefined>(undefined);
+
+export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // optional: prevent overlapping profile fetches
+  // prevent stale profile writes if multiple fetches overlap
   const profileReqId = useRef(0);
 
   const fetchProfile = useCallback(async (userId: string) => {
@@ -29,14 +47,12 @@ export function useAuth() {
       .eq("id", userId)
       .single();
 
-    // ignore stale responses
     if (reqId !== profileReqId.current) return;
 
     if (error) {
       setProfile(null);
       return;
     }
-
     setProfile(data as Profile);
   }, []);
 
@@ -49,15 +65,11 @@ export function useAuth() {
         if (!mounted) return;
 
         const sess = error ? null : data.session ?? null;
-
         setSession(sess);
-        setLoading(false); // ✅ don’t wait for profile
+        setLoading(false); // ✅ don't block on profile
 
-        if (sess?.user?.id) {
-          fetchProfile(sess.user.id); // ✅ no await
-        } else {
-          setProfile(null);
-        }
+        if (sess?.user?.id) fetchProfile(sess.user.id);
+        else setProfile(null);
       } catch {
         if (!mounted) return;
         setSession(null);
@@ -73,13 +85,10 @@ export function useAuth() {
         if (!mounted) return;
 
         setSession(sess ?? null);
-        setLoading(false); // ✅ ensure auth transitions never leave you “loading”
+        setLoading(false);
 
-        if (sess?.user?.id) {
-          fetchProfile(sess.user.id); // ✅ no await
-        } else {
-          setProfile(null);
-        }
+        if (sess?.user?.id) fetchProfile(sess.user.id);
+        else setProfile(null);
       }
     );
 
@@ -89,5 +98,18 @@ export function useAuth() {
     };
   }, [fetchProfile]);
 
-  return { session, profile, loading };
+  const value = useMemo<AuthValue>(() => {
+    const userId = session?.user?.id ?? null;
+    return { session, profile, loading, userId };
+  }, [session, profile, loading]);
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+}
+
+export function useAuth() {
+  const ctx = useContext(AuthContext);
+  if (!ctx) {
+    throw new Error("useAuth must be used within <AuthProvider>");
+  }
+  return ctx;
 }

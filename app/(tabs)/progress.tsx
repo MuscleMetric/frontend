@@ -12,7 +12,7 @@ import {
 } from "react-native";
 import { useRouter } from "expo-router";
 import { supabase } from "../../lib/supabase";
-import { useAuth } from "../../lib/useAuth";
+import { useAuth } from "../../lib/authContext";
 import { useAppTheme } from "../../lib/useAppTheme";
 const V = require("victory-native");
 

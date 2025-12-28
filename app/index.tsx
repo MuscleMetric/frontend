@@ -1,6 +1,6 @@
 // app/index.tsx
 import { Redirect } from "expo-router";
-import { useAuth } from "../lib/useAuth";
+import { useAuth } from "../lib/authContext";
 
 export default function Index() {
   const { session, loading } = useAuth();
