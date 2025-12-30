@@ -15,7 +15,8 @@ import { StatusBar } from "expo-status-bar";
 import { supabase } from "../lib/supabase";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { AuthProvider, useAuth } from "../lib/authContext";
-import { SplashScreen } from "./_components/splashScreen"; // ✅ ensure case matches filename
+import { SplashScreen } from "./_components/splashScreen";
+import "react-native-get-random-values";
 
 export default function RootLayout() {
   const scheme = useColorScheme();

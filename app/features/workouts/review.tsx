@@ -21,9 +21,11 @@ import {
   type CardioSet,
 } from "../../../lib/sessionStore";
 import { useAuth } from "../../../lib/authContext";
-import { saveCompletedWorkout } from "../../../lib/saveWorkout";
 import { supabase } from "../../../lib/supabase";
-import { requireUserId } from "../../../lib/authGuards";
+import {
+  enqueuePendingWorkout,
+  syncPendingWorkouts,
+} from "../../../lib/pendingWorkoutSync";
 
 /* ---------- utils ---------- */
 function secondsToHMS(total: number) {
@@ -403,7 +405,6 @@ export default function ReviewWorkoutScreen() {
         <Pressable
           disabled={saving}
           onPress={async () => {
-            // ✅ payload missing is a real issue (not auth)
             if (!payload) {
               Alert.alert(
                 "Nothing to save",
@@ -415,70 +416,34 @@ export default function ReviewWorkoutScreen() {
             try {
               setSaving(true);
 
-              // ✅ Ask Supabase for the session *right now* (avoids session flicker)
-              const uid = await requireUserId();
-
-              await saveCompletedWorkout({
-                userId: uid,
+              // 1) Local-first enqueue (guarantee)
+              await enqueuePendingWorkout({
                 payload,
                 totalDurationSec: totalSec,
                 completedAt: new Date(),
                 planWorkoutIdToComplete: planWorkoutId,
               });
 
-              // best-effort extras (don’t block success)
-              try {
-                await bumpWeeklyCompleted(uid);
-              } catch (e) {
-                console.warn("bumpWeeklyCompleted failed:", e);
-              }
-
-              try {
-                const { error } = await supabase.rpc(
-                  "check_and_award_achievements",
-                  {
-                    p_user_id: uid,
-                  }
-                );
-                if (error) console.warn("award achievements error:", error);
-              } catch (e) {
-                console.warn("award achievements threw:", e);
-              }
-
+              // 2) Clear local session payload immediately (user is safe now)
               clearReviewPayload();
-              Alert.alert("Saved", "Your workout has been saved.", [
+
+              // 3) Tell the user it's saved (syncing)
+              Alert.alert("Saved", "Saved (syncing in the background).", [
                 {
                   text: "OK",
                   onPress: () => router.replace("/(tabs)/workout"),
                 },
               ]);
+
+              // 4) Best-effort sync (don’t block UX)
+              syncPendingWorkouts().catch((e) =>
+                console.warn("syncPendingWorkouts failed", e)
+              );
             } catch (e: any) {
-              const msg = String(e?.message ?? "");
-
-              // ✅ Clearer UX: session problems are not “random logout”
-              if (msg === "auth_missing" || msg === "auth_session_error") {
-                Alert.alert(
-                  "Session expired",
-                  "Please log in again to save your workout."
-                );
-                return;
-              }
-
-              // ✅ Clearer UX: gym signal issues
-              const lower = msg.toLowerCase();
-              if (
-                lower.includes("network request failed") ||
-                lower.includes("failed to fetch") ||
-                lower.includes("timeout")
-              ) {
-                Alert.alert(
-                  "No connection",
-                  "Couldn't reach the server. Check your signal and try again."
-                );
-                return;
-              }
-
-              Alert.alert("Save failed", msg || "Something went wrong.");
+              Alert.alert(
+                "Save failed",
+                String(e?.message ?? "Something went wrong.")
+              );
             } finally {
               setSaving(false);
             }

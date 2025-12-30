@@ -10,6 +10,8 @@ import React, {
 } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "./supabase";
+import { AppState } from "react-native";
+import { syncPendingWorkouts } from "./pendingWorkoutSync";
 
 export type UserRole = "user" | "pt" | "admin";
 
@@ -35,6 +37,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const syncRunning = useRef(false);
+  const lastSyncAt = useRef(0);
+
   // prevent stale profile writes if multiple fetches overlap
   const profileReqId = useRef(0);
 
@@ -55,6 +60,40 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     setProfile(data as Profile);
   }, []);
+
+  const trySync = useCallback(async () => {
+    const uid = session?.user?.id;
+    if (!uid) return;
+
+    const now = Date.now();
+    // simple throttle (15s) to avoid repeated sync calls
+    if (now - lastSyncAt.current < 15_000) return;
+
+    if (syncRunning.current) return;
+    syncRunning.current = true;
+    lastSyncAt.current = now;
+
+    try {
+      await syncPendingWorkouts();
+    } catch (e) {
+      console.warn("syncPendingWorkouts failed:", e);
+    } finally {
+      syncRunning.current = false;
+    }
+  }, [session?.user?.id]);
+
+  useEffect(() => {
+    if (session?.user?.id) {
+      trySync();
+    }
+  }, [session?.user?.id, trySync]);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (s) => {
+      if (s === "active") trySync();
+    });
+    return () => sub.remove();
+  }, [trySync]);
 
   useEffect(() => {
     let mounted = true;

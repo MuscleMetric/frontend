@@ -14,7 +14,6 @@ function hasStrengthData(
   if (!s) return false;
   if (dropMode) {
     const drops = s.drops ?? [];
-    // at least one drop row has reps or weight
     return drops.some(
       (d) => (d?.reps && d.reps !== "0") || (d?.weight && d.weight !== "0")
     );
@@ -29,19 +28,52 @@ function hasCardioData(s?: { distance?: any; timeSec?: any }) {
 
 type SaveArgs = {
   userId: string;
-  payload: ReviewPayload; // from sessionStore
-  totalDurationSec: number; // totalSec you passed to review page
-  completedAt?: Date; // defaults to now
-  planWorkoutIdToComplete?: string; // optional: plan_workouts.id to mark weekly_complete
+  clientSaveId: string; // REQUIRED for idempotency
+  payload: ReviewPayload;
+  totalDurationSec: number;
+  completedAt?: Date;
+  planWorkoutIdToComplete?: string;
 };
 
 export type SaveResult = { workoutHistoryId: string };
 
-export async function saveCompletedWorkout(
-  args: SaveArgs
-): Promise<SaveResult> {
+type RpcWorkout = {
+  client_save_id: string; // NEW
+  workout_id: string;
+  completed_at: string;
+  duration_seconds: number;
+  notes: string;
+  plan_workout_id?: string;
+  exercise_history: Array<{
+    exercise_id: string;
+    order_index: number;
+    notes: string;
+    workout_exercise_id: string; // "" for ad-hoc
+    is_dropset: boolean;
+    superset_group: string;
+    superset_index: string; // "" if null
+    sets: Array<{
+      set_number: number;
+      drop_index: number;
+      reps: number | null;
+      weight: number | null;
+      time_seconds: number | null;
+      distance: number | null;
+      notes: string | null;
+    }>;
+  }>;
+  workout_exercise_updates: Array<{
+    id: string;
+    target_sets?: number;
+    target_reps?: number;
+    target_weight?: number;
+    target_time_seconds?: number;
+    target_distance?: number;
+  }>;
+};
+
+function buildRpcPayload(args: SaveArgs): RpcWorkout {
   const {
-    userId,
     payload,
     totalDurationSec,
     completedAt = new Date(),
@@ -50,284 +82,173 @@ export async function saveCompletedWorkout(
 
   const { workout, state } = payload;
 
-  // 1) Parent history
-  const { data: whInsert, error: whErr } = await supabase
-    .from("workout_history")
-    .insert({
-      user_id: userId,
-      workout_id: workout.id,
-      completed_at: completedAt.toISOString(),
-      duration_seconds: totalDurationSec,
-      notes: state.workoutNotes ?? null,
-    })
-    .select("id")
-    .single();
+  const exercise_history: RpcWorkout["exercise_history"] = [];
+  const workout_exercise_updates: RpcWorkout["workout_exercise_updates"] = [];
 
-  if (whErr || !whInsert?.id) {
-    throw new Error(
-      `Failed to create workout_history: ${whErr?.message || "unknown"}`
-    );
-  }
-  const workoutHistoryId = whInsert.id as string;
+  for (const we of workout.workout_exercises) {
+    const exState = state.byWeId[we.id];
+    if (!exState) continue;
 
-  try {
-    // 2) Insert workout_exercise_history (snapshot)
-    const wexhRows: Array<{
-      workout_history_id: string;
-      exercise_id: string;
-      order_index: number;
-      notes: string | null;
-      workout_exercise_id: string | null;
-      is_dropset: boolean | null;
-      superset_group: string | null;
-      superset_index: number | null;
-    }> = [];
+    const isAdHoc = (we as any).isAdHoc === true;
 
-    const weIdToInserted: Record<string, string> = {};
+    const exerciseId = (we as any).exercise_id ?? we.exercises?.id ?? "";
+    if (!exerciseId)
+      throw new Error(`Missing exercise_id for workout_exercise ${we.id}`);
 
-    for (const we of workout.workout_exercises) {
-      const exState = state.byWeId[we.id];
-      if (!exState) continue;
+    const dropMode =
+      exState.kind === "strength" ? !!(exState as any).dropMode : false;
 
-      const isAdHoc = (we as any).isAdHoc === true;
+    const sets: RpcWorkout["exercise_history"][number]["sets"] = [];
 
-      const exerciseId = (we as any).exercise_id ?? we.exercises?.id ?? "";
-      if (!exerciseId)
-        throw new Error(`Missing exercise_id for workout_exercise ${we.id}`);
+    if (exState.kind === "strength") {
+      (exState.sets as StrengthSet[]).forEach((s, i) => {
+        if (!hasStrengthData(s, dropMode)) return;
 
-      wexhRows.push({
-        workout_history_id: workoutHistoryId,
-        exercise_id: String(exerciseId),
-        order_index: we.order_index ?? 0,
-        notes: exState.notes ?? null,
-        // ⬇️ For ad-hoc exercises we MUST NOT store a bogus FK
-        workout_exercise_id: isAdHoc ? null : we.id || null,
-        is_dropset:
-          exState.kind === "strength" ? !!(exState as any).dropMode : null,
-        superset_group: we.superset_group ?? null,
-        superset_index: we.superset_index ?? null,
-      });
-    }
-
-    if (wexhRows.length) {
-      const { data: wexhInserts, error: wexhErr } = await supabase
-        .from("workout_exercise_history")
-        .insert(wexhRows)
-        .select("id, workout_exercise_id");
-
-      if (wexhErr)
-        throw new Error(
-          `Failed to create workout_exercise_history: ${wexhErr.message}`
-        );
-
-      // map DB rows back to workout_exercise ids (for non-ad-hoc only)
-      for (const row of wexhInserts || []) {
-        const key = row.workout_exercise_id as string | null;
-        if (key) weIdToInserted[key] = row.id as string;
-      }
-    }
-
-    // 3) Insert workout_set_history
-    const setRows: Array<{
-      workout_exercise_history_id: string;
-      set_number: number;
-      drop_index: number;
-      reps: number | null;
-      weight: number | null;
-      time_seconds: number | null;
-      distance: number | null;
-      notes: string | null;
-    }> = [];
-
-    for (const we of workout.workout_exercises) {
-      const exState = state.byWeId[we.id];
-      if (!exState) continue;
-
-      const isAdHoc = (we as any).isAdHoc === true;
-
-      // For non-ad-hoc, we often have this from the map above
-      let wexhId = isAdHoc ? null : weIdToInserted[we.id] || null;
-
-      // Fallback: look up by (history, exercise_id, order_index)
-      if (!wexhId) {
-        const { data: found, error: findErr } = await supabase
-          .from("workout_exercise_history")
-          .select("id")
-          .eq("workout_history_id", workoutHistoryId)
-          .eq("exercise_id", (we as any).exercise_id ?? we.exercises?.id ?? "")
-          .eq("order_index", we.order_index ?? 0)
-          .maybeSingle();
-        if (findErr || !found?.id) {
-          throw new Error(
-            `Could not resolve workout_exercise_history for we:${we.id} — ${
-              findErr?.message || "not found"
-            }`
-          );
-        }
-        wexhId = found.id as string;
-        // Only cache under real workout_exercises ids; ad-hoc ids are local only
-        if (!isAdHoc) {
-          weIdToInserted[we.id] = wexhId;
-        }
-      }
-
-      if (exState.kind === "strength") {
-        const dropMode = !!(exState as any).dropMode;
-        (exState.sets as StrengthSet[]).forEach((s, i) => {
-          if (!hasStrengthData(s, dropMode)) return;
-          if (dropMode) {
-            const drops = (s.drops ?? []).length
-              ? s.drops!
-              : [{ reps: s.reps, weight: s.weight }];
-            drops.forEach((d, di) => {
-              if (
-                !((d.reps && d.reps !== "0") || (d.weight && d.weight !== "0"))
-              )
-                return;
-              setRows.push({
-                workout_exercise_history_id: wexhId!,
-                set_number: i + 1,
-                drop_index: di,
-                reps: n(d.reps),
-                weight: n(d.weight),
-                time_seconds: null,
-                distance: null,
-                notes: null,
-              });
-            });
-          } else {
-            setRows.push({
-              workout_exercise_history_id: wexhId!,
+        if (dropMode) {
+          const drops = (s.drops ?? []).length
+            ? s.drops!
+            : [{ reps: s.reps, weight: s.weight }];
+          drops.forEach((d, di) => {
+            if (!((d.reps && d.reps !== "0") || (d.weight && d.weight !== "0")))
+              return;
+            sets.push({
               set_number: i + 1,
-              drop_index: 0,
-              reps: n(s.reps),
-              weight: n(s.weight),
+              drop_index: di,
+              reps: n(d.reps),
+              weight: n(d.weight),
               time_seconds: null,
               distance: null,
               notes: null,
             });
-          }
-        });
-      } else {
-        (exState.sets as CardioSet[]).forEach((s, i) => {
-          if (!hasCardioData(s)) return;
-          setRows.push({
-            workout_exercise_history_id: wexhId!,
+          });
+        } else {
+          sets.push({
             set_number: i + 1,
             drop_index: 0,
-            reps: null,
-            weight: null,
-            time_seconds: n(s.timeSec),
-            distance: n(s.distance),
+            reps: n(s.reps),
+            weight: n(s.weight),
+            time_seconds: null,
+            distance: null,
             notes: null,
           });
-        });
-      }
-    }
-
-    if (setRows.length) {
-      const { error: setErr } = await supabase
-        .from("workout_set_history")
-        .insert(setRows);
-      if (setErr)
-        throw new Error(
-          `Failed to create workout_set_history: ${setErr.message}`
-        );
-    }
-
-    // 4) Mark plan_workouts weekly_complete (now throws if blocked)
-    if (planWorkoutIdToComplete) {
-      const { error: pwErr } = await supabase
-        .from("plan_workouts")
-        .update({ weekly_complete: true })
-        .eq("id", planWorkoutIdToComplete);
-      if (pwErr) {
-        console.log(pwErr);
-        throw new Error(
-          `Failed to update plan_workouts.weekly_complete: ${pwErr.message}`
-        );
-      }
-    }
-
-    // 5) Update workout_exercises targets for next time (based on what user just did)
-    //    (per-row updates since each row has different values)
-    for (const we of workout.workout_exercises) {
-      // ⬇️ Skip ad-hoc exercises: they don't exist in workout_exercises table
-      if ((we as any).isAdHoc) continue;
-
-      const exState = state.byWeId[we.id];
-      if (!exState) continue;
-
-      const patch: any = {};
-      if (exState.kind === "strength") {
-        const drop = !!(exState as any).dropMode;
-
-        // filter to sets with data
-        const filled = (exState.sets as StrengthSet[]).filter((s) =>
-          hasStrengthData(s, drop)
-        );
-        if (!filled.length) continue;
-
-        // sets count
-        patch.target_sets = filled.length;
-
-        // last non-empty set reps
-        for (let i = filled.length - 1; i >= 0; i--) {
-          const st = filled[i];
-          const lastReps = drop
-            ? (st.drops ?? []).at(-1)?.reps ?? st.reps
-            : st.reps;
-          if (Number(lastReps)) {
-            patch.target_reps = Number(lastReps);
-            break;
-          }
         }
+      });
+    } else {
+      (exState.sets as CardioSet[]).forEach((s, i) => {
+        if (!hasCardioData(s)) return;
+        sets.push({
+          set_number: i + 1,
+          drop_index: 0,
+          reps: null,
+          weight: null,
+          time_seconds: n(s.timeSec),
+          distance: n(s.distance),
+          notes: null,
+        });
+      });
+    }
 
-        // max weight across all sets (and all drops)
-        let maxW = 0;
-        for (const st of filled) {
-          if (drop) {
-            for (const d of st.drops ?? []) {
-              const w = Number(d?.weight || 0);
+    // If user never entered any data for this exercise, skip it entirely (like you do today)
+    if (!sets.length) continue;
+
+    exercise_history.push({
+      exercise_id: String(exerciseId),
+      order_index: we.order_index ?? 0,
+      notes: exState.notes ?? "",
+      workout_exercise_id: isAdHoc ? "" : we.id ?? "",
+      is_dropset: exState.kind === "strength" ? dropMode : false,
+      superset_group: we.superset_group ?? "",
+      superset_index:
+        we.superset_index != null ? String(we.superset_index) : "",
+      sets,
+    });
+
+    // Build your target updates for next time (skip ad-hoc)
+    if (!isAdHoc) {
+      const patch: any = { id: we.id };
+
+      if (exState.kind === "strength") {
+        const filled = (exState.sets as StrengthSet[]).filter((s) =>
+          hasStrengthData(s, dropMode)
+        );
+        if (filled.length) {
+          patch.target_sets = filled.length;
+
+          for (let i = filled.length - 1; i >= 0; i--) {
+            const st = filled[i];
+            const lastReps = dropMode
+              ? (st.drops ?? []).at(-1)?.reps ?? st.reps
+              : st.reps;
+            if (Number(lastReps)) {
+              patch.target_reps = Number(lastReps);
+              break;
+            }
+          }
+
+          let maxW = 0;
+          for (const st of filled) {
+            if (dropMode) {
+              for (const d of st.drops ?? []) {
+                const w = Number(d?.weight || 0);
+                if (w > maxW) maxW = w;
+              }
+            } else {
+              const w = Number(st.weight || 0);
               if (w > maxW) maxW = w;
             }
-          } else {
-            const w = Number(st.weight || 0);
-            if (w > maxW) maxW = w;
           }
+          patch.target_weight = maxW;
         }
-        patch.target_weight = maxW;
       } else {
-        // cardio: use last non-empty distance/time
         const filled = (exState.sets as CardioSet[]).filter((s) =>
           hasCardioData(s)
         );
-        if (!filled.length) continue;
-
-        for (let i = filled.length - 1; i >= 0; i--) {
-          const st = filled[i];
-          if (Number(st.distance)) {
-            patch.target_distance = Number(st.distance);
-            break;
+        if (filled.length) {
+          for (let i = filled.length - 1; i >= 0; i--) {
+            const st = filled[i];
+            if (Number(st.distance)) {
+              patch.target_distance = Number(st.distance);
+              break;
+            }
           }
-        }
-        for (let i = filled.length - 1; i >= 0; i--) {
-          const st = filled[i];
-          if (Number(st.timeSec)) {
-            patch.target_time_seconds = Number(st.timeSec);
-            break;
+          for (let i = filled.length - 1; i >= 0; i--) {
+            const st = filled[i];
+            if (Number(st.timeSec)) {
+              patch.target_time_seconds = Number(st.timeSec);
+              break;
+            }
           }
         }
       }
 
-      if (Object.keys(patch).length) {
-        await supabase.from("workout_exercises").update(patch).eq("id", we.id);
-      }
+      if (Object.keys(patch).length > 1) workout_exercise_updates.push(patch);
     }
-
-    return { workoutHistoryId };
-  } catch (e) {
-    await supabase.from("workout_history").delete().eq("id", workoutHistoryId);
-    throw e;
   }
+
+  return {
+    client_save_id: args.clientSaveId,
+    workout_id: workout.id,
+    completed_at: completedAt.toISOString(),
+    duration_seconds: totalDurationSec,
+    notes: state.workoutNotes ?? "",
+    plan_workout_id: planWorkoutIdToComplete ?? "",
+    exercise_history,
+    workout_exercise_updates,
+  };
+}
+
+export async function saveCompletedWorkout(
+  args: SaveArgs
+): Promise<SaveResult> {
+  const payload = buildRpcPayload(args);
+
+  const { data, error } = await supabase.rpc("save_completed_workout_v1", {
+    p_workout: payload,
+  });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return { workoutHistoryId: String(data) };
 }

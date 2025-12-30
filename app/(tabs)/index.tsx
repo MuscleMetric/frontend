@@ -38,6 +38,52 @@ import {
 import { usePlanGoals } from "../features/goals/hooks/usePlanGoals";
 import { supabase } from "../../lib/supabase";
 
+import {
+  syncPendingWorkouts,
+  getPendingCount,
+  subscribePendingCount,
+} from "../../lib/pendingWorkoutSync";
+
+const [pendingCount, setPendingCount] = useState(0);
+const [syncingPending, setSyncingPending] = useState(false);
+
+useEffect(() => {
+  let alive = true;
+
+  (async () => {
+    try {
+      const n = await getPendingCount();
+      if (alive) setPendingCount(n);
+    } catch (e) {
+      console.warn("getPendingWorkoutCount failed:", e);
+    }
+  })();
+
+  const unsub = subscribePendingCount((n) => {
+    if (alive) setPendingCount(n);
+  });
+
+  return () => {
+    alive = false;
+    unsub?.();
+  };
+}, []);
+
+async function onSyncPendingNow() {
+  if (syncingPending) return;
+  setSyncingPending(true);
+  try {
+    await syncPendingWorkouts();
+    // count should update via subscribe, but this is a safe refresh:
+    const n = await getPendingCount();
+    setPendingCount(n);
+  } catch (e) {
+    console.warn("syncPendingWorkouts failed:", e);
+  } finally {
+    setSyncingPending(false);
+  }
+}
+
 function weekKeySundayLocal(d: Date) {
   const copy = new Date(d);
   const dow = copy.getDay(); // 0 = Sun
@@ -933,6 +979,38 @@ export default function Home() {
         contentContainerStyle={{ padding: 16, gap: 16 }}
       >
         <GreetingHeader title={dailyQuote} colors={colors} />
+
+        {/* Unsynced workout banner */}
+        {pendingCount > 0 && (
+          <View style={styles.pendingBanner}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.pendingTitle}>
+                {pendingCount} workout{pendingCount === 1 ? "" : "s"} pending
+                sync
+              </Text>
+              <Text style={styles.pendingSub}>
+                Saved locally. Will upload automatically when you’re online.
+              </Text>
+            </View>
+
+            <Pressable
+              onPress={onSyncPendingNow}
+              disabled={syncingPending}
+              style={({ pressed }) => [
+                styles.pendingBtn,
+                syncingPending ? { opacity: 0.6 } : null,
+                pressed ? { opacity: 0.9 } : null,
+              ]}
+            >
+              {syncingPending ? (
+                <ActivityIndicator />
+              ) : (
+                <Text style={styles.pendingBtnText}>Sync now</Text>
+              )}
+            </Pressable>
+          </View>
+        )}
+
         {/* Rings */}
         <StatsRings
           colors={colors}
@@ -1833,5 +1911,44 @@ const makeStyles = (colors: any) =>
       color: colors.subtle,
       fontSize: 12,
       fontWeight: "700",
+    },
+
+    pendingBanner: {
+      width: "100%",
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 12,
+      padding: 12,
+      borderRadius: 14,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      backgroundColor: colors.card,
+    },
+    pendingTitle: {
+      color: colors.text,
+      fontWeight: "900",
+      fontSize: 13,
+    },
+    pendingSub: {
+      marginTop: 2,
+      color: colors.subtle,
+      fontWeight: "700",
+      fontSize: 12,
+    },
+    pendingBtn: {
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      borderRadius: 12,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      backgroundColor: "rgba(59,130,246,0.12)",
+      alignItems: "center",
+      justifyContent: "center",
+      minWidth: 88,
+    },
+    pendingBtnText: {
+      color: colors.primary,
+      fontWeight: "900",
+      fontSize: 12,
     },
   });
