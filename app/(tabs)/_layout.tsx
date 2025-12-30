@@ -88,18 +88,17 @@ export default function TabsLayout() {
         }}
       />
 
-      {isAdmin && (
-        <Tabs.Screen
-          name="admin"
-          options={{
-            headerTitle: "Admin Dashboard",
-            tabBarLabel: "Admin",
-            tabBarIcon: ({ color, size }) => (
-              <BarChart3 color={color} size={size} />
-            ),
-          }}
-        />
-      )}
+      <Tabs.Screen
+        name="admin"
+        options={{
+          headerTitle: "Admin Dashboard",
+          tabBarLabel: "Admin",
+          tabBarIcon: ({ color, size }) => (
+            <BarChart3 color={color} size={size} />
+          ),
+          href: isAdmin ? "admin" : null, // ✅ hide when not admin
+        }}
+      />
 
       <Tabs.Screen
         name="user"

@@ -131,7 +131,6 @@ export async function syncPendingWorkouts(): Promise<{
       const uid = sess.user.id;
 
       await saveCompletedWorkout({
-        userId: uid,
         clientSaveId: job.clientSaveId,
         payload: job.payload,
         totalDurationSec: job.totalDurationSec,
@@ -145,10 +144,11 @@ export async function syncPendingWorkouts(): Promise<{
       const msg = String(e?.message ?? "unknown");
 
       // record failure and keep it
-      job.attempts += 1;
-      job.lastError = msg;
-
-      next.push(job);
+      next.push({
+        ...job,
+        attempts: job.attempts + 1,
+        lastError: msg,
+      });
 
       // If it smells like auth expired, stop processing remaining jobs.
       if (isAuthProblem(msg)) {

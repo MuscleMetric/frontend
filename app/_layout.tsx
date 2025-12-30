@@ -1,15 +1,10 @@
 // app/_layout.tsx
 import "react-native-url-polyfill/auto";
 import React, { useEffect } from "react";
-import {
-  Stack,
-  useRouter,
-  useSegments,
-  useRootNavigationState,
-} from "expo-router";
+import { Stack, useRouter, useSegments, useRootNavigationState } from "expo-router";
 import * as Linking from "expo-linking";
 import { ThemeProvider } from "@react-navigation/native";
-import { useColorScheme } from "react-native";
+import { useColorScheme, View, StyleSheet } from "react-native";
 import { LightTheme, DarkTheme } from "./theme";
 import { StatusBar } from "expo-status-bar";
 import { supabase } from "../lib/supabase";
@@ -42,7 +37,7 @@ function RootNavigator() {
   const navState = useRootNavigationState();
   const navReady = !!navState?.key;
 
-  // 🔹 Deep links + exchangeCodeForSession
+  // Deep links + exchangeCodeForSession
   useEffect(() => {
     const handleUrl = async (url: string | null) => {
       if (!url) return;
@@ -82,24 +77,32 @@ function RootNavigator() {
     }
   }, [navReady, loading, session, segments, router]);
 
-  if (!navReady || loading) {
-    return <SplashScreen />;
-  }
+  const showSplash = !navReady || loading;
 
   return (
-    <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="(auth)" />
-      <Stack.Screen name="(tabs)" />
-      <Stack.Screen
-        name="features"
-        options={{
-          headerShown: false,
-          headerTitle: "",
-          headerBackTitle: "",
-          headerShadowVisible: false,
-          gestureEnabled: true,
-        }}
-      />
-    </Stack>
+    <View style={{ flex: 1 }}>
+      {/* ✅ ALWAYS render a navigator */}
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="(auth)" />
+        <Stack.Screen name="(tabs)" />
+        <Stack.Screen
+          name="features"
+          options={{
+            headerShown: false,
+            headerTitle: "",
+            headerBackTitle: "",
+            headerShadowVisible: false,
+            gestureEnabled: true,
+          }}
+        />
+      </Stack>
+
+      {/* ✅ Splash as overlay (doesn't break router mounting) */}
+      {showSplash ? (
+        <View style={StyleSheet.absoluteFill} pointerEvents="auto">
+          <SplashScreen />
+        </View>
+      ) : null}
+    </View>
   );
 }

@@ -27,7 +27,6 @@ function hasCardioData(s?: { distance?: any; timeSec?: any }) {
 }
 
 type SaveArgs = {
-  userId: string;
   clientSaveId: string; // REQUIRED for idempotency
   payload: ReviewPayload;
   totalDurationSec: number;
