@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
   SafeAreaView,
-  ScrollView,
   View,
   Text,
   StyleSheet,
@@ -12,6 +11,7 @@ import {
   AppState,
   Modal,
   Image,
+  FlatList,
 } from "react-native";
 import { useAuth } from "../../lib/authContext";
 import { useAppTheme } from "../../lib/useAppTheme";
@@ -43,46 +43,6 @@ import {
   getPendingCount,
   subscribePendingCount,
 } from "../../lib/pendingWorkoutSync";
-
-const [pendingCount, setPendingCount] = useState(0);
-const [syncingPending, setSyncingPending] = useState(false);
-
-useEffect(() => {
-  let alive = true;
-
-  (async () => {
-    try {
-      const n = await getPendingCount();
-      if (alive) setPendingCount(n);
-    } catch (e) {
-      console.warn("getPendingWorkoutCount failed:", e);
-    }
-  })();
-
-  const unsub = subscribePendingCount((n) => {
-    if (alive) setPendingCount(n);
-  });
-
-  return () => {
-    alive = false;
-    unsub?.();
-  };
-}, []);
-
-async function onSyncPendingNow() {
-  if (syncingPending) return;
-  setSyncingPending(true);
-  try {
-    await syncPendingWorkouts();
-    // count should update via subscribe, but this is a safe refresh:
-    const n = await getPendingCount();
-    setPendingCount(n);
-  } catch (e) {
-    console.warn("syncPendingWorkouts failed:", e);
-  } finally {
-    setSyncingPending(false);
-  }
-}
 
 function weekKeySundayLocal(d: Date) {
   const copy = new Date(d);
@@ -175,6 +135,46 @@ export default function Home() {
   const currentMonthStart = monthStartLocal(new Date());
   const canGoNextMonth =
     monthStartLocal(calendarMonth).getTime() < currentMonthStart.getTime();
+
+  const [pendingCount, setPendingCount] = useState(0);
+  const [syncingPending, setSyncingPending] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+
+    (async () => {
+      try {
+        const n = await getPendingCount();
+        if (alive) setPendingCount(n);
+      } catch (e) {
+        console.warn("getPendingWorkoutCount failed:", e);
+      }
+    })();
+
+    const unsub = subscribePendingCount((n) => {
+      if (alive) setPendingCount(n);
+    });
+
+    return () => {
+      alive = false;
+      unsub?.();
+    };
+  }, []);
+
+  async function onSyncPendingNow() {
+    if (syncingPending) return;
+    setSyncingPending(true);
+    try {
+      await syncPendingWorkouts();
+      // count should update via subscribe, but this is a safe refresh:
+      const n = await getPendingCount();
+      setPendingCount(n);
+    } catch (e) {
+      console.warn("syncPendingWorkouts failed:", e);
+    } finally {
+      setSyncingPending(false);
+    }
+  }
 
   // Birthday
   const [birthdayOpen, setBirthdayOpen] = useState(false);
@@ -280,44 +280,46 @@ export default function Home() {
 
   useEffect(() => {
     if (!userId) {
+      console.log("[trainedDays] no userId");
       setTrainedKeys(new Set());
       return;
     }
 
     let cancelled = false;
 
-    async function loadTrainedDays() {
+    (async () => {
+      console.log("[trainedDays] loading for", userId);
+
       try {
-        // Pull last ~120 days so the modal can scroll back a few months without refetch
-        const end = new Date();
-        const start = new Date();
-        start.setDate(start.getDate() - 120);
+        // ✅ preferred: RPC (server returns local keys as strings)
+        const { data, error } = await supabase.rpc("user_trained_days", {
+          p_user_id: userId,
+          p_days_back: 120,
+        });
 
-        const { data, error } = await supabase
-          .from("workout_history")
-          .select("completed_at")
-          .eq("user_id", userId)
-          .gte("completed_at", start.toISOString())
-          .lte("completed_at", end.toISOString())
-          .order("completed_at", { ascending: true });
-
-        if (error) throw error;
-        if (cancelled) return;
+        if (error) {
+          console.warn("[trainedDays] rpc error:", error.message);
+          throw error;
+        }
 
         const keys = new Set<string>();
         (data ?? []).forEach((r: any) => {
-          if (!r?.completed_at) return;
-          keys.add(localDayKeyFromIso(String(r.completed_at))); // local day key
+          const k = String(r.day_key ?? r.day ?? r.key ?? "");
+          if (k && k.length === 10) keys.add(k);
         });
 
-        setTrainedKeys(keys);
+        console.log("[trainedDays] rows:", (data ?? []).length);
+        console.log(
+          "[trainedDays] sample keys:",
+          Array.from(keys).slice(0, 10)
+        );
+
+        if (!cancelled) setTrainedKeys(keys);
       } catch (e) {
-        console.warn("loadTrainedDays error:", e);
+        console.warn("[trainedDays] failed:", e);
         if (!cancelled) setTrainedKeys(new Set());
       }
-    }
-
-    loadTrainedDays();
+    })();
 
     return () => {
       cancelled = true;
@@ -496,10 +498,9 @@ export default function Home() {
   const [goalsRingLabel, setGoalsRingLabel] = useState("0%");
   const [goalsRingLoading, setGoalsRingLoading] = useState(true);
 
-  const ringModeLabel =
-    activePlan && activePlanGoals && activePlanGoals.length > 0
-      ? "Plan"
-      : "Weekly";
+  const [ringModeLabel, setRingModeLabel] = useState<"Plan" | "Weekly">(
+    "Weekly"
+  );
 
   const ringColor =
     goalsRingProgress < 1 / 3
@@ -608,178 +609,29 @@ export default function Home() {
 
     let cancelled = false;
 
-    async function load() {
+    (async () => {
       setGoalsRingLoading(true);
       try {
-        // ---- CASE 1: user has a plan with goals -> average progress over up to 3 exercises ----
-        if (activePlan && activePlanGoals && activePlanGoals.length > 0) {
-          const exerciseGoals = activePlanGoals
-            .filter((g: any) => g.exercises?.id)
-            .slice(0, 3);
+        const { data, error } = await supabase.rpc("get_home_goal_ring", {
+          p_user_id: userId,
+        });
+        if (error) throw error;
+        if (cancelled) return;
 
-          if (!exerciseGoals.length) {
-            throw new Error("No exercise-based plan goals.");
-          }
+        // Supabase RPC sometimes returns array-of-rows for table returns
+        const row = Array.isArray(data) ? data[0] : data;
 
-          const exerciseIds = exerciseGoals.map(
-            (g: any) => g.exercises!.id as string
-          );
+        const progress = Number(row?.progress ?? 0);
+        const label = String(row?.label ?? "0%");
+        const mode = row?.mode === "plan" ? "Plan" : "Weekly";
 
-          const goalByExerciseId: Record<string, any> = {};
-          exerciseGoals.forEach((g: any) => {
-            if (g.exercises?.id) {
-              goalByExerciseId[g.exercises.id] = g;
-            }
-          });
+        setGoalsRingProgress(Math.max(0, Math.min(1, progress)));
+        setGoalsRingLabel(label);
 
-          // get all history for those exercises in the plan date range
-          const { data, error } = await supabase
-            .from("workout_history")
-            .select(
-              `
-            id,
-            completed_at,
-            workout_exercise_history!inner(
-              exercise_id,
-              workout_set_history (
-                reps,
-                weight,
-                time_seconds,
-                distance
-              )
-            )
-          `
-            )
-            .eq("user_id", userId)
-            .gte("completed_at", activePlan.start_date)
-            .lte("completed_at", activePlan.end_date)
-            .order("completed_at", { ascending: true });
-
-          if (error) throw error;
-
-          // latest actual value per exercise
-          const latestByExercise: Record<string, number> = {};
-
-          (data ?? []).forEach((row: any) => {
-            const histories = row.workout_exercise_history ?? [];
-            histories.forEach((eh: any) => {
-              const exId = eh.exercise_id as string;
-              if (!exerciseIds.includes(exId)) return;
-
-              const g = goalByExerciseId[exId];
-              if (!g) return;
-
-              const sets = eh.workout_set_history ?? [];
-              if (!sets.length) return;
-
-              let rawVal = 0;
-              switch (g.type) {
-                case "exercise_weight":
-                  rawVal = Math.max(
-                    ...sets.map((s: any) => Number(s.weight ?? 0))
-                  );
-                  break;
-                case "exercise_reps":
-                  rawVal = Math.max(
-                    ...sets.map((s: any) => Number(s.reps ?? 0))
-                  );
-                  break;
-                case "distance":
-                  rawVal = sets.reduce(
-                    (sum: number, s: any) => sum + Number(s.distance ?? 0),
-                    0
-                  );
-                  break;
-                case "time":
-                  rawVal = sets.reduce(
-                    (sum: number, s: any) => sum + Number(s.time_seconds ?? 0),
-                    0
-                  );
-                  break;
-                default:
-                  rawVal = 0;
-              }
-
-              const val = coerceUnitRound(rawVal, g.type);
-              latestByExercise[exId] = val; // rows ordered asc, so this ends up as latest
-            });
-          });
-
-          // compute per-goal progress and average
-          const progresses: number[] = [];
-          exerciseGoals.forEach((g: any) => {
-            const exId = g.exercises!.id as string;
-            const target = Number(g.target_number);
-            const startParsed = parseStart(g.notes);
-            const start = typeof startParsed === "number" ? startParsed : 0;
-
-            const actual =
-              latestByExercise[exId] !== undefined
-                ? latestByExercise[exId]
-                : start;
-
-            if (target <= start) {
-              // weird config; treat as done if we're at/above target
-              progresses.push(actual >= target ? 1 : 0);
-            } else {
-              const frac = (actual - start) / (target - start);
-              const clamped = Math.max(0, Math.min(1, frac));
-              progresses.push(clamped);
-            }
-          });
-
-          const avg =
-            progresses.length > 0
-              ? progresses.reduce((a, b) => a + b, 0) / progresses.length
-              : 0;
-
-          if (!cancelled) {
-            setGoalsRingProgress(avg);
-            setGoalsRingLabel(`${Math.round(avg * 100)}%`);
-          }
-          return;
-        }
-
-        // ---- CASE 2: no plan/goals -> weekly workouts vs goal ----
-        const now = new Date();
-        const wk = weekKeySundayLocal(now);
-
-        const { data: weekly, error: weeklyErr } = await supabase
-          .from("user_weekly_workout_stats")
-          .select("goal, completed")
-          .eq("user_id", userId)
-          .eq("week_key", wk)
-          .maybeSingle();
-
-        if (weeklyErr) throw weeklyErr;
-
-        let goalNum = Number(weekly?.goal ?? 0);
-        let completedNum = Number(weekly?.completed ?? 0);
-
-        // fallback to profile weekly_workout_goal if no row yet
-        if (!weekly) {
-          const { data: prof, error: profErr } = await supabase
-            .from("profiles")
-            .select("weekly_workout_goal")
-            .eq("id", userId)
-            .maybeSingle();
-          if (profErr) throw profErr;
-          goalNum =
-            prof?.weekly_workout_goal != null
-              ? Number(prof.weekly_workout_goal)
-              : 3;
-          completedNum = 0;
-        }
-
-        const frac =
-          goalNum > 0 ? Math.max(0, Math.min(1, completedNum / goalNum)) : 0;
-
-        if (!cancelled) {
-          setGoalsRingProgress(frac);
-          setGoalsRingLabel(`${completedNum}/${goalNum || "?"}`);
-        }
+        // Optional: if you want ringModeLabel to be state-driven instead of derived
+        setRingModeLabel(mode);
       } catch (e) {
-        console.warn("Goals ring load error:", e);
+        console.warn("get_home_goal_ring error:", e);
         if (!cancelled) {
           setGoalsRingProgress(0);
           setGoalsRingLabel("0%");
@@ -787,14 +639,12 @@ export default function Home() {
       } finally {
         if (!cancelled) setGoalsRingLoading(false);
       }
-    }
-
-    load();
+    })();
 
     return () => {
       cancelled = true;
     };
-  }, [userId, (activePlan as any)?.id, goals]);
+  }, [userId]);
 
   useEffect(() => {
     let sub: any;
@@ -970,186 +820,820 @@ export default function Home() {
     );
   }
 
-  const hasActivePlan = !plan?.id;
+  const hasActivePlan = !!activePlan;
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
-      <ScrollView
-        style={{ flex: 1 }}
+      <FlatList
+        data={[
+          { key: "greeting" },
+          { key: "pending" },
+          { key: "rings" },
+          { key: "grid_top_pr" },
+          { key: "grid_steps_goal" },
+          { key: "consistency" },
+          { key: "next_workout" },
+          // add more keys here later as you add more cards
+        ]}
+        keyExtractor={(item) => item.key}
         contentContainerStyle={{ padding: 16, gap: 16 }}
-      >
-        <GreetingHeader title={dailyQuote} colors={colors} />
+        showsVerticalScrollIndicator={false}
+        removeClippedSubviews={Platform.OS === "android"}
+        initialNumToRender={4}
+        windowSize={7}
+        maxToRenderPerBatch={4}
+        updateCellsBatchingPeriod={50}
+        renderItem={({ item }) => {
+          switch (item.key) {
+            case "greeting":
+              return <GreetingHeader title={dailyQuote} colors={colors} />;
 
-        {/* Unsynced workout banner */}
-        {pendingCount > 0 && (
-          <View style={styles.pendingBanner}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.pendingTitle}>
-                {pendingCount} workout{pendingCount === 1 ? "" : "s"} pending
-                sync
-              </Text>
-              <Text style={styles.pendingSub}>
-                Saved locally. Will upload automatically when you’re online.
-              </Text>
-            </View>
+            case "pending":
+              return pendingCount > 0 ? (
+                <View style={styles.pendingBanner}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.pendingTitle}>
+                      {pendingCount} workout{pendingCount === 1 ? "" : "s"}{" "}
+                      pending sync
+                    </Text>
+                    <Text style={styles.pendingSub}>
+                      Saved locally. Will upload automatically when you’re
+                      online.
+                    </Text>
+                  </View>
 
-            <Pressable
-              onPress={onSyncPendingNow}
-              disabled={syncingPending}
-              style={({ pressed }) => [
-                styles.pendingBtn,
-                syncingPending ? { opacity: 0.6 } : null,
-                pressed ? { opacity: 0.9 } : null,
-              ]}
-            >
-              {syncingPending ? (
-                <ActivityIndicator />
-              ) : (
-                <Text style={styles.pendingBtnText}>Sync now</Text>
-              )}
-            </Pressable>
-          </View>
-        )}
+                  <Pressable
+                    onPress={onSyncPendingNow}
+                    disabled={syncingPending}
+                    style={({ pressed }) => [
+                      styles.pendingBtn,
+                      syncingPending ? { opacity: 0.6 } : null,
+                      pressed ? { opacity: 0.9 } : null,
+                    ]}
+                  >
+                    {syncingPending ? (
+                      <ActivityIndicator />
+                    ) : (
+                      <Text style={styles.pendingBtnText}>Sync now</Text>
+                    )}
+                  </Pressable>
+                </View>
+              ) : null;
 
-        {/* Rings */}
-        <StatsRings
-          colors={colors}
-          steps={stepsToday}
-          stepsGoal={stepsGoal}
-          workouts={weeklyBasics?.workouts_this_week ?? 0}
-          workoutGoal={weeklyBasics?.weekly_workout_goal ?? 3}
-          volume={weeklyBasics?.volume_this_week ?? 0}
-          volumeLastWeek={weeklyBasics?.volume_last_week ?? 0}
-        />
+            case "rings":
+              return (
+                <StatsRings
+                  colors={colors}
+                  steps={stepsToday}
+                  stepsGoal={stepsGoal}
+                  workouts={weeklyBasics?.workouts_this_week ?? 0}
+                  workoutGoal={weeklyBasics?.weekly_workout_goal ?? 3}
+                  volume={weeklyBasics?.volume_this_week ?? 0}
+                  volumeLastWeek={weeklyBasics?.volume_last_week ?? 0}
+                />
+              );
 
-        <View style={styles.gridRow}>
-          <CardPressable
-            disabled={loading}
-            onPress={() => router.push("/features/home/muscle")}
-            style={styles.gridCard}
-          >
-            <TopMuscleCardContent
-              colors={colors}
-              loading={loading}
-              data={
-                topMuscle && {
-                  muscle_name: topMuscle.muscle_name,
-                  pct_of_week: Number(topMuscle.pct_of_week),
-                }
-              }
-            />
-          </CardPressable>
+            case "grid_top_pr":
+              return (
+                <View style={styles.gridRow}>
+                  <CardPressable
+                    disabled={loading}
+                    onPress={() => router.push("/features/home/muscle")}
+                    style={styles.gridCard}
+                  >
+                    <TopMuscleCardContent
+                      colors={colors}
+                      loading={loading}
+                      data={
+                        topMuscle && {
+                          muscle_name: topMuscle.muscle_name,
+                          pct_of_week: Number(topMuscle.pct_of_week),
+                        }
+                      }
+                    />
+                  </CardPressable>
 
-          <CardPressable
-            disabled={loading}
-            onPress={() => router.push("/features/home/prs")}
-            style={styles.gridCard}
-          >
-            <PersonalBestCardContent
-              colors={colors}
-              loading={loading}
-              pr={latestPR}
-            />
-          </CardPressable>
-        </View>
+                  <CardPressable
+                    disabled={loading}
+                    onPress={() => router.push("/features/home/prs")}
+                    style={styles.gridCard}
+                  >
+                    <PersonalBestCardContent
+                      colors={colors}
+                      loading={loading}
+                      pr={latestPR}
+                    />
+                  </CardPressable>
+                </View>
+              );
 
-        <View style={styles.gridRow}>
-          <CardPressable
-            disabled={loading}
-            onPress={() =>
-              router.push({
-                pathname: "/features/home/stepHistory",
-                params: {
-                  steps7: JSON.stringify(steps7),
-                  stepsGoal: String(stepsGoal),
-                },
-              })
-            }
-            style={styles.gridCard}
-          >
-            <Text style={styles.title}>STEPS - LAST 7 DAYS</Text>
-            {loading ? (
-              <ActivityIndicator />
-            ) : (
-              <StepsSparklineWithLabels
-                data={steps7}
-                labels={last7DayInitials()} // same length as data
-                height={70}
-                padding={8} // keep this in sync
-                lineColor={colors.primaryText}
-                tickColor={colors.border}
-                labelColor={colors.subtle}
-              />
-            )}
-          </CardPressable>
+            case "grid_steps_goal":
+              return (
+                <View style={styles.gridRow}>
+                  <CardPressable
+                    disabled={loading}
+                    onPress={() =>
+                      router.push({
+                        pathname: "/features/home/stepHistory",
+                        params: {
+                          steps7: JSON.stringify(steps7),
+                          stepsGoal: String(stepsGoal),
+                        },
+                      })
+                    }
+                    style={styles.gridCard}
+                  >
+                    <Text style={styles.title}>STEPS - LAST 7 DAYS</Text>
+                    {loading ? (
+                      <ActivityIndicator />
+                    ) : (
+                      <StepsSparklineWithLabels
+                        data={steps7}
+                        labels={last7DayInitials()}
+                        height={70}
+                        padding={8}
+                        lineColor={colors.primaryText}
+                        tickColor={colors.border}
+                        labelColor={colors.subtle}
+                      />
+                    )}
+                  </CardPressable>
 
-          <CardPressable
-            disabled={goalsRingLoading}
-            onPress={() => router.push("/features/goals/goals")}
-            style={styles.gridCard}
-          >
-            <View style={styles.goalProgressCenter}>
-              <Text style={styles.title}>GOAL PROGRESS</Text>
+                  <CardPressable
+                    disabled={goalsRingLoading}
+                    onPress={() => router.push("/features/goals/goals")}
+                    style={styles.gridCard}
+                  >
+                    <View style={styles.goalProgressCenter}>
+                      <Text style={styles.title}>GOAL PROGRESS</Text>
 
-              {goalsRingLoading ? (
-                <ActivityIndicator style={{ marginTop: 12 }} />
-              ) : (
-                <>
-                  <RingProgress
-                    size={45}
-                    stroke={8}
-                    progress={goalsRingProgress}
-                    color={ringColor}
-                    trackColor={colors.border}
-                    label=""
+                      {goalsRingLoading ? (
+                        <ActivityIndicator style={{ marginTop: 12 }} />
+                      ) : (
+                        <>
+                          <RingProgress
+                            size={45}
+                            stroke={8}
+                            progress={goalsRingProgress}
+                            color={ringColor}
+                            trackColor={colors.border}
+                            label=""
+                          />
+
+                          <Text
+                            style={[
+                              styles.bigCenteredText,
+                              { color: ringColor },
+                            ]}
+                          >
+                            {goalsRingLabel}
+                          </Text>
+
+                          <Text style={styles.centeredModeText}>
+                            {ringModeLabel}
+                          </Text>
+                        </>
+                      )}
+                    </View>
+                  </CardPressable>
+                </View>
+              );
+
+            case "consistency":
+              return !hasActivePlan ? (
+                <View style={[styles.gridCard, { width: "100%" }]}>
+                  <Text style={styles.title}>CONSISTENCY</Text>
+
+                  <MiniMonthCalendar
+                    colors={colors}
+                    trainedKeys={trainedKeys}
+                    monthDate={calendarMonth}
+                    onPressHeader={() => setCalendarOpen(true)}
+                    onPressDay={onPickDay}
+                    selectedDayKey={selectedDayKey}
+                    compact={false}
                   />
 
-                  <Text style={[styles.bigCenteredText, { color: ringColor }]}>
-                    {goalsRingLabel}
-                  </Text>
+                  <View style={{ marginTop: 12, gap: 8 }}>
+                    {!selectedDayKey ? (
+                      <Text style={{ color: colors.subtle, fontWeight: "700" }}>
+                        Tap a day to see workouts.
+                      </Text>
+                    ) : selectedDayLoading ? (
+                      <ActivityIndicator />
+                    ) : selectedDayWorkouts.length === 0 ? (
+                      <Text style={{ color: colors.subtle, fontWeight: "700" }}>
+                        No workouts on {selectedDayKey}.
+                      </Text>
+                    ) : (
+                      selectedDayWorkouts.slice(0, 4).map((w) => (
+                        <Pressable
+                          key={w.id}
+                          onPress={() => {
+                            // optional: open workout session
+                          }}
+                          style={{
+                            paddingVertical: 10,
+                            paddingHorizontal: 12,
+                            borderRadius: 12,
+                            borderWidth: StyleSheet.hairlineWidth,
+                            borderColor: colors.border,
+                            backgroundColor: colors.surface ?? colors.card,
+                          }}
+                        >
+                          <Text
+                            style={{ color: colors.text, fontWeight: "900" }}
+                            numberOfLines={1}
+                          >
+                            {w.workout_title}
+                          </Text>
+                          <Text
+                            style={{ color: colors.subtle, marginTop: 2 }}
+                            numberOfLines={1}
+                          >
+                            {formatLongDate(w.completed_at)}{" "}
+                            {w.duration_seconds
+                              ? `· ${Math.round(w.duration_seconds / 60)}m`
+                              : ""}
+                          </Text>
+                        </Pressable>
+                      ))
+                    )}
 
-                  <Text style={styles.centeredModeText}>{ringModeLabel}</Text>
-                </>
+                    {selectedDayWorkouts.length > 4 && (
+                      <Pressable
+                        onPress={() => setCalendarOpen(true)}
+                        style={{ paddingVertical: 6 }}
+                      >
+                        <Text
+                          style={{ color: colors.primary, fontWeight: "900" }}
+                        >
+                          View all →
+                        </Text>
+                      </Pressable>
+                    )}
+                  </View>
+                </View>
+              ) : null;
+
+            case "next_workout":
+              return (
+                <NextWorkoutSection
+                  colors={colors}
+                  loading={loading}
+                  hasPlans={hasPlans}
+                  activePlanId={activePlanId}
+                  nextWorkoutTitle={nextTitle}
+                  nextIncompletePW={nextIncompletePW}
+                  onCreatePlan={() =>
+                    router.push("/features/plans/create/planInfo")
+                  }
+                  onOpenWorkout={(workoutId, planWorkoutId) =>
+                    router.push({
+                      pathname: "/features/workouts/view",
+                      params: { workoutId, planWorkoutId },
+                    })
+                  }
+                />
+              );
+
+            default:
+              return null;
+          }
+        }}
+      />
+
+      {/* ===================== MODALS (NOT VIRTUALISED) ===================== */}
+
+      <Modal
+        visible={activeCelebration === "birthday"}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setBirthdayOpen(false)}
+      >
+        <Pressable
+          onPress={() => setBirthdayOpen(false)}
+          style={{
+            flex: 1,
+            backgroundColor: "rgba(0,0,0,0.38)",
+            justifyContent: "center",
+            alignItems: "center",
+            padding: 18,
+          }}
+        >
+          <BirthdayConfetti active={activeCelebration === "birthday"} />
+
+          <Pressable
+            onPress={() => {}}
+            style={{
+              width: "100%",
+              maxWidth: 460,
+              backgroundColor: colors.card,
+              borderRadius: 22,
+              borderWidth: StyleSheet.hairlineWidth,
+              borderColor: colors.border,
+              padding: 20,
+              shadowColor: "#000",
+              shadowOpacity: 0.12,
+              shadowRadius: 18,
+              shadowOffset: { width: 0, height: 10 },
+              elevation: 10,
+            }}
+          >
+            <View style={{ alignItems: "center", gap: 16 }}>
+              <Text
+                style={{
+                  color: colors.muted,
+                  fontWeight: "800",
+                  textAlign: "center",
+                }}
+              >
+                To {birthdayName || "you"},
+              </Text>
+
+              <Text
+                style={{
+                  fontSize: 24,
+                  fontWeight: "900",
+                  color: colors.text,
+                  textAlign: "center",
+                }}
+              >
+                Happy Birthday 🎉
+              </Text>
+
+              <Text
+                style={{
+                  color: colors.text,
+                  fontWeight: "700",
+                  lineHeight: 24,
+                  textAlign: "center",
+                }}
+              >
+                We hope you have the best day and year. We wish you all the
+                best.
+              </Text>
+
+              {birthdayAge !== null && (
+                <Text
+                  style={{
+                    color: colors.muted,
+                    fontWeight: "800",
+                    textAlign: "center",
+                  }}
+                >
+                  Hope {birthdayAge} is your strongest year yet.
+                </Text>
               )}
-            </View>
-          </CardPressable>
-        </View>
 
-        {/* Full-width consistency card */}
-        {!hasActivePlan && (
-          <View style={[styles.gridCard, { width: "100%" }]}>
-            <Text style={styles.title}>CONSISTENCY</Text>
+              <View style={{ alignItems: "center", gap: 6 }}>
+                <Text
+                  style={{
+                    color: colors.muted,
+                    fontWeight: "800",
+                    textAlign: "center",
+                  }}
+                >
+                  Best Wishes,
+                </Text>
+
+                <Text
+                  style={{
+                    color: colors.text,
+                    fontWeight: "900",
+                    textAlign: "center",
+                  }}
+                >
+                  The Muscle Metrics Team
+                </Text>
+
+                <Image
+                  source={logo}
+                  style={{
+                    width: 46,
+                    height: 46,
+                    marginTop: 6,
+                    opacity: 0.95,
+                  }}
+                  resizeMode="contain"
+                />
+              </View>
+
+              <Pressable
+                onPress={closeCelebration}
+                style={{
+                  alignSelf: "stretch",
+                  marginTop: 8,
+                  paddingVertical: 13,
+                  borderRadius: 14,
+                  alignItems: "center",
+                  backgroundColor: "rgba(59,130,246,0.12)",
+                  borderWidth: StyleSheet.hairlineWidth,
+                  borderColor: "rgba(59,130,246,0.25)",
+                }}
+              >
+                <Text
+                  style={{
+                    color: colors.primary,
+                    fontWeight: "900",
+                    fontSize: 16,
+                  }}
+                >
+                  Let’s go
+                </Text>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      <Modal
+        visible={activeCelebration === "christmas"}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setChristmasOpen(false)}
+      >
+        <Pressable
+          onPress={() => setChristmasOpen(false)}
+          style={{
+            flex: 1,
+            backgroundColor: "rgba(0,0,0,0.38)",
+            justifyContent: "center",
+            alignItems: "center",
+            padding: 18,
+          }}
+        >
+          <ChristmasConfetti active={activeCelebration === "christmas"} />
+
+          <Pressable
+            onPress={() => {}}
+            style={{
+              width: "100%",
+              maxWidth: 460,
+              backgroundColor: colors.card,
+              borderRadius: 22,
+              borderWidth: StyleSheet.hairlineWidth,
+              borderColor: colors.border,
+              padding: 20,
+              shadowColor: "#000",
+              shadowOpacity: 0.12,
+              shadowRadius: 18,
+              shadowOffset: { width: 0, height: 10 },
+              elevation: 10,
+            }}
+          >
+            <View style={{ alignItems: "center", gap: 16 }}>
+              <Text
+                style={{
+                  color: colors.muted,
+                  fontWeight: "800",
+                  textAlign: "center",
+                }}
+              >
+                To {christmasName || "you"},
+              </Text>
+
+              <Text
+                style={{
+                  fontSize: 24,
+                  fontWeight: "900",
+                  color: colors.text,
+                  textAlign: "center",
+                }}
+              >
+                Merry Christmas 🎄
+              </Text>
+
+              <Text
+                style={{
+                  color: colors.text,
+                  fontWeight: "700",
+                  lineHeight: 24,
+                  textAlign: "center",
+                }}
+              >
+                Wishing you a peaceful day, great food, and a strong finish to
+                the year.
+              </Text>
+
+              <Text
+                style={{
+                  color: colors.muted,
+                  fontWeight: "800",
+                  textAlign: "center",
+                }}
+              >
+                Best Wishes,
+              </Text>
+
+              <Text
+                style={{
+                  color: colors.text,
+                  fontWeight: "900",
+                  textAlign: "center",
+                }}
+              >
+                The Muscle Metrics Team
+              </Text>
+
+              <Image
+                source={logo}
+                style={{ width: 46, height: 46, marginTop: 6 }}
+                resizeMode="contain"
+              />
+
+              <Pressable
+                onPress={closeCelebration}
+                style={{
+                  alignSelf: "stretch",
+                  marginTop: 8,
+                  paddingVertical: 13,
+                  borderRadius: 14,
+                  alignItems: "center",
+                  backgroundColor: "rgba(34,197,94,0.12)",
+                  borderWidth: StyleSheet.hairlineWidth,
+                  borderColor: "rgba(34,197,94,0.25)",
+                }}
+              >
+                <Text
+                  style={{
+                    color: "#16a34a",
+                    fontWeight: "900",
+                    fontSize: 16,
+                  }}
+                >
+                  Let’s go
+                </Text>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      <Modal
+        visible={activeCelebration === "plan_completed"}
+        transparent
+        animationType="fade"
+        onRequestClose={onDismissPlanComplete}
+      >
+        <Pressable
+          onPress={onDismissPlanComplete}
+          style={{
+            flex: 1,
+            backgroundColor: "rgba(0,0,0,0.38)",
+            justifyContent: "center",
+            alignItems: "center",
+            padding: 18,
+          }}
+        >
+          <BirthdayConfetti active={activeCelebration === "plan_completed"} />
+
+          <Pressable
+            onPress={() => {}}
+            style={{
+              width: "100%",
+              maxWidth: 460,
+              backgroundColor: colors.card,
+              borderRadius: 22,
+              borderWidth: StyleSheet.hairlineWidth,
+              borderColor: colors.border,
+              padding: 20,
+              shadowColor: "#000",
+              shadowOpacity: 0.12,
+              shadowRadius: 18,
+              shadowOffset: { width: 0, height: 10 },
+              elevation: 10,
+            }}
+          >
+            <View style={{ alignItems: "center", gap: 16 }}>
+              <Text
+                style={{
+                  color: colors.muted,
+                  fontWeight: "800",
+                  textAlign: "center",
+                }}
+              >
+                Achievement unlocked
+              </Text>
+
+              <Text
+                style={{
+                  fontSize: 26,
+                  fontWeight: "900",
+                  color: colors.text,
+                  textAlign: "center",
+                }}
+              >
+                Well done 💪
+              </Text>
+
+              <Text
+                style={{
+                  color: colors.text,
+                  fontWeight: "800",
+                  lineHeight: 24,
+                  textAlign: "center",
+                }}
+              >
+                You’ve completed{" "}
+                <Text style={{ fontWeight: "900" }}>
+                  {completedPlanNumber
+                    ? `your ${ordinal(completedPlanNumber)} plan`
+                    : "a plan"}
+                </Text>{" "}
+                on Muscle Metrics.
+              </Text>
+
+              <Text
+                style={{
+                  color: colors.muted,
+                  fontWeight: "700",
+                  lineHeight: 22,
+                  textAlign: "center",
+                }}
+              >
+                Tap below to see your accomplishments while completing{" "}
+                <Text style={{ fontWeight: "900", color: colors.text }}>
+                  {completedPlanTitle ?? "your plan"}
+                </Text>
+                .
+              </Text>
+
+              <View style={{ alignItems: "center", gap: 6 }}>
+                <Text
+                  style={{
+                    color: colors.muted,
+                    fontWeight: "800",
+                    textAlign: "center",
+                  }}
+                >
+                  Thank you,
+                </Text>
+
+                <Text
+                  style={{
+                    color: colors.text,
+                    fontWeight: "900",
+                    textAlign: "center",
+                  }}
+                >
+                  The Muscle Metrics Team
+                </Text>
+
+                <Image
+                  source={logo}
+                  style={{
+                    width: 46,
+                    height: 46,
+                    marginTop: 6,
+                    opacity: 0.95,
+                  }}
+                  resizeMode="contain"
+                />
+              </View>
+
+              <Pressable
+                onPress={onViewPlanHistory}
+                style={{
+                  alignSelf: "stretch",
+                  marginTop: 8,
+                  paddingVertical: 13,
+                  borderRadius: 14,
+                  alignItems: "center",
+                  backgroundColor: "rgba(59,130,246,0.12)",
+                  borderWidth: StyleSheet.hairlineWidth,
+                  borderColor: "rgba(59,130,246,0.25)",
+                }}
+              >
+                <Text
+                  style={{
+                    color: colors.primary,
+                    fontWeight: "900",
+                    fontSize: 16,
+                  }}
+                >
+                  View plan summary
+                </Text>
+              </Pressable>
+
+              <Pressable
+                onPress={onDismissPlanComplete}
+                style={{ paddingVertical: 6 }}
+              >
+                <Text style={{ color: colors.muted, fontWeight: "800" }}>
+                  Not now
+                </Text>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      <Modal
+        visible={calendarOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setCalendarOpen(false)}
+      >
+        <Pressable
+          onPress={() => setCalendarOpen(false)}
+          style={{
+            flex: 1,
+            backgroundColor: "rgba(0,0,0,0.38)",
+            justifyContent: "center",
+            alignItems: "center",
+            padding: 18,
+          }}
+        >
+          <Pressable
+            onPress={() => {}}
+            style={{
+              width: "100%",
+              maxWidth: 520,
+              backgroundColor: colors.card,
+              borderRadius: 22,
+              borderWidth: StyleSheet.hairlineWidth,
+              borderColor: colors.border,
+              padding: 16,
+            }}
+          >
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "space-between",
+                marginBottom: 10,
+              }}
+            >
+              <Pressable
+                onPress={() => setCalendarMonth((m) => addMonths(m, -1))}
+                hitSlop={10}
+                style={{ padding: 8 }}
+              >
+                <Text
+                  style={{
+                    color: colors.text,
+                    fontWeight: "900",
+                    fontSize: 18,
+                  }}
+                >
+                  ←
+                </Text>
+              </Pressable>
+
+              <Text
+                style={{
+                  color: colors.text,
+                  fontWeight: "900",
+                  fontSize: 18,
+                }}
+              >
+                {calendarMonth.toLocaleDateString(undefined, {
+                  month: "long",
+                  year: "numeric",
+                })}
+              </Text>
+
+              <Pressable
+                disabled={!canGoNextMonth}
+                onPress={() =>
+                  canGoNextMonth && setCalendarMonth((m) => addMonths(m, 1))
+                }
+                hitSlop={10}
+                style={{ padding: 8, opacity: canGoNextMonth ? 1 : 0.35 }}
+              >
+                <Text
+                  style={{
+                    color: colors.text,
+                    fontWeight: "900",
+                    fontSize: 18,
+                  }}
+                >
+                  →
+                </Text>
+              </Pressable>
+            </View>
 
             <MiniMonthCalendar
               colors={colors}
-              trainedKeys={trainedKeys} // Set<string> is OK now
-              monthDate={calendarMonth} // show current modal month in the big card too (optional)
-              onPressHeader={() => setCalendarOpen(true)}
-              onPressDay={onPickDay}
+              trainedKeys={trainedKeys}
+              monthDate={calendarMonth}
+              onPressDay={(k) => onPickDay(k)}
               selectedDayKey={selectedDayKey}
               compact={false}
             />
 
-            {/* Space below calendar = selected day list */}
-            <View style={{ marginTop: 12, gap: 8 }}>
-              {!selectedDayKey ? (
-                <Text style={{ color: colors.subtle, fontWeight: "700" }}>
-                  Tap a day to see workouts.
-                </Text>
-              ) : selectedDayLoading ? (
+            <View style={{ marginTop: 14, gap: 8 }}>
+              {!selectedDayKey ? null : selectedDayLoading ? (
                 <ActivityIndicator />
               ) : selectedDayWorkouts.length === 0 ? (
                 <Text style={{ color: colors.subtle, fontWeight: "700" }}>
                   No workouts on {selectedDayKey}.
                 </Text>
               ) : (
-                selectedDayWorkouts.slice(0, 4).map((w) => (
-                  <Pressable
+                selectedDayWorkouts.map((w) => (
+                  <View
                     key={w.id}
-                    onPress={() => {
-                      // open the workout session if you want
-                      // router.push({ pathname: "/features/workouts/history/view", params: { sessionId: w.id } })
-                    }}
                     style={{
                       paddingVertical: 10,
                       paddingHorizontal: 12,
@@ -1174,634 +1658,30 @@ export default function Home() {
                         ? `· ${Math.round(w.duration_seconds / 60)}m`
                         : ""}
                     </Text>
-                  </Pressable>
+                  </View>
                 ))
               )}
-
-              {selectedDayWorkouts.length > 4 && (
-                <Pressable
-                  onPress={() => setCalendarOpen(true)}
-                  style={{ paddingVertical: 6 }}
-                >
-                  <Text style={{ color: colors.primary, fontWeight: "900" }}>
-                    View all →
-                  </Text>
-                </Pressable>
-              )}
             </View>
-          </View>
-        )}
-
-        {/* Next workout */}
-        <NextWorkoutSection
-          colors={colors}
-          loading={loading}
-          hasPlans={hasPlans}
-          activePlanId={activePlanId}
-          nextWorkoutTitle={nextTitle}
-          nextIncompletePW={nextIncompletePW}
-          onCreatePlan={() => router.push("/features/plans/create/planInfo")}
-          onOpenWorkout={(workoutId, planWorkoutId) =>
-            router.push({
-              pathname: "/features/workouts/view",
-              params: { workoutId, planWorkoutId },
-            })
-          }
-        />
-
-        <Modal
-          visible={activeCelebration === "birthday"}
-          transparent
-          animationType="fade"
-          onRequestClose={() => setBirthdayOpen(false)}
-        >
-          <Pressable
-            onPress={() => setBirthdayOpen(false)}
-            style={{
-              flex: 1,
-              backgroundColor: "rgba(0,0,0,0.38)",
-              justifyContent: "center",
-              alignItems: "center",
-              padding: 18,
-            }}
-          >
-            {/* Confetti behind the card */}
-            <BirthdayConfetti active={activeCelebration === "birthday"} />
-
-            {/* Card */}
-            <Pressable
-              onPress={() => {}}
-              style={{
-                width: "100%",
-                maxWidth: 460,
-                backgroundColor: colors.card,
-                borderRadius: 22,
-                borderWidth: StyleSheet.hairlineWidth,
-                borderColor: colors.border,
-                padding: 20,
-                shadowColor: "#000",
-                shadowOpacity: 0.12,
-                shadowRadius: 18,
-                shadowOffset: { width: 0, height: 10 },
-                elevation: 10,
-              }}
-            >
-              <View style={{ alignItems: "center", gap: 16 }}>
-                {/* To line */}
-                <Text
-                  style={{
-                    color: colors.muted,
-                    fontWeight: "800",
-                    textAlign: "center",
-                  }}
-                >
-                  To {birthdayName || "you"},
-                </Text>
-
-                {/* Title */}
-                <Text
-                  style={{
-                    fontSize: 24,
-                    fontWeight: "900",
-                    color: colors.text,
-                    textAlign: "center",
-                  }}
-                >
-                  Happy Birthday 🎉
-                </Text>
-
-                {/* Body */}
-                <Text
-                  style={{
-                    color: colors.text,
-                    fontWeight: "700",
-                    lineHeight: 24,
-                    textAlign: "center",
-                  }}
-                >
-                  We hope you have the best day and year. We wish you all the
-                  best.
-                </Text>
-
-                {/* Age line */}
-                {birthdayAge !== null && (
-                  <Text
-                    style={{
-                      color: colors.muted,
-                      fontWeight: "800",
-                      textAlign: "center",
-                    }}
-                  >
-                    Hope {birthdayAge} is your strongest year yet.
-                  </Text>
-                )}
-
-                {/* Sign-off */}
-                <View style={{ alignItems: "center", gap: 6 }}>
-                  <Text
-                    style={{
-                      color: colors.muted,
-                      fontWeight: "800",
-                      textAlign: "center",
-                    }}
-                  >
-                    Best Wishes,
-                  </Text>
-
-                  <Text
-                    style={{
-                      color: colors.text,
-                      fontWeight: "900",
-                      textAlign: "center",
-                    }}
-                  >
-                    The Muscle Metrics Team
-                  </Text>
-
-                  {/* Logo under signature */}
-                  <Image
-                    source={logo}
-                    style={{
-                      width: 46,
-                      height: 46,
-                      marginTop: 6,
-                      opacity: 0.95,
-                    }}
-                    resizeMode="contain"
-                  />
-                </View>
-
-                {/* CTA */}
-                <Pressable
-                  onPress={closeCelebration}
-                  style={{
-                    alignSelf: "stretch",
-                    marginTop: 8,
-                    paddingVertical: 13,
-                    borderRadius: 14,
-                    alignItems: "center",
-                    backgroundColor: "rgba(59,130,246,0.12)",
-                    borderWidth: StyleSheet.hairlineWidth,
-                    borderColor: "rgba(59,130,246,0.25)",
-                  }}
-                >
-                  <Text
-                    style={{
-                      color: colors.primary,
-                      fontWeight: "900",
-                      fontSize: 16,
-                    }}
-                  >
-                    Let’s go
-                  </Text>
-                </Pressable>
-              </View>
-            </Pressable>
-          </Pressable>
-        </Modal>
-
-        <Modal
-          visible={activeCelebration === "christmas"}
-          transparent
-          animationType="fade"
-          onRequestClose={() => setChristmasOpen(false)}
-        >
-          <Pressable
-            onPress={() => setChristmasOpen(false)}
-            style={{
-              flex: 1,
-              backgroundColor: "rgba(0,0,0,0.38)",
-              justifyContent: "center",
-              alignItems: "center",
-              padding: 18,
-            }}
-          >
-            <ChristmasConfetti active={activeCelebration === "christmas"} />
 
             <Pressable
-              onPress={() => {}}
+              onPress={() => setCalendarOpen(false)}
               style={{
-                width: "100%",
-                maxWidth: 460,
-                backgroundColor: colors.card,
-                borderRadius: 22,
+                marginTop: 14,
+                paddingVertical: 12,
+                borderRadius: 14,
+                alignItems: "center",
+                backgroundColor: "rgba(59,130,246,0.12)",
                 borderWidth: StyleSheet.hairlineWidth,
-                borderColor: colors.border,
-                padding: 20,
-                shadowColor: "#000",
-                shadowOpacity: 0.12,
-                shadowRadius: 18,
-                shadowOffset: { width: 0, height: 10 },
-                elevation: 10,
+                borderColor: "rgba(59,130,246,0.25)",
               }}
             >
-              <View style={{ alignItems: "center", gap: 16 }}>
-                <Text
-                  style={{
-                    color: colors.muted,
-                    fontWeight: "800",
-                    textAlign: "center",
-                  }}
-                >
-                  To {christmasName || "you"},
-                </Text>
-
-                <Text
-                  style={{
-                    fontSize: 24,
-                    fontWeight: "900",
-                    color: colors.text,
-                    textAlign: "center",
-                  }}
-                >
-                  Merry Christmas 🎄
-                </Text>
-
-                <Text
-                  style={{
-                    color: colors.text,
-                    fontWeight: "700",
-                    lineHeight: 24,
-                    textAlign: "center",
-                  }}
-                >
-                  Wishing you a peaceful day, great food, and a strong finish to
-                  the year.
-                </Text>
-
-                <Text
-                  style={{
-                    color: colors.muted,
-                    fontWeight: "800",
-                    textAlign: "center",
-                  }}
-                >
-                  Best Wishes,
-                </Text>
-
-                <Text
-                  style={{
-                    color: colors.text,
-                    fontWeight: "900",
-                    textAlign: "center",
-                  }}
-                >
-                  The Muscle Metrics Team
-                </Text>
-
-                <Image
-                  source={logo}
-                  style={{ width: 46, height: 46, marginTop: 6 }}
-                  resizeMode="contain"
-                />
-
-                <Pressable
-                  onPress={closeCelebration}
-                  style={{
-                    alignSelf: "stretch",
-                    marginTop: 8,
-                    paddingVertical: 13,
-                    borderRadius: 14,
-                    alignItems: "center",
-                    backgroundColor: "rgba(34,197,94,0.12)", // festive green tint
-                    borderWidth: StyleSheet.hairlineWidth,
-                    borderColor: "rgba(34,197,94,0.25)",
-                  }}
-                >
-                  <Text
-                    style={{
-                      color: "#16a34a",
-                      fontWeight: "900",
-                      fontSize: 16,
-                    }}
-                  >
-                    Let’s go
-                  </Text>
-                </Pressable>
-              </View>
+              <Text style={{ color: colors.primary, fontWeight: "900" }}>
+                Done
+              </Text>
             </Pressable>
           </Pressable>
-        </Modal>
-
-        <Modal
-          visible={activeCelebration === "plan_completed"}
-          transparent
-          animationType="fade"
-          onRequestClose={onDismissPlanComplete}
-        >
-          <Pressable
-            onPress={onDismissPlanComplete}
-            style={{
-              flex: 1,
-              backgroundColor: "rgba(0,0,0,0.38)",
-              justifyContent: "center",
-              alignItems: "center",
-              padding: 18,
-            }}
-          >
-            {/* You can reuse confetti or make a new one later */}
-            <BirthdayConfetti active={activeCelebration === "plan_completed"} />
-
-            <Pressable
-              onPress={() => {}}
-              style={{
-                width: "100%",
-                maxWidth: 460,
-                backgroundColor: colors.card,
-                borderRadius: 22,
-                borderWidth: StyleSheet.hairlineWidth,
-                borderColor: colors.border,
-                padding: 20,
-                shadowColor: "#000",
-                shadowOpacity: 0.12,
-                shadowRadius: 18,
-                shadowOffset: { width: 0, height: 10 },
-                elevation: 10,
-              }}
-            >
-              <View style={{ alignItems: "center", gap: 16 }}>
-                <Text
-                  style={{
-                    color: colors.muted,
-                    fontWeight: "800",
-                    textAlign: "center",
-                  }}
-                >
-                  Achievement unlocked
-                </Text>
-
-                <Text
-                  style={{
-                    fontSize: 26,
-                    fontWeight: "900",
-                    color: colors.text,
-                    textAlign: "center",
-                  }}
-                >
-                  Well done 💪
-                </Text>
-
-                <Text
-                  style={{
-                    color: colors.text,
-                    fontWeight: "800",
-                    lineHeight: 24,
-                    textAlign: "center",
-                  }}
-                >
-                  You’ve completed{" "}
-                  <Text style={{ fontWeight: "900" }}>
-                    {completedPlanNumber
-                      ? `your ${ordinal(completedPlanNumber)} plan`
-                      : "a plan"}
-                  </Text>{" "}
-                  on Muscle Metrics.
-                </Text>
-
-                <Text
-                  style={{
-                    color: colors.muted,
-                    fontWeight: "700",
-                    lineHeight: 22,
-                    textAlign: "center",
-                  }}
-                >
-                  Tap below to see your accomplishments while completing{" "}
-                  <Text style={{ fontWeight: "900", color: colors.text }}>
-                    {completedPlanTitle ?? "your plan"}
-                  </Text>
-                  .
-                </Text>
-
-                {/* Signature */}
-                <View style={{ alignItems: "center", gap: 6 }}>
-                  <Text
-                    style={{
-                      color: colors.muted,
-                      fontWeight: "800",
-                      textAlign: "center",
-                    }}
-                  >
-                    Thank you,
-                  </Text>
-
-                  <Text
-                    style={{
-                      color: colors.text,
-                      fontWeight: "900",
-                      textAlign: "center",
-                    }}
-                  >
-                    The Muscle Metrics Team
-                  </Text>
-
-                  <Image
-                    source={logo}
-                    style={{
-                      width: 46,
-                      height: 46,
-                      marginTop: 6,
-                      opacity: 0.95,
-                    }}
-                    resizeMode="contain"
-                  />
-                </View>
-
-                {/* CTA */}
-                <Pressable
-                  onPress={onViewPlanHistory}
-                  style={{
-                    alignSelf: "stretch",
-                    marginTop: 8,
-                    paddingVertical: 13,
-                    borderRadius: 14,
-                    alignItems: "center",
-                    backgroundColor: "rgba(59,130,246,0.12)",
-                    borderWidth: StyleSheet.hairlineWidth,
-                    borderColor: "rgba(59,130,246,0.25)",
-                  }}
-                >
-                  <Text
-                    style={{
-                      color: colors.primary,
-                      fontWeight: "900",
-                      fontSize: 16,
-                    }}
-                  >
-                    View plan summary
-                  </Text>
-                </Pressable>
-
-                {/* Secondary */}
-                <Pressable
-                  onPress={onDismissPlanComplete}
-                  style={{ paddingVertical: 6 }}
-                >
-                  <Text style={{ color: colors.muted, fontWeight: "800" }}>
-                    Not now
-                  </Text>
-                </Pressable>
-              </View>
-            </Pressable>
-          </Pressable>
-        </Modal>
-
-        <Modal
-          visible={calendarOpen}
-          transparent
-          animationType="fade"
-          onRequestClose={() => setCalendarOpen(false)}
-        >
-          <Pressable
-            onPress={() => setCalendarOpen(false)}
-            style={{
-              flex: 1,
-              backgroundColor: "rgba(0,0,0,0.38)",
-              justifyContent: "center",
-              alignItems: "center",
-              padding: 18,
-            }}
-          >
-            <Pressable
-              onPress={() => {}}
-              style={{
-                width: "100%",
-                maxWidth: 520,
-                backgroundColor: colors.card,
-                borderRadius: 22,
-                borderWidth: StyleSheet.hairlineWidth,
-                borderColor: colors.border,
-                padding: 16,
-              }}
-            >
-              {/* Month controls */}
-              <View
-                style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  marginBottom: 10,
-                }}
-              >
-                <Pressable
-                  onPress={() => setCalendarMonth((m) => addMonths(m, -1))}
-                  hitSlop={10}
-                  style={{ padding: 8 }}
-                >
-                  <Text
-                    style={{
-                      color: colors.text,
-                      fontWeight: "900",
-                      fontSize: 18,
-                    }}
-                  >
-                    ←
-                  </Text>
-                </Pressable>
-
-                <Text
-                  style={{
-                    color: colors.text,
-                    fontWeight: "900",
-                    fontSize: 18,
-                  }}
-                >
-                  {calendarMonth.toLocaleDateString(undefined, {
-                    month: "long",
-                    year: "numeric",
-                  })}
-                </Text>
-
-                <Pressable
-                  disabled={!canGoNextMonth}
-                  onPress={() =>
-                    canGoNextMonth && setCalendarMonth((m) => addMonths(m, 1))
-                  }
-                  hitSlop={10}
-                  style={{ padding: 8, opacity: canGoNextMonth ? 1 : 0.35 }}
-                >
-                  <Text
-                    style={{
-                      color: colors.text,
-                      fontWeight: "900",
-                      fontSize: 18,
-                    }}
-                  >
-                    →
-                  </Text>
-                </Pressable>
-              </View>
-
-              <MiniMonthCalendar
-                colors={colors}
-                trainedKeys={trainedKeys}
-                monthDate={calendarMonth}
-                onPressDay={(k) => onPickDay(k)}
-                selectedDayKey={selectedDayKey}
-                compact={false}
-              />
-
-              {/* Selected day list inside modal too (optional but nice) */}
-              <View style={{ marginTop: 14, gap: 8 }}>
-                {!selectedDayKey ? null : selectedDayLoading ? (
-                  <ActivityIndicator />
-                ) : selectedDayWorkouts.length === 0 ? (
-                  <Text style={{ color: colors.subtle, fontWeight: "700" }}>
-                    No workouts on {selectedDayKey}.
-                  </Text>
-                ) : (
-                  selectedDayWorkouts.map((w) => (
-                    <View
-                      key={w.id}
-                      style={{
-                        paddingVertical: 10,
-                        paddingHorizontal: 12,
-                        borderRadius: 12,
-                        borderWidth: StyleSheet.hairlineWidth,
-                        borderColor: colors.border,
-                        backgroundColor: colors.surface ?? colors.card,
-                      }}
-                    >
-                      <Text
-                        style={{ color: colors.text, fontWeight: "900" }}
-                        numberOfLines={1}
-                      >
-                        {w.workout_title}
-                      </Text>
-                      <Text
-                        style={{ color: colors.subtle, marginTop: 2 }}
-                        numberOfLines={1}
-                      >
-                        {formatLongDate(w.completed_at)}{" "}
-                        {w.duration_seconds
-                          ? `· ${Math.round(w.duration_seconds / 60)}m`
-                          : ""}
-                      </Text>
-                    </View>
-                  ))
-                )}
-              </View>
-
-              <Pressable
-                onPress={() => setCalendarOpen(false)}
-                style={{
-                  marginTop: 14,
-                  paddingVertical: 12,
-                  borderRadius: 14,
-                  alignItems: "center",
-                  backgroundColor: "rgba(59,130,246,0.12)",
-                  borderWidth: StyleSheet.hairlineWidth,
-                  borderColor: "rgba(59,130,246,0.25)",
-                }}
-              >
-                <Text style={{ color: colors.primary, fontWeight: "900" }}>
-                  Done
-                </Text>
-              </Pressable>
-            </Pressable>
-          </Pressable>
-        </Modal>
-      </ScrollView>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -1816,6 +1696,13 @@ function last7DayInitials(): string[] {
     labels.push(short[0].toUpperCase());
   }
   return labels;
+}
+
+function dayKeyLocal(d: Date) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`; // yyyy-mm-dd
 }
 
 const makeStyles = (colors: any) =>

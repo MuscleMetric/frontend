@@ -72,7 +72,11 @@ export function MiniMonthCalendar({
       if (dayNum < 1 || dayNum > daysInMonth) {
         out.push({ date: null, key: null });
       } else {
-        const d = new Date(monthStart.getFullYear(), monthStart.getMonth(), dayNum);
+        const d = new Date(
+          monthStart.getFullYear(),
+          monthStart.getMonth(),
+          dayNum
+        );
         out.push({ date: d, key: dayKeyLocal(d) });
       }
     }

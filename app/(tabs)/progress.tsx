@@ -25,7 +25,6 @@ const VictoryLegend = V?.VictoryLegend ?? V?.default?.VictoryLegend;
 const VictoryGroup = V?.VictoryGroup ?? V?.default?.VictoryGroup;
 const VictoryLabel = V?.VictoryLabel ?? V?.default?.VictoryLabel;
 const VictoryBar = V?.VictoryBar ?? V?.default?.VictoryBar;
-const VictoryHistogram = undefined;
 const themeMaterial = V?.VictoryTheme?.material ?? undefined;
 
 // (optional) one-time sanity log
@@ -58,14 +57,6 @@ type ExerciseStat = {
     maxDistance: number | null;
     fastestPacePerKmSec: number | null; // seconds per km
   };
-};
-
-type WorkoutHistoryRow = {
-  id: string;
-  completed_at: string;
-  duration_seconds: number | null;
-  notes: string | null;
-  workouts: { id: string; title: string | null } | null;
 };
 
 type LastWorkoutItem = {
@@ -112,6 +103,20 @@ type ExerciseListRow = {
   exercise_id: string;
   exercises: { id: string; name: string; type: string | null };
   workout_history: { user_id: string; completed_at: string | null };
+};
+
+type ExerciseLastTrainedRow = {
+  exercise_id: string;
+  last_completed_at: string | null;
+  exercises: { id: string; name: string; type: string | null };
+};
+
+type WorkoutHeaderRow = {
+  id: string;
+  completed_at: string;
+  duration_seconds: number | null;
+  notes: string | null;
+  workout_title: string | null;
 };
 
 // ===== Helpers =====
@@ -340,67 +345,51 @@ export default function ProgressScreen() {
   // ===== Exercise selector (distinct completed exercises) =====
   useEffect(() => {
     if (!userId) return;
+
     (async () => {
       setLoadingList(true);
       try {
         let q1 = supabase
-          .from("workout_exercise_history")
+          .from("v_user_exercise_last_trained")
           .select(
-            `
-            exercise_id,
-            exercises:exercises!inner(id, name, type),
-            workout_history:workout_history!inner(user_id, completed_at)
-          `
+            "exercise_id, last_completed_at, exercises:exercises!inner(id,name,type)"
           )
-          .eq("workout_history.user_id", userId)
-          .order("completed_at", {
-            ascending: false,
-            referencedTable: "workout_history",
-          })
-          .limit(2000);
+          .eq("user_id", userId)
+          .order("last_completed_at", { ascending: false })
+          .limit(300);
 
+        // ⚠️ This may or may not work depending on PostgREST embedding filters.
+        // If it errors, do client-side filtering (shown below).
         if (exerciseSearch.trim()) {
           q1 = q1.ilike("exercises.name", `%${exerciseSearch.trim()}%`);
         }
 
-        const { data, error } = await q1.returns<ExerciseListRow[]>();
+        const { data, error } = await q1.returns<ExerciseLastTrainedRow[]>();
         if (error) throw error;
 
-        // Distinct by exercise, keep most recent completion
-        const map = new Map<
-          string,
-          {
-            id: string;
-            name: string;
-            type: string | null;
-            last_completed_at: string | null;
-          }
-        >();
-        for (const r of data ?? []) {
-          const ex = r.exercises;
-          const completedAt = r.workout_history.completed_at;
-          const prev = map.get(ex.id);
-          if (!prev || (completedAt ?? "") > (prev.last_completed_at ?? "")) {
-            map.set(ex.id, {
-              id: ex.id,
-              name: ex.name,
-              type: ex.type,
-              last_completed_at: completedAt ?? null,
-            });
-          }
-        }
-        const list = Array.from(map.values()).sort((a, b) =>
-          (b.last_completed_at ?? "") < (a.last_completed_at ?? "") ? -1 : 1
-        );
+        // v_user_exercise_last_trained is already distinct → just map
+        let list = (data ?? []).map((r) => ({
+          id: r.exercises.id,
+          name: r.exercises.name,
+          type: r.exercises.type,
+          last_completed_at: r.last_completed_at,
+        }));
+
+        // If embedded ilike doesn't work reliably, fallback to client filter:
+        // const term = exerciseSearch.trim().toLowerCase();
+        // if (term) list = list.filter(x => x.name.toLowerCase().includes(term));
 
         setExerciseList(list);
-        if (!selectedExerciseId && list.length)
+
+        // Keep selected exercise stable if it still exists
+        if (!selectedExerciseId && list.length) {
           setSelectedExerciseId(list[0].id);
+        }
       } finally {
         setLoadingList(false);
       }
     })();
-  }, [userId, exerciseSearch, selectedExerciseId]);
+  }, [userId, exerciseSearch]); // ✅ no selectedExerciseId here
 
   // ===== Last 5 workouts (cards) =====
   useEffect(() => {
@@ -409,20 +398,13 @@ export default function ProgressScreen() {
       setLoading(true);
       try {
         const { data: wh, error: e1 } = await supabase
-          .from("workout_history")
-          .select(
-            `
-            id,
-            completed_at,
-            duration_seconds,
-            notes,
-            workouts:workouts(id, title)
-          `
-          )
+          .from("v_user_workout_history_header")
+          .select("id, completed_at, duration_seconds, notes, workout_title")
           .eq("user_id", userId)
           .order("completed_at", { ascending: false })
           .limit(5)
-          .returns<WorkoutHistoryRow[]>();
+          .returns<WorkoutHeaderRow[]>();
+
         if (e1) throw e1;
 
         const ids = (wh ?? []).map((r) => r.id);
@@ -498,7 +480,7 @@ export default function ProgressScreen() {
 
         const normalized: LastWorkout[] = (wh ?? []).map((r) => ({
           id: r.id,
-          title: r.workouts?.title ?? "Workout",
+          title: r.workout_title ?? "Workout", // ✅ FIX
           duration_sec: r.duration_seconds ?? null,
           notes: r.notes ?? null,
           completed_at: r.completed_at,
@@ -539,7 +521,7 @@ export default function ProgressScreen() {
             ascending: false,
             referencedTable: "workout_exercise_history.workout_history",
           })
-          .limit(1000);
+          .limit(400);
 
         const { data: rows, error: statsErr } = await q2.returns<
           SetStatsRow[]
@@ -873,7 +855,6 @@ function epley1RM(weight: number, reps: number) {
   return weight * (1 + reps / 30);
 }
 
-// 3.1 Time series with forecast (Weight & Est 1RM)
 function TimeSeriesWithForecast({
   rows,
   colors,
@@ -882,24 +863,29 @@ function TimeSeriesWithForecast({
   rows: SetStatsRow[];
   colors: any;
 }) {
-  // Build per-session best weight & est1RM
-  const byDay = new Map<string, { topW?: number; best1RM?: number }>();
+  const DAY = 86400000;
+
+  // ---- Build per-session best weight & best 1RM (by date) ----
+  const byDay = new Map<string, { topW: number; best1RM: number }>();
+
   for (const r of rows) {
-    const d = r.workout_exercise_history.workout_history.completed_at?.slice(
-      0,
-      10
-    );
+    const completedAt =
+      r.workout_exercise_history.workout_history.completed_at ?? null;
+    const d = completedAt ? completedAt.slice(0, 10) : null;
     if (!d || r.weight == null || r.reps == null) continue;
+
     const w = Number(r.weight);
     const reps = Number(r.reps);
-    const topW = Math.max(byDay.get(d)?.topW ?? 0, w);
     const oneRM = epley1RM(w, reps);
-    const best1RM = Math.max(byDay.get(d)?.best1RM ?? 0, oneRM);
+
+    const prev = byDay.get(d);
+    const topW = Math.max(prev?.topW ?? 0, w);
+    const best1RM = Math.max(prev?.best1RM ?? 0, oneRM);
     byDay.set(d, { topW, best1RM });
   }
 
-  const days = Array.from(byDay.keys()).sort();
-  if (!days.length) {
+  const allDays = Array.from(byDay.keys()).sort(); // oldest -> newest
+  if (!allDays.length) {
     return (
       <Text style={{ color: colors.subtle, marginTop: 8 }}>
         No session history.
@@ -907,58 +893,84 @@ function TimeSeriesWithForecast({
     );
   }
 
-  const { toXY } = dateKeyToDayOffset(days);
+  // ---- Hybrid window: last 40 days, but if < 4 sessions then last 8 sessions ----
+  const now = new Date();
+  const windowStart = new Date(now.getTime() - 40 * DAY);
+  const windowEnd = new Date(now.getTime() + 20 * DAY);
 
-  const weightSeries = days.map((d) => toXY(d, byDay.get(d)!.topW!));
-  const rmSeries = days.map((d) => toXY(d, Math.round(byDay.get(d)!.best1RM!)));
+  const inLast40 = allDays.filter((d) => new Date(d) >= windowStart);
 
-  // --- Forecast that starts at LAST observed x (clearer)
-  const lastX = Math.max(
-    ...weightSeries.map((p) => p.x),
-    ...rmSeries.map((p) => p.x),
-    0
-  );
-  const lastW = weightSeries.length
-    ? weightSeries[weightSeries.length - 1]
-    : null;
-  const lastRM = rmSeries.length ? rmSeries[rmSeries.length - 1] : null;
+  const MIN_IN_40 = 4;
+  const FALLBACK_LAST_N = 8;
 
-  // Simple linear regression
-  const wFit = linearRegression(weightSeries);
-  const rmFit = linearRegression(rmSeries);
+  const days =
+    inLast40.length >= MIN_IN_40
+      ? inLast40
+      : allDays.slice(Math.max(0, allDays.length - FALLBACK_LAST_N));
 
-  const forecastHorizon = 30;
-  const fx1 = lastX;
-  const fx2 = lastX + forecastHorizon;
+  // ---- Series for Victory (Date on X) ----
+  const weightSeries = days.map((d) => ({
+    x: new Date(d),
+    y: byDay.get(d)!.topW,
+  }));
 
-  const forecastW = lastW
-    ? [
-        { x: fx1, y: wFit.m * fx1 + wFit.b },
-        { x: fx2, y: wFit.m * fx2 + wFit.b },
-      ]
-    : [];
+  const rmSeries = days.map((d) => ({
+    x: new Date(d),
+    y: Math.round(byDay.get(d)!.best1RM),
+  }));
 
-  const forecastRM = lastRM
-    ? [
-        { x: fx1, y: rmFit.m * fx1 + rmFit.b },
-        { x: fx2, y: rmFit.m * fx2 + rmFit.b },
-      ]
-    : [];
+  // ---- Regression needs numeric X (day offsets from first included day) ----
+  const firstT = new Date(days[0]).getTime();
+  const toXY = (d: string, y: number) => ({
+    x: Math.round((new Date(d).getTime() - firstT) / DAY),
+    y,
+  });
 
-  // Y bounds across actual + forecast
+  const weightXY = days.map((d) => toXY(d, byDay.get(d)!.topW));
+  const rmXY = days.map((d) => toXY(d, Math.round(byDay.get(d)!.best1RM)));
+
+  const wFit = linearRegression(weightXY);
+  const rmFit = linearRegression(rmXY);
+
+  // Last observed x (in day-offset)
+  const lastDayOffset = weightXY.length ? weightXY[weightXY.length - 1].x : 0;
+
+  // Forecast end = +20 days from today (in same offset space)
+  const futureEndOffset = Math.round((windowEnd.getTime() - firstT) / DAY);
+  const fx1 = lastDayOffset;
+  const fx2 = Math.max(lastDayOffset + 1, futureEndOffset);
+
+  const forecastW =
+    weightXY.length > 0
+      ? [
+          { x: new Date(firstT + fx1 * DAY), y: wFit.m * fx1 + wFit.b },
+          { x: new Date(firstT + fx2 * DAY), y: wFit.m * fx2 + wFit.b },
+        ]
+      : [];
+
+  const forecastRM =
+    rmXY.length > 0
+      ? [
+          { x: new Date(firstT + fx1 * DAY), y: rmFit.m * fx1 + rmFit.b },
+          { x: new Date(firstT + fx2 * DAY), y: rmFit.m * fx2 + rmFit.b },
+        ]
+      : [];
+
+  // ---- Y bounds ----
   const allY = [
     ...weightSeries.map((p) => p.y),
     ...rmSeries.map((p) => p.y),
     ...forecastW.map((p) => p.y),
     ...forecastRM.map((p) => p.y),
-  ].filter(Number.isFinite);
+  ].filter((v) => Number.isFinite(v));
 
   const yN = niceBounds(Math.min(...allY), Math.max(...allY), 6);
 
-  // X ticks (leave some breathing room to the right so labels don’t clip)
-  const maxX = Math.max(fx2, lastX);
-  const xTicksStep = maxX > 20 ? 5 : 1;
-  const xTicks = intTicks(maxX, xTicksStep);
+  // ---- Ticks every 10 days across fixed window ----
+  const xTicks: Date[] = [];
+  for (let t = windowStart.getTime(); t <= windowEnd.getTime(); t += 10 * DAY) {
+    xTicks.push(new Date(t));
+  }
 
   return (
     <View style={{ marginTop: 16 }}>
@@ -971,26 +983,20 @@ function TimeSeriesWithForecast({
         }}
       >
         <Text style={{ color: colors.text, fontWeight: "700" }}>
-          Weight & Est. 1RM (with 30-day forecast)
+          Weight & Est. 1RM (40d view + forecast)
         </Text>
         <InfoButton title="Weight & Est. 1RM" colors={colors}>
           <Text style={{ color: colors.text }}>
             Shows your heaviest set per session and estimated 1RM (Epley).
-            Dashed line extrapolates the recent trend 30 days forward.
+            Forecast extrapolates the recent trend forward.
           </Text>
           <View style={{ height: 8 }} />
           <Text style={{ color: colors.text, fontWeight: "700" }}>
-            What to look for
+            Hybrid window
           </Text>
           <Text style={{ color: colors.text }}>
-            • Both lines trending up → strength gains.{"\n"}• 1RM up while top
-            weight flat → progress via reps.{"\n"}• Forecast down → recent
-            sessions lowered trend.
-          </Text>
-          <View style={{ height: 8 }} />
-          <Text style={{ color: colors.text, fontWeight: "700" }}>Example</Text>
-          <Text style={{ color: colors.text }}>
-            3–6 points climbing over weeks with an upward forecast.
+            Uses last 40 days. If you trained fewer than {MIN_IN_40} times in
+            that window, it falls back to your last {FALLBACK_LAST_N} sessions.
           </Text>
         </InfoButton>
       </View>
@@ -999,14 +1005,15 @@ function TimeSeriesWithForecast({
         width={SCREEN_W - 32}
         theme={themeMaterial}
         height={240}
-        padding={{ left: 56, right: 32, top: 24, bottom: 64 }} // more bottom room
-        domainPadding={{ x: [0, 6] }}
-        domain={{ x: [0, maxX], y: [yN.min, yN.max] }}
+        padding={{ left: 56, right: 32, top: 24, bottom: 64 }}
+        domain={{ x: [windowStart, windowEnd], y: [yN.min, yN.max] }}
       >
         <VictoryAxis
-          label="Days"
+          label="Date"
           tickValues={xTicks}
-          tickFormat={(t: number) => `${t | 0}`}
+          tickFormat={(d: Date) =>
+            d.toLocaleDateString("en-GB", { day: "2-digit", month: "short" })
+          }
           style={{
             axisLabel: {
               padding: 40,
@@ -1022,6 +1029,7 @@ function TimeSeriesWithForecast({
             },
           }}
         />
+
         <VictoryAxis
           dependentAxis
           label="Kg"
@@ -1050,17 +1058,13 @@ function TimeSeriesWithForecast({
           gutter={16}
           data={[
             { name: "Top Weight", symbol: { fill: colors.primary } },
-            {
-              name: "Est. 1RM",
-              symbol: { fill: colors.warning ?? "#f59e0b" },
-            },
+            { name: "Est. 1RM", symbol: { fill: colors.warning ?? "#f59e0b" } },
             { name: "Forecast", symbol: { fill: colors.text } },
           ]}
           style={{ labels: { fill: colors.text, fontSize: 10 } }}
         />
 
         <VictoryGroup>
-          {/* thicker solid lines for actual series */}
           <VictoryLine
             data={weightSeries}
             style={{ data: { stroke: colors.primary, strokeWidth: 3 } }}
@@ -1068,13 +1072,9 @@ function TimeSeriesWithForecast({
           <VictoryLine
             data={rmSeries}
             style={{
-              data: {
-                stroke: colors.warning ?? "#f59e0b",
-                strokeWidth: 3,
-              },
+              data: { stroke: colors.warning ?? "#f59e0b", strokeWidth: 3 },
             }}
           />
-          {/* thinner dashed forecast starting at last observed x */}
           <VictoryLine
             data={forecastW}
             style={{
