@@ -34,6 +34,11 @@ type Exercise = {
 type WorkoutExercise = {
   id: string;
   order_index: number | null;
+
+  superset_group: string | null;
+  superset_index: number | null;
+  is_dropset: boolean | null;
+
   target_sets: number | null;
   target_reps: number | null;
   target_weight: number | null;
@@ -51,9 +56,7 @@ type Workout = {
 };
 
 /* ---------- Helpers ---------- */
-// Replace formatTargets so it returns null when no targets instead of "—"
 const formatTargets = (we: WorkoutExercise): string | null => {
-  // Strength style (sets x reps • weight)
   if (we.target_sets || we.target_reps || we.target_weight != null) {
     const sets = we.target_sets ? `${we.target_sets} sets` : null;
     const reps = we.target_reps != null ? `${we.target_reps}` : null;
@@ -64,7 +67,6 @@ const formatTargets = (we: WorkoutExercise): string | null => {
     return `${left}${right}`.trim();
   }
 
-  // Cardio style (time / distance)
   const time =
     we.target_time_seconds != null
       ? `${Math.round(we.target_time_seconds / 60)} min`
@@ -93,7 +95,6 @@ function InfoIcon({ color }: { color: string }) {
   );
 }
 
-// Add this small header bar component (centered title + back arrow)
 function HeaderBar({ title }: { title: string }) {
   const { colors } = useAppTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
@@ -114,7 +115,6 @@ function HeaderBar({ title }: { title: string }) {
         </Text>
       </View>
 
-      {/* right spacer to keep title centered */}
       <View style={styles.headerSide} />
     </View>
   );
@@ -151,7 +151,6 @@ function ExerciseInfoModal({
     <Modal visible={visible} animationType="fade" transparent>
       <View style={styles.modalBackdrop}>
         <View style={styles.modalCenteredCard}>
-          {/* Header */}
           <Text style={styles.h2}>{exercise.name ?? "Exercise"}</Text>
           <Text style={[styles.muted, { marginTop: 4 }]}>
             {exercise.type ? `${exercise.type} • ` : ""}
@@ -159,7 +158,6 @@ function ExerciseInfoModal({
             {exercise.equipment ? ` • ${exercise.equipment}` : ""}
           </Text>
 
-          {/* Body */}
           <View style={{ height: 12 }} />
 
           <Text style={[styles.h3, { marginBottom: 6 }]}>Muscles</Text>
@@ -172,7 +170,6 @@ function ExerciseInfoModal({
             {exercise.instructions?.trim() || "No instructions yet."}
           </Text>
 
-          {/* Video link */}
           {exercise.video_url ? (
             <>
               <View style={{ height: 16 }} />
@@ -187,7 +184,6 @@ function ExerciseInfoModal({
             </>
           ) : null}
 
-          {/* Close */}
           <View style={{ height: 16 }} />
           <Pressable onPress={onClose} style={[styles.pill, styles.modalClose]}>
             <Text style={{ color: colors.text, fontWeight: "700" }}>Close</Text>
@@ -198,6 +194,81 @@ function ExerciseInfoModal({
   );
 }
 
+/* ---------- Superset UI helpers ---------- */
+const SUPERSET_COLORS = [
+  "#3b82f6", // blue
+  "#8b5cf6", // violet
+  "#14b8a6", // teal
+  "#22c55e", // green
+  "#f59e0b", // amber
+  "#ec4899", // pink
+  "#06b6d4", // cyan
+];
+
+const hashToIndex = (s: string, mod: number) => {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return h % mod;
+};
+
+const supersetColorFor = (groupId: string, fallbackPrimary?: string) => {
+  const c = SUPERSET_COLORS[hashToIndex(groupId, SUPERSET_COLORS.length)];
+  return c || fallbackPrimary || "#3b82f6";
+};
+
+type DisplayItem =
+  | { kind: "single"; key: string; we: WorkoutExercise }
+  | {
+      kind: "superset";
+      key: string;
+      groupId: string;
+      items: WorkoutExercise[];
+    };
+
+// assumes list already sorted by order_index
+const buildDisplayItems = (arr: WorkoutExercise[]): DisplayItem[] => {
+  const out: DisplayItem[] = [];
+
+  for (let i = 0; i < arr.length; i++) {
+    const we = arr[i];
+    const gid = we.superset_group;
+
+    if (!gid) {
+      out.push({ kind: "single", key: `we:${we.id}`, we });
+      continue;
+    }
+
+    const prev = i > 0 ? arr[i - 1] : null;
+    const isStart = !prev || prev.superset_group !== gid;
+    if (!isStart) continue;
+
+    const items: WorkoutExercise[] = [];
+    let j = i;
+    while (j < arr.length && arr[j].superset_group === gid) {
+      items.push(arr[j]);
+      j++;
+    }
+
+    // inside block: order by superset_index (fallback to order_index)
+    items.sort((a, b) => {
+      const ai =
+        a.superset_index != null ? a.superset_index : a.order_index ?? 0;
+      const bi =
+        b.superset_index != null ? b.superset_index : b.order_index ?? 0;
+      return ai - bi;
+    });
+
+    out.push({
+      kind: "superset",
+      key: `ss:${gid}:${items[0]?.id ?? i}`,
+      groupId: gid,
+      items,
+    });
+  }
+
+  return out;
+};
+
 /* ---------- Screen ---------- */
 export default function WorkoutViewScreen() {
   const { colors } = useAppTheme();
@@ -206,15 +277,16 @@ export default function WorkoutViewScreen() {
   const { session } = useAuth();
   const userId = session?.user?.id || null;
 
-  const { workoutId } = useLocalSearchParams<{ workoutId?: string }>();
+  const params = useLocalSearchParams();
+  const workoutId =
+    typeof params.workoutId === "string" ? params.workoutId : undefined;
+  const planWorkoutId =
+    typeof params.planWorkoutId === "string" ? params.planWorkoutId : undefined;
 
   const [loading, setLoading] = useState(true);
   const [workout, setWorkout] = useState<Workout | null>(null);
   const [infoTarget, setInfoTarget] = useState<Exercise | null>(null);
   const [infoOpen, setInfoOpen] = useState(false);
-  const params = useLocalSearchParams();
-  const planWorkoutId =
-  typeof params.planWorkoutId === "string" ? params.planWorkoutId : undefined;
 
   const openInfo = (ex: Exercise | null) => {
     setInfoTarget(ex);
@@ -232,20 +304,33 @@ export default function WorkoutViewScreen() {
           `
           id, title, notes,
           workout_exercises(
-            id, order_index, target_sets, target_reps, target_weight, target_time_seconds, target_distance, notes,
-            exercises (
-              id, name, equipment, type, level, instructions, video_url,
-              exercise_muscles (
-                contribution,
-                muscles ( name )
-              )
-            )
-          )
+  id,
+  order_index,
+  superset_group,
+  superset_index,
+  is_dropset,
+  target_sets,
+  target_reps,
+  target_weight,
+  target_time_seconds,
+  target_distance,
+  notes,
+  exercises (
+    id, name, equipment, type, level, instructions, video_url,
+    exercise_muscles (
+      contribution,
+      muscles ( name )
+    )
+  )
+)
+
         `
         )
         .eq("id", workoutId)
         .eq("user_id", userId)
         .maybeSingle();
+
+      console.log("RAW WORKOUT DATA", data);
 
       if (error) throw error;
 
@@ -258,6 +343,11 @@ export default function WorkoutViewScreen() {
               .map((we: any) => ({
                 id: String(we.id),
                 order_index: we.order_index ?? null,
+
+                superset_group: we.superset_group ?? null,
+                superset_index: we.superset_index ?? null,
+                is_dropset: we.is_dropset ?? false,
+
                 target_sets: we.target_sets ?? null,
                 target_reps: we.target_reps ?? null,
                 target_weight:
@@ -295,6 +385,8 @@ export default function WorkoutViewScreen() {
           }
         : null;
 
+      console.log(normalized);
+
       setWorkout(normalized);
     } catch (e) {
       console.warn("workout view load error:", e);
@@ -307,6 +399,11 @@ export default function WorkoutViewScreen() {
   useEffect(() => {
     load();
   }, [load]);
+
+  const displayItems = useMemo(
+    () => buildDisplayItems(workout?.workout_exercises ?? []),
+    [workout?.workout_exercises]
+  );
 
   if (!userId) {
     return (
@@ -332,7 +429,8 @@ export default function WorkoutViewScreen() {
     );
   }
 
-  // In the return of WorkoutViewScreen, wrap with SafeAreaView and use HeaderBar
+  const DROP_ORANGE = "#f97316";
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
       <HeaderBar title={workout.title ?? "Workout"} />
@@ -340,43 +438,55 @@ export default function WorkoutViewScreen() {
       <ScrollView
         contentContainerStyle={{ padding: 16, paddingBottom: 110, gap: 16 }}
       >
-        {/* Workout notes — render only if present */}
         {workout.notes?.trim() ? (
           <View style={styles.card}>
             <Text style={styles.muted}>{workout.notes.trim()}</Text>
           </View>
         ) : null}
 
-        {/* Exercises */}
         <View style={{ gap: 12 }}>
           <Text style={styles.h2}>
             Exercises ({workout.workout_exercises.length})
           </Text>
 
-          {workout.workout_exercises.map((we) => {
-            const ex = we.exercises;
-            const targets = formatTargets(we);
-            return (
-              <View key={we.id} style={styles.exerciseCard}>
-                <View style={{ flexDirection: "row", alignItems: "center" }}>
-                  <View style={{ flex: 1, paddingRight: 8 }}>
-                    <Text style={styles.h3}>{ex?.name ?? "Exercise"}</Text>
-                    {/* Targets — only if we have some */}
-                    {targets ? (
-                      <Text style={styles.subtle}>{targets}</Text>
-                    ) : null}
-                  </View>
-                  <Pressable onPress={() => openInfo(ex)}>
-                    <InfoIcon color={colors.subtle} />
-                  </Pressable>
-                </View>
+          {/* ✅ NEW grouped rendering */}
+          {displayItems.map((it) => {
+            if (it.kind === "single") {
+              return (
+                <ExerciseCard
+                  key={it.key}
+                  we={it.we}
+                  outlineColor={null}
+                  openInfo={openInfo}
+                />
+              );
+            }
 
-                {/* Exercise notes — only if present */}
-                {we.notes?.trim() ? (
-                  <Text style={[styles.muted, { marginTop: 6 }]}>
-                    {we.notes.trim()}
-                  </Text>
-                ) : null}
+            const outline = supersetColorFor(it.groupId, colors.primary);
+
+            return (
+              <View key={it.key} style={{ marginTop: 2 }}>
+                <View
+                  style={{
+                    borderWidth: 2,
+                    borderColor: outline,
+                    borderRadius: 16,
+                    overflow: "hidden",
+                  }}
+                >
+                  {it.items.map((we, idx) => (
+                    <ExerciseCard
+                      key={we.id}
+                      we={we}
+                      outlineColor={outline}
+                      openInfo={openInfo}
+                      // inside a superset block
+                      noOuterCardBorder
+                      isFirst={idx === 0}
+                      isLast={idx === it.items.length - 1}
+                    />
+                  ))}
+                </View>
               </View>
             );
           })}
@@ -391,13 +501,12 @@ export default function WorkoutViewScreen() {
         </View>
       </ScrollView>
 
-      {/* Sticky Footer */}
       <View style={[styles.footer, { borderTopColor: colors.border }]}>
         <Pressable
           onPress={() =>
             router.push({
               pathname: "/features/workouts/start",
-              params: { workoutId: workout.id, planWorkoutId, },
+              params: { workoutId: workout.id, planWorkoutId },
             })
           }
           style={[styles.startBtn, { backgroundColor: "#22c55e" }]}
@@ -415,6 +524,122 @@ export default function WorkoutViewScreen() {
       />
     </SafeAreaView>
   );
+
+  function ExerciseCard({
+    we,
+    outlineColor,
+    openInfo,
+    noOuterCardBorder,
+    isFirst,
+    isLast,
+  }: {
+    we: WorkoutExercise;
+    outlineColor: string | null;
+    openInfo: (ex: Exercise | null) => void;
+    noOuterCardBorder?: boolean;
+    isFirst?: boolean;
+    isLast?: boolean;
+  }) {
+    const ex = we.exercises;
+    const targets = formatTargets(we);
+
+    return (
+      <View
+        style={[
+          styles.exerciseCard,
+          noOuterCardBorder && {
+            borderWidth: 0,
+            borderRadius: 0,
+          },
+          noOuterCardBorder &&
+            isFirst && {
+              borderTopLeftRadius: 14,
+              borderTopRightRadius: 14,
+            },
+          noOuterCardBorder &&
+            isLast && {
+              borderBottomLeftRadius: 14,
+              borderBottomRightRadius: 14,
+            },
+        ]}
+      >
+        <View style={{ flexDirection: "row", alignItems: "center" }}>
+          <View style={{ flex: 1, paddingRight: 8 }}>
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 8,
+                flexWrap: "wrap",
+              }}
+            >
+              <Text style={styles.h3}>{ex?.name ?? "Exercise"}</Text>
+
+              {/* Superset badge */}
+              {we.superset_group ? (
+                <View
+                  style={{
+                    paddingHorizontal: 8,
+                    paddingVertical: 3,
+                    borderRadius: 999,
+                    borderWidth: 1,
+                    borderColor: outlineColor ?? colors.primary,
+                    backgroundColor: colors.surface,
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontSize: 11,
+                      fontWeight: "900",
+                      color: outlineColor ?? colors.primary,
+                    }}
+                  >
+                    Superset
+                  </Text>
+                </View>
+              ) : null}
+
+              {/* Dropset badge (orange) */}
+              {we.is_dropset ? (
+                <View
+                  style={{
+                    paddingHorizontal: 8,
+                    paddingVertical: 3,
+                    borderRadius: 999,
+                    borderWidth: 1,
+                    borderColor: DROP_ORANGE,
+                    backgroundColor: colors.surface,
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontSize: 11,
+                      fontWeight: "900",
+                      color: DROP_ORANGE,
+                    }}
+                  >
+                    Dropset
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+
+            {targets ? <Text style={styles.subtle}>{targets}</Text> : null}
+          </View>
+
+          <Pressable onPress={() => openInfo(ex)}>
+            <InfoIcon color={colors.subtle} />
+          </Pressable>
+        </View>
+
+        {we.notes?.trim() ? (
+          <Text style={[styles.muted, { marginTop: 6 }]}>
+            {we.notes.trim()}
+          </Text>
+        ) : null}
+      </View>
+    );
+  }
 }
 
 /* ---------- themed styles ---------- */
@@ -464,13 +689,6 @@ const makeStyles = (colors: any) =>
     pill: { paddingVertical: 8, paddingHorizontal: 12, borderRadius: 999 },
     modalClose: { backgroundColor: colors.surface },
 
-    modalCard: {
-      backgroundColor: colors.card,
-      borderRadius: 16,
-      padding: 16,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: colors.border,
-    },
     body: { color: colors.text, lineHeight: 20 },
     headerBar: {
       flexDirection: "row",
@@ -504,7 +722,7 @@ const makeStyles = (colors: any) =>
       flex: 1,
       backgroundColor: "rgba(0,0,0,0.5)",
       alignItems: "center",
-      justifyContent: "center", // center instead of flex-end
+      justifyContent: "center",
       padding: 20,
     },
 

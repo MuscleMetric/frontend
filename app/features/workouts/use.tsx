@@ -34,6 +34,12 @@ type Exercise = {
 type WorkoutExercise = {
   id: string;
   order_index: number | null;
+
+  // ✅ needed for superset/dropset UI
+  superset_group: string | null;
+  superset_index: number | null;
+  is_dropset: boolean | null;
+
   target_sets: number | null;
   target_reps: number | null;
   target_weight: number | null;
@@ -52,7 +58,6 @@ type Workout = {
 
 /* ---------- Helpers ---------- */
 const formatTargets = (we: WorkoutExercise): string | null => {
-  // Strength style (sets x reps • weight)
   if (we.target_sets || we.target_reps || we.target_weight != null) {
     const sets = we.target_sets ? `${we.target_sets} sets` : null;
     const reps = we.target_reps != null ? `${we.target_reps}` : null;
@@ -63,7 +68,6 @@ const formatTargets = (we: WorkoutExercise): string | null => {
     return `${left}${right}`.trim();
   }
 
-  // Cardio style (time / distance)
   const time =
     we.target_time_seconds != null
       ? `${Math.round(we.target_time_seconds / 60)} min`
@@ -99,7 +103,6 @@ function HeaderBar({ title, onEdit }: { title: string; onEdit?: () => void }) {
 
   return (
     <View style={styles.headerBar}>
-      {/* Back */}
       <Pressable
         onPress={() => router.back()}
         hitSlop={12}
@@ -108,14 +111,12 @@ function HeaderBar({ title, onEdit }: { title: string; onEdit?: () => void }) {
         <Text style={[styles.backArrow, { color: colors.text }]}>‹</Text>
       </Pressable>
 
-      {/* Title */}
       <View style={styles.headerCenter}>
         <Text style={styles.headerTitle} numberOfLines={1}>
           {title}
         </Text>
       </View>
 
-      {/* Edit button on right */}
       <View style={styles.headerSide}>
         {onEdit ? (
           <Pressable
@@ -125,13 +126,7 @@ function HeaderBar({ title, onEdit }: { title: string; onEdit?: () => void }) {
               { backgroundColor: colors.warnBg, borderColor: colors.warnText },
             ]}
           >
-            <Text
-              style={{
-                color: colors.warnText,
-                fontWeight: "700",
-                fontSize: 12,
-              }}
-            >
+            <Text style={{ color: colors.warnText, fontWeight: "700", fontSize: 12 }}>
               Edit
             </Text>
           </Pressable>
@@ -160,9 +155,7 @@ function ExerciseInfoModal({
     exercise.exercise_muscles
       ?.map((em) =>
         em.muscles?.name
-          ? `${em.muscles.name}${
-              em.contribution ? ` (${em.contribution}%)` : ""
-            }`
+          ? `${em.muscles.name}${em.contribution ? ` (${em.contribution}%)` : ""}`
           : null
       )
       .filter(Boolean)
@@ -172,7 +165,6 @@ function ExerciseInfoModal({
     <Modal visible={visible} animationType="fade" transparent>
       <View style={styles.modalBackdrop}>
         <View style={styles.modalCenteredCard}>
-          {/* Header */}
           <Text style={styles.h2}>{exercise.name ?? "Exercise"}</Text>
           <Text style={[styles.muted, { marginTop: 4 }]}>
             {exercise.type ? `${exercise.type} • ` : ""}
@@ -180,7 +172,6 @@ function ExerciseInfoModal({
             {exercise.equipment ? ` • ${exercise.equipment}` : ""}
           </Text>
 
-          {/* Body */}
           <View style={{ height: 12 }} />
 
           <Text style={[styles.h3, { marginBottom: 6 }]}>Muscles</Text>
@@ -193,7 +184,6 @@ function ExerciseInfoModal({
             {exercise.instructions?.trim() || "No instructions yet."}
           </Text>
 
-          {/* Video link */}
           {exercise.video_url ? (
             <>
               <View style={{ height: 16 }} />
@@ -208,7 +198,6 @@ function ExerciseInfoModal({
             </>
           ) : null}
 
-          {/* Close */}
           <View style={{ height: 16 }} />
           <Pressable onPress={onClose} style={[styles.pill, styles.modalClose]}>
             <Text style={{ color: colors.text, fontWeight: "700" }}>Close</Text>
@@ -218,6 +207,74 @@ function ExerciseInfoModal({
     </Modal>
   );
 }
+
+/* ---------- Superset UI helpers ---------- */
+const SUPERSET_COLORS = [
+  "#3b82f6", // blue
+  "#8b5cf6", // violet
+  "#14b8a6", // teal
+  "#22c55e", // green
+  "#f59e0b", // amber
+  "#ec4899", // pink
+  "#06b6d4", // cyan
+];
+
+const hashToIndex = (s: string, mod: number) => {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return h % mod;
+};
+
+const supersetColorFor = (groupId: string, fallbackPrimary?: string) => {
+  const c = SUPERSET_COLORS[hashToIndex(groupId, SUPERSET_COLORS.length)];
+  return c || fallbackPrimary || "#3b82f6";
+};
+
+type DisplayItem =
+  | { kind: "single"; key: string; we: WorkoutExercise }
+  | { kind: "superset"; key: string; groupId: string; items: WorkoutExercise[] };
+
+// assumes list already sorted by order_index
+const buildDisplayItems = (arr: WorkoutExercise[]): DisplayItem[] => {
+  const out: DisplayItem[] = [];
+
+  for (let i = 0; i < arr.length; i++) {
+    const we = arr[i];
+    const gid = we.superset_group;
+
+    if (!gid) {
+      out.push({ kind: "single", key: `we:${we.id}`, we });
+      continue;
+    }
+
+    const prev = i > 0 ? arr[i - 1] : null;
+    const isStart = !prev || prev.superset_group !== gid;
+    if (!isStart) continue;
+
+    const items: WorkoutExercise[] = [];
+    let j = i;
+    while (j < arr.length && arr[j].superset_group === gid) {
+      items.push(arr[j]);
+      j++;
+    }
+
+    // order within block by superset_index (fallback to order_index)
+    items.sort((a, b) => {
+      const ai = a.superset_index != null ? a.superset_index : a.order_index ?? 0;
+      const bi = b.superset_index != null ? b.superset_index : b.order_index ?? 0;
+      return ai - bi;
+    });
+
+    out.push({
+      kind: "superset",
+      key: `ss:${gid}:${items[0]?.id ?? i}`,
+      groupId: gid,
+      items,
+    });
+  }
+
+  return out;
+};
 
 /* ---------- Screen ---------- */
 export default function WorkoutUseScreen() {
@@ -257,8 +314,17 @@ export default function WorkoutUseScreen() {
           `
           id, title, notes,
           workout_exercises(
-            id, order_index, target_sets, target_reps, target_weight,
-            target_time_seconds, target_distance, notes,
+            id,
+            order_index,
+            superset_group,
+            superset_index,
+            is_dropset,
+            target_sets,
+            target_reps,
+            target_weight,
+            target_time_seconds,
+            target_distance,
+            notes,
             exercises (
               id, name, equipment, type, level, instructions, video_url,
               exercise_muscles (
@@ -284,15 +350,16 @@ export default function WorkoutUseScreen() {
               .map((we: any) => ({
                 id: String(we.id),
                 order_index: we.order_index ?? null,
+
+                superset_group: we.superset_group ?? null,
+                superset_index: we.superset_index ?? null,
+                is_dropset: we.is_dropset ?? false,
+
                 target_sets: we.target_sets ?? null,
                 target_reps: we.target_reps ?? null,
-                target_weight:
-                  we.target_weight != null ? Number(we.target_weight) : null,
+                target_weight: we.target_weight != null ? Number(we.target_weight) : null,
                 target_time_seconds: we.target_time_seconds ?? null,
-                target_distance:
-                  we.target_distance != null
-                    ? Number(we.target_distance)
-                    : null,
+                target_distance: we.target_distance != null ? Number(we.target_distance) : null,
                 notes: we.notes ?? null,
                 exercises: we.exercises
                   ? {
@@ -303,21 +370,14 @@ export default function WorkoutUseScreen() {
                       level: we.exercises.level ?? null,
                       instructions: we.exercises.instructions ?? null,
                       video_url: we.exercises.video_url ?? null,
-                      exercise_muscles: (
-                        we.exercises.exercise_muscles ?? []
-                      ).map((em: any) => ({
+                      exercise_muscles: (we.exercises.exercise_muscles ?? []).map((em: any) => ({
                         contribution: em.contribution ?? null,
-                        muscles: em.muscles
-                          ? { name: em.muscles.name ?? null }
-                          : null,
+                        muscles: em.muscles ? { name: em.muscles.name ?? null } : null,
                       })),
                     }
                   : null,
               }))
-              .sort(
-                (a: WorkoutExercise, b: WorkoutExercise) =>
-                  (a.order_index ?? 0) - (b.order_index ?? 0)
-              ),
+              .sort((a: WorkoutExercise, b: WorkoutExercise) => (a.order_index ?? 0) - (b.order_index ?? 0)),
           }
         : null;
 
@@ -333,6 +393,11 @@ export default function WorkoutUseScreen() {
   useEffect(() => {
     load();
   }, [load]);
+
+  const displayItems = useMemo(
+    () => buildDisplayItems(workout?.workout_exercises ?? []),
+    [workout?.workout_exercises]
+  );
 
   if (!userId) {
     return (
@@ -358,6 +423,8 @@ export default function WorkoutUseScreen() {
     );
   }
 
+  const DROP_ORANGE = "#f97316";
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
       <HeaderBar
@@ -370,10 +437,7 @@ export default function WorkoutUseScreen() {
         }
       />
 
-      <ScrollView
-        contentContainerStyle={{ padding: 16, paddingBottom: 110, gap: 16 }}
-      >
-        {/* Workout notes */}
+      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 110, gap: 16 }}>
         {workout.notes?.trim() ? (
           <View style={styles.card}>
             <Text style={styles.h3}>Workout Notes</Text>
@@ -381,49 +445,59 @@ export default function WorkoutUseScreen() {
           </View>
         ) : null}
 
-        {/* Exercises */}
         <View style={{ gap: 12 }}>
-          <Text style={styles.h2}>
-            Exercises ({workout.workout_exercises.length})
-          </Text>
+          <Text style={styles.h2}>Exercises ({workout.workout_exercises.length})</Text>
 
-          {workout.workout_exercises.map((we) => {
-            const ex = we.exercises;
-            const targets = formatTargets(we);
+          {/* ✅ grouped rendering (same as view.tsx) */}
+          {displayItems.map((it) => {
+            if (it.kind === "single") {
+              return (
+                <ExerciseCard
+                  key={it.key}
+                  we={it.we}
+                  outlineColor={null}
+                  openInfo={openInfo}
+                />
+              );
+            }
+
+            const outline = supersetColorFor(it.groupId, colors.primary);
+
             return (
-              <View key={we.id} style={styles.exerciseCard}>
-                <View style={{ flexDirection: "row", alignItems: "center" }}>
-                  <View style={{ flex: 1, paddingRight: 8 }}>
-                    <Text style={styles.h3}>{ex?.name ?? "Exercise"}</Text>
-                    {targets ? (
-                      <Text style={styles.subtle}>{targets}</Text>
-                    ) : null}
-                  </View>
-                  <Pressable onPress={() => openInfo(ex)}>
-                    <InfoIcon color={colors.subtle} />
-                  </Pressable>
+              <View key={it.key} style={{ marginTop: 2 }}>
+                <View
+                  style={{
+                    borderWidth: 2,
+                    borderColor: outline,
+                    borderRadius: 16,
+                    overflow: "hidden",
+                  }}
+                >
+                  {it.items.map((we, idx) => (
+                    <ExerciseCard
+                      key={we.id}
+                      we={we}
+                      outlineColor={outline}
+                      openInfo={openInfo}
+                      noOuterCardBorder
+                      isFirst={idx === 0}
+                      isLast={idx === it.items.length - 1}
+                      dropOrange={DROP_ORANGE}
+                    />
+                  ))}
                 </View>
-
-                {we.notes?.trim() ? (
-                  <Text style={[styles.muted, { marginTop: 6 }]}>
-                    {we.notes.trim()}
-                  </Text>
-                ) : null}
               </View>
             );
           })}
 
           {workout.workout_exercises.length === 0 && (
             <View style={styles.card}>
-              <Text style={styles.muted}>
-                No exercises in this workout yet.
-              </Text>
+              <Text style={styles.muted}>No exercises in this workout yet.</Text>
             </View>
           )}
         </View>
       </ScrollView>
 
-      {/* Sticky footer: Start Workout */}
       <View style={[styles.footer, { borderTopColor: colors.border }]}>
         <Pressable
           onPress={() =>
@@ -434,9 +508,7 @@ export default function WorkoutUseScreen() {
           }
           style={[styles.startBtn, { backgroundColor: "#22c55e" }]}
         >
-          <Text style={{ color: "white", fontWeight: "800" }}>
-            ▶ Start Workout
-          </Text>
+          <Text style={{ color: "white", fontWeight: "800" }}>▶ Start Workout</Text>
         </Pressable>
       </View>
 
@@ -447,6 +519,91 @@ export default function WorkoutUseScreen() {
       />
     </SafeAreaView>
   );
+
+  function ExerciseCard({
+    we,
+    outlineColor,
+    openInfo,
+    noOuterCardBorder,
+    isFirst,
+    isLast,
+    dropOrange,
+  }: {
+    we: WorkoutExercise;
+    outlineColor: string | null;
+    openInfo: (ex: Exercise | null) => void;
+    noOuterCardBorder?: boolean;
+    isFirst?: boolean;
+    isLast?: boolean;
+    dropOrange?: string;
+  }) {
+    const ex = we.exercises;
+    const targets = formatTargets(we);
+    const DROP = dropOrange ?? "#f97316";
+
+    return (
+      <View
+        style={[
+          styles.exerciseCard,
+          noOuterCardBorder && { borderWidth: 0, borderRadius: 0 },
+          noOuterCardBorder && isFirst && { borderTopLeftRadius: 14, borderTopRightRadius: 14 },
+          noOuterCardBorder && isLast && { borderBottomLeftRadius: 14, borderBottomRightRadius: 14 },
+        ]}
+      >
+        <View style={{ flexDirection: "row", alignItems: "center" }}>
+          <View style={{ flex: 1, paddingRight: 8 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <Text style={styles.h3}>{ex?.name ?? "Exercise"}</Text>
+
+              {/* Superset badge */}
+              {we.superset_group ? (
+                <View
+                  style={{
+                    paddingHorizontal: 8,
+                    paddingVertical: 3,
+                    borderRadius: 999,
+                    borderWidth: 1,
+                    borderColor: outlineColor ?? colors.primary,
+                    backgroundColor: colors.surface,
+                  }}
+                >
+                  <Text style={{ fontSize: 11, fontWeight: "900", color: outlineColor ?? colors.primary }}>
+                    Superset
+                  </Text>
+                </View>
+              ) : null}
+
+              {/* Dropset badge (orange) */}
+              {we.is_dropset ? (
+                <View
+                  style={{
+                    paddingHorizontal: 8,
+                    paddingVertical: 3,
+                    borderRadius: 999,
+                    borderWidth: 1,
+                    borderColor: DROP,
+                    backgroundColor: colors.surface,
+                  }}
+                >
+                  <Text style={{ fontSize: 11, fontWeight: "900", color: DROP }}>Dropset</Text>
+                </View>
+              ) : null}
+            </View>
+
+            {targets ? <Text style={styles.subtle}>{targets}</Text> : null}
+          </View>
+
+          <Pressable onPress={() => openInfo(ex)}>
+            <InfoIcon color={colors.subtle} />
+          </Pressable>
+        </View>
+
+        {we.notes?.trim() ? (
+          <Text style={[styles.muted, { marginTop: 6 }]}>{we.notes.trim()}</Text>
+        ) : null}
+      </View>
+    );
+  }
 }
 
 /* ---------- themed styles ---------- */
@@ -498,7 +655,6 @@ const makeStyles = (colors: any) =>
 
     body: { color: colors.text, lineHeight: 20 },
 
-    /* Header */
     headerBar: {
       flexDirection: "row",
       alignItems: "center",
@@ -529,11 +685,10 @@ const makeStyles = (colors: any) =>
     headerEditButton: {
       paddingHorizontal: 14,
       paddingVertical: 6,
-      borderRadius: 999, // “more oblong than round”
+      borderRadius: 999,
       borderWidth: StyleSheet.hairlineWidth,
     },
 
-    /* Modal */
     modalBackdrop: {
       flex: 1,
       backgroundColor: "rgba(0,0,0,0.5)",
