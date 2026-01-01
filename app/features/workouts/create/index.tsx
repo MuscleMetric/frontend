@@ -6,9 +6,6 @@ import {
   ScrollView,
   TextInput,
   Pressable,
-  ActivityIndicator,
-  Modal,
-  FlatList,
 } from "react-native";
 import {
   SafeAreaView,
@@ -561,7 +558,6 @@ export default function CreateWorkoutScreen() {
         initialSelectedIds={[]}
         onClose={() => setExerciseModalVisible(false)}
         onConfirm={(ids) => handleConfirmAddExercises(ids)}
-        // controlled search + filters (from this screen)
         search={exerciseSearch}
         onChangeSearch={setExerciseSearch}
         selectedMuscleGroups={selectedMuscleGroups}

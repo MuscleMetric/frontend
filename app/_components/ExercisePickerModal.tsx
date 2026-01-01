@@ -1,5 +1,11 @@
 // app/_components/ExercisePickerModal.tsx
-import React, { useMemo, useState, useEffect, useCallback } from "react";
+import React, {
+  useMemo,
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+} from "react";
 import {
   View,
   Text,
@@ -256,9 +262,15 @@ export function ExercisePickerModal({
   );
 
   // keep selection in sync when opening
+  const wasVisibleRef = useRef(false);
+
   useEffect(() => {
-    if (visible) setSelectedIds(initialSelectedIds);
-  }, [visible, initialSelectedIds]);
+    // only run when modal transitions closed -> open
+    if (visible && !wasVisibleRef.current) {
+      setSelectedIds(initialSelectedIds ?? []);
+    }
+    wasVisibleRef.current = visible;
+  }, [visible]); // <-- intentionally NOT depending on initialSelectedIds
 
   // reset fav filter when opening
   useEffect(() => {
@@ -713,6 +725,7 @@ export function ExercisePickerModal({
         ) : (
           <FlatList
             data={filtered}
+            extraData={selectedIds}
             keyExtractor={(item) => item.id}
             keyboardShouldPersistTaps="handled"
             contentContainerStyle={{ paddingBottom: 12 }}
@@ -832,7 +845,10 @@ export function ExercisePickerModal({
 
                   {/* ⭐ favourite */}
                   <Pressable
-                    onPress={() => toggleFavorite(item.id)}
+                    onPress={(e: any) => {
+                      e?.stopPropagation?.();
+                      toggleFavorite(item.id);
+                    }}
                     hitSlop={10}
                     disabled={!userId}
                     style={{

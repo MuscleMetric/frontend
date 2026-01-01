@@ -7,8 +7,6 @@ import {
   TextInput,
   Pressable,
   ActivityIndicator,
-  Modal,
-  FlatList,
   Alert,
 } from "react-native";
 import {
@@ -22,6 +20,7 @@ import DraggableFlatList, {
 import { supabase } from "../../../lib/supabase";
 import { useAuth } from "../../../lib/authContext";
 import { useAppTheme } from "../../../lib/useAppTheme";
+import { ExercisePickerModal } from "../../_components/ExercisePickerModal";
 
 /* ---------- types ---------- */
 
@@ -38,61 +37,23 @@ type WorkoutExerciseEdit = {
   name: string;
 };
 
-/* ---------- muscle + equipment filters (same as create) ---------- */
+/* ---------- muscle + equipment filters ---------- */
 
+// 10 muscle group chips (using your exact muscle IDs / names)
 const MUSCLE_GROUPS = [
-  {
-    id: "chest",
-    label: "Chest",
-    muscleIds: [1], // Chest
-  },
-  {
-    id: "back",
-    label: "Back",
-    muscleIds: [2, 88, 89, 90, 99, 98], // Back, Lats, Upper Back, Lower Back, Rear Delts, Traps
-  },
-  {
-    id: "shoulders",
-    label: "Shoulders",
-    muscleIds: [8], // Shoulders
-  },
-  {
-    id: "biceps",
-    label: "Biceps",
-    muscleIds: [6, 91], // Biceps, Forearms
-  },
-  {
-    id: "triceps",
-    label: "Triceps",
-    muscleIds: [7], // Triceps
-  },
-  {
-    id: "core",
-    label: "Abs / Core",
-    muscleIds: [96, 97, 10, 100, 101], // Abs, Obliques, Core, Core Stabilizers, Serratus
-  },
-  {
-    id: "quads",
-    label: "Quads",
-    muscleIds: [3, 92], // Quads, Quadriceps
-  },
-  {
-    id: "hamstrings",
-    label: "Hamstrings",
-    muscleIds: [4], // Hamstrings
-  },
-  {
-    id: "glutes_hips",
-    label: "Glutes & Hips",
-    muscleIds: [5, 94, 93, 95], // Glutes, Abductors, Adductors, Hip Flexors
-  },
-  {
-    id: "calves",
-    label: "Calves",
-    muscleIds: [9], // Calves
-  },
+  { id: "chest", label: "Chest", muscleIds: [1] },
+  { id: "back", label: "Back", muscleIds: [2, 88, 89, 90, 99, 98] },
+  { id: "shoulders", label: "Shoulders", muscleIds: [8] },
+  { id: "biceps", label: "Biceps", muscleIds: [6, 91] },
+  { id: "triceps", label: "Triceps", muscleIds: [7] },
+  { id: "core", label: "Abs / Core", muscleIds: [96, 97, 10, 100, 101] },
+  { id: "quads", label: "Quads", muscleIds: [3, 92] },
+  { id: "hamstrings", label: "Hamstrings", muscleIds: [4] },
+  { id: "glutes_hips", label: "Glutes & Hips", muscleIds: [5, 94, 93, 95] },
+  { id: "calves", label: "Calves", muscleIds: [9] },
 ] as const;
 
+// exact equipment list you gave (no additions / renames)
 const EQUIPMENT_OPTIONS: string[] = [
   "ab wheel",
   "air bike",
@@ -163,20 +124,24 @@ export default function EditWorkoutScreen() {
     WorkoutExerciseEdit[]
   >([]);
 
-  // modal state
+  // picker modal state
   const [exerciseModalVisible, setExerciseModalVisible] = useState(false);
   const [exerciseSearch, setExerciseSearch] = useState("");
   const [exerciseOptions, setExerciseOptions] = useState<ExerciseOption[]>([]);
   const [exLoading, setExLoading] = useState(false);
-  const [modalSelectedIds, setModalSelectedIds] = useState<string[]>([]);
 
-  // filters
+  // filters (controlled by this screen, passed down)
   const [selectedMuscleGroups, setSelectedMuscleGroups] = useState<string[]>(
     []
   );
   const [selectedEquipment, setSelectedEquipment] = useState<string[]>([]);
   const [muscleFilterOpen, setMuscleFilterOpen] = useState(false);
   const [equipmentFilterOpen, setEquipmentFilterOpen] = useState(false);
+
+  // usage map for ordering ("used X times")
+  const [usageByExerciseId, setUsageByExerciseId] = useState<
+    Record<string, number>
+  >({});
 
   const canSave =
     !!userId &&
@@ -230,7 +195,7 @@ export default function EditWorkoutScreen() {
         .map((we: any) => {
           if (!we.exercises) return null;
           return {
-            key: String(we.id), // use existing row id as stable key
+            key: String(we.id), // stable key
             exerciseId: String(we.exercises.id),
             name: we.exercises.name ?? "Exercise",
             order_index: we.order_index ?? 0,
@@ -275,6 +240,37 @@ export default function EditWorkoutScreen() {
     );
   };
 
+  /* ---------- load exercise usage when picker opens ---------- */
+
+  useEffect(() => {
+    let alive = true;
+    if (!exerciseModalVisible || !userId) return;
+
+    (async () => {
+      const { data, error } = await supabase
+        .from("exercise_usage")
+        .select("exercise_id,sessions_count")
+        .eq("user_id", userId);
+
+      if (error) {
+        console.warn("usage load error", error);
+        if (alive) setUsageByExerciseId({});
+        return;
+      }
+
+      const map: Record<string, number> = {};
+      (data ?? []).forEach((r: any) => {
+        map[r.exercise_id] = r.sessions_count ?? 0;
+      });
+
+      if (alive) setUsageByExerciseId(map);
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [exerciseModalVisible, userId]);
+
   /* ---------- load exercise options for picker ---------- */
 
   useEffect(() => {
@@ -312,6 +308,7 @@ export default function EditWorkoutScreen() {
               equipment
             `
           )
+          .or(`is_public.eq.true,user_id.eq.${userId}`)
           .order("name", { ascending: true })
           .limit(600);
 
@@ -346,8 +343,8 @@ export default function EditWorkoutScreen() {
         if (alive) {
           setExerciseOptions(
             (data ?? []).map((row: any) => ({
-              id: row.id,
-              name: row.name,
+              id: String(row.id),
+              name: row.name ?? "Exercise",
               type: row.type ?? null,
               equipment: row.equipment ?? null,
             }))
@@ -366,28 +363,22 @@ export default function EditWorkoutScreen() {
     exerciseSearch,
     selectedMuscleGroups,
     selectedEquipment,
+    userId,
   ]);
 
-  /* ---------- modal selection / confirm ---------- */
+  /* ---------- confirm from ExercisePickerModal ---------- */
 
-  const toggleModalSelect = (exerciseId: string) => {
-    setModalSelectedIds((prev) =>
-      prev.includes(exerciseId)
-        ? prev.filter((id) => id !== exerciseId)
-        : [...prev, exerciseId]
-    );
-  };
-
-  const handleConfirmAddExercises = () => {
-    if (!modalSelectedIds.length) return;
+  const handleConfirmAddExercises = (selectedIds: string[]) => {
+    if (!selectedIds.length) return;
 
     setSelectedExercises((prev) => {
       const existingIds = new Set(prev.map((e) => e.exerciseId));
       const now = Date.now();
 
       const newItems: WorkoutExerciseEdit[] = [];
-      modalSelectedIds.forEach((id, idx) => {
+      selectedIds.forEach((id, idx) => {
         if (existingIds.has(id)) return;
+
         const ex = exerciseOptions.find((er) => er.id === id);
         if (!ex) return;
 
@@ -401,8 +392,13 @@ export default function EditWorkoutScreen() {
       return [...prev, ...newItems];
     });
 
-    setModalSelectedIds([]);
+    // close + reset UI
     setExerciseModalVisible(false);
+    setExerciseSearch("");
+    setSelectedMuscleGroups([]);
+    setSelectedEquipment([]);
+    setMuscleFilterOpen(false);
+    setEquipmentFilterOpen(false);
   };
 
   const handleRemoveExercise = (key: string) => {
@@ -558,10 +554,7 @@ export default function EditWorkoutScreen() {
           <Pressable
             onPress={confirmDelete}
             disabled={deleting}
-            style={[
-              s.deleteBtn,
-              { opacity: deleting ? 0.5 : 1 },
-            ]}
+            style={[s.deleteBtn, { opacity: deleting ? 0.5 : 1 }]}
           >
             <Text style={s.deleteBtnText}>
               {deleting ? "Deleting…" : "Delete"}
@@ -667,255 +660,35 @@ export default function EditWorkoutScreen() {
         </Pressable>
       </ScrollView>
 
-      {/* Exercise Picker Modal */}
-      <Modal
+      {/* ✅ New full-screen picker */}
+      <ExercisePickerModal
+        userId={userId}
+        alreadyInWorkoutIds={selectedExercises.map((e) => e.exerciseId)}
+        usageByExerciseId={usageByExerciseId}
         visible={exerciseModalVisible}
-        animationType="slide"
-        presentationStyle="fullScreen"
-        onRequestClose={() => setExerciseModalVisible(false)}
-      >
-        <SafeAreaView
-          style={[
-            s.modalSafeArea,
-            { paddingTop: insets.top, backgroundColor: colors.background },
-          ]}
-        >
-          {/* Header */}
-          <View style={s.modalHeader}>
-            <Text style={s.modalTitle}>Select exercises</Text>
-            <Pressable
-              onPress={() => setExerciseModalVisible(false)}
-              hitSlop={10}
-            >
-              <Text style={[s.modalClose, { color: colors.primary }]}>
-                Close
-              </Text>
-            </Pressable>
-          </View>
-
-          {/* Search */}
-          <TextInput
-            value={exerciseSearch}
-            onChangeText={setExerciseSearch}
-            placeholder="Search exercises…"
-            placeholderTextColor={colors.subtle}
-            style={[
-              s.modalSearchInput,
-              { color: colors.text, backgroundColor: colors.surface },
-            ]}
-          />
-
-          {/* MUSCLE FILTERS */}
-          <View style={{ marginTop: 8 }}>
-            <View style={s.filterHeaderRow}>
-              <Text style={s.filterLabel}>Muscles</Text>
-              <Pressable
-                onPress={() => setMuscleFilterOpen((open) => !open)}
-                style={s.filterToggle}
-                hitSlop={8}
-              >
-                <Text style={s.filterToggleText}>
-                  {muscleFilterOpen ? "Hide" : "Select muscles"}
-                </Text>
-              </Pressable>
-            </View>
-
-            {muscleFilterOpen && (
-              <View style={s.chipGrid}>
-                {MUSCLE_GROUPS.map((g) => {
-                  const active = selectedMuscleGroups.includes(g.id);
-                  return (
-                    <Pressable
-                      key={g.id}
-                      onPress={() => toggleMuscleGroup(g.id)}
-                      style={[
-                        s.chip,
-                        active && {
-                          backgroundColor: colors.primaryBg ?? colors.primary,
-                          borderColor: colors.primary,
-                        },
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          s.chipLabel,
-                          active && {
-                            color: colors.primaryText ?? "#fff",
-                            fontWeight: "700",
-                          },
-                        ]}
-                      >
-                        {g.label}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
-            )}
-          </View>
-
-          {/* EQUIPMENT FILTERS */}
-          <View style={{ marginTop: 8 }}>
-            <View style={s.filterHeaderRow}>
-              <Text style={s.filterLabel}>Equipment</Text>
-              <Pressable
-                onPress={() => setEquipmentFilterOpen((open) => !open)}
-                style={s.filterToggle}
-                hitSlop={8}
-              >
-                <Text style={s.filterToggleText}>
-                  {equipmentFilterOpen ? "Hide" : "Select equipment"}
-                </Text>
-              </Pressable>
-            </View>
-
-            {equipmentFilterOpen && (
-              <View style={s.chipGrid}>
-                {EQUIPMENT_OPTIONS.map((eq) => {
-                  const active = selectedEquipment.includes(eq);
-                  return (
-                    <Pressable
-                      key={eq}
-                      onPress={() => toggleEquipment(eq)}
-                      style={[
-                        s.chip,
-                        active && {
-                          backgroundColor: colors.primaryBg ?? colors.primary,
-                          borderColor: colors.primary,
-                        },
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          s.chipLabel,
-                          active && {
-                            color: colors.primaryText ?? "#fff",
-                            fontWeight: "700",
-                          },
-                        ]}
-                      >
-                        {eq}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
-            )}
-          </View>
-
-          {/* Summary text under filters */}
-          <Text style={s.filterSummaryText}>
-            {selectedMuscleGroups.length
-              ? `${selectedMuscleGroups.length} muscle group${
-                  selectedMuscleGroups.length === 1 ? "" : "s"
-                }`
-              : "No Muscles"}
-            {" · "}
-            {selectedEquipment.length
-              ? `${selectedEquipment.length} equipment option${
-                  selectedEquipment.length === 1 ? "" : "s"
-                }`
-              : "No Equipment"}{" "}
-            selected
-          </Text>
-
-          {/* Exercise list */}
-          {exLoading ? (
-            <ActivityIndicator style={{ marginTop: 16 }} />
-          ) : (
-            <FlatList
-              data={exerciseOptions}
-              keyExtractor={(item) => item.id}
-              keyboardShouldPersistTaps="handled"
-              contentContainerStyle={{ paddingBottom: 12 }}
-              renderItem={({ item }) => {
-                const isSelected = modalSelectedIds.includes(item.id);
-                return (
-                  <Pressable
-                    onPress={() => toggleModalSelect(item.id)}
-                    style={[
-                      s.modalRow,
-                      isSelected && {
-                        borderColor: colors.primary,
-                        backgroundColor: colors.card,
-                      },
-                    ]}
-                  >
-                    <View style={{ flex: 1 }}>
-                      <Text
-                        style={[
-                          s.modalExerciseName,
-                          isSelected && { color: colors.primary },
-                        ]}
-                      >
-                        {item.name}
-                      </Text>
-                      <Text style={s.modalExerciseMeta}>
-                        {item.type || ""}
-                        {item.equipment ? ` • ${item.equipment}` : ""}
-                      </Text>
-                    </View>
-
-                    <View
-                      style={[
-                        s.checkbox,
-                        {
-                          borderColor: isSelected
-                            ? colors.primary
-                            : colors.border,
-                          backgroundColor: isSelected
-                            ? colors.primary
-                            : "transparent",
-                        },
-                      ]}
-                    >
-                      {isSelected && (
-                        <Text
-                          style={{
-                            color: colors.subtle ?? "#fff",
-                            fontSize: 10,
-                            fontWeight: "700",
-                          }}
-                        >
-                          ✓
-                        </Text>
-                      )}
-                    </View>
-                  </Pressable>
-                );
-              }}
-            />
-          )}
-
-          {/* Confirm */}
-          <Pressable
-            style={[
-              s.modalDoneBtn,
-              {
-                backgroundColor: modalSelectedIds.length
-                  ? colors.primary
-                  : colors.surface,
-                borderColor: colors.border,
-              },
-            ]}
-            disabled={modalSelectedIds.length === 0}
-            onPress={handleConfirmAddExercises}
-          >
-            <Text
-              style={{
-                color:
-                  modalSelectedIds.length > 0
-                    ? colors.subtle ?? "#fff"
-                    : colors.subtle,
-                fontWeight: "700",
-              }}
-            >
-              Add {modalSelectedIds.length || ""} exercise
-              {modalSelectedIds.length === 1 ? "" : "s"}
-            </Text>
-          </Pressable>
-        </SafeAreaView>
-      </Modal>
+        title="Select exercises"
+        loading={exLoading}
+        exerciseOptions={exerciseOptions}
+        muscleGroups={MUSCLE_GROUPS as any}
+        equipmentOptions={EQUIPMENT_OPTIONS}
+        multiSelect={true}
+        initialSelectedIds={[]}
+        onClose={() => setExerciseModalVisible(false)}
+        onConfirm={(ids) => handleConfirmAddExercises(ids)}
+        search={exerciseSearch}
+        onChangeSearch={setExerciseSearch}
+        selectedMuscleGroups={selectedMuscleGroups}
+        toggleMuscleGroup={toggleMuscleGroup}
+        muscleFilterOpen={muscleFilterOpen}
+        setMuscleFilterOpen={setMuscleFilterOpen}
+        selectedEquipment={selectedEquipment}
+        toggleEquipment={toggleEquipment}
+        equipmentFilterOpen={equipmentFilterOpen}
+        setEquipmentFilterOpen={setEquipmentFilterOpen}
+        styles={s}
+        colors={colors}
+        safeAreaTop={insets.top}
+      />
     </SafeAreaView>
   );
 }
@@ -1019,16 +792,6 @@ const makeStyles = (colors: any) =>
       paddingHorizontal: 4,
     },
 
-    checkbox: {
-      width: 24,
-      height: 24,
-      borderRadius: 999,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: colors.border,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-
     // Header
     headerBar: {
       flexDirection: "row",
@@ -1071,26 +834,16 @@ const makeStyles = (colors: any) =>
       fontSize: 12,
     },
 
-    // Modal styles
-    modalSafeArea: {
-      flex: 1,
-      paddingHorizontal: 16,
-    },
+    // These modal styles are still used by ExercisePickerModal (passed as `styles`)
+    modalSafeArea: { flex: 1, paddingHorizontal: 16 },
     modalHeader: {
       flexDirection: "row",
       alignItems: "center",
       justifyContent: "space-between",
       marginBottom: 8,
     },
-    modalTitle: {
-      fontSize: 18,
-      fontWeight: "800",
-      color: colors.text,
-    },
-    modalClose: {
-      fontSize: 14,
-      fontWeight: "700",
-    },
+    modalTitle: { fontSize: 18, fontWeight: "800", color: colors.text },
+    modalClose: { fontSize: 14, fontWeight: "700" },
     modalSearchInput: {
       borderRadius: 10,
       paddingHorizontal: 12,
@@ -1100,33 +853,23 @@ const makeStyles = (colors: any) =>
       marginBottom: 8,
     },
 
-    chip: {
-      height: 34,
-      paddingHorizontal: 12,
+    checkbox: {
+      width: 24,
+      height: 24,
       borderRadius: 999,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.border,
-      backgroundColor: colors.surface,
-      flexDirection: "row",
       alignItems: "center",
       justifyContent: "center",
     },
-    chipLabel: {
-      fontSize: 12,
-      color: colors.text,
-      fontWeight: "600",
-    },
+
     filterHeaderRow: {
       flexDirection: "row",
       alignItems: "center",
       justifyContent: "space-between",
       marginBottom: 4,
     },
-    filterLabel: {
-      fontSize: 13,
-      fontWeight: "700",
-      color: colors.text,
-    },
+    filterLabel: { fontSize: 13, fontWeight: "700", color: colors.text },
     filterToggle: {
       paddingHorizontal: 10,
       paddingVertical: 4,
@@ -1140,10 +883,23 @@ const makeStyles = (colors: any) =>
       fontWeight: "700",
       color: colors.primary,
     },
+
+    chip: {
+      height: 34,
+      paddingHorizontal: 12,
+      borderRadius: 999,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    chipLabel: { fontSize: 12, color: colors.text, fontWeight: "600" },
     chipGrid: {
       flexDirection: "row",
       flexWrap: "wrap",
-      rowGap: 10, // a bit more spacing than before
+      rowGap: 10,
       columnGap: 12,
       marginBottom: 4,
     },
@@ -1166,16 +922,8 @@ const makeStyles = (colors: any) =>
       marginBottom: 8,
       backgroundColor: colors.surface,
     },
-    modalExerciseName: {
-      fontSize: 15,
-      fontWeight: "700",
-      color: colors.text,
-    },
-    modalExerciseMeta: {
-      fontSize: 12,
-      color: colors.subtle,
-      marginTop: 2,
-    },
+    modalExerciseName: { fontSize: 15, fontWeight: "700", color: colors.text },
+    modalExerciseMeta: { fontSize: 12, color: colors.subtle, marginTop: 2 },
     modalDoneBtn: {
       marginTop: 4,
       marginBottom: 12,
