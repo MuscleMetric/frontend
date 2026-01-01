@@ -17,16 +17,16 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import DraggableFlatList, {
   RenderItemParams,
 } from "react-native-draggable-flatlist";
-import { supabase } from "../../../../lib/supabase";
-import { useAuth } from "../../../../lib/authContext";
-import { useAppTheme } from "../../../../lib/useAppTheme";
+import { supabase } from "../../../../../lib/supabase";
+import { useAuth } from "../../../../../lib/authContext";
+import { useAppTheme } from "../../../../../lib/useAppTheme";
 import type {
   GeneratedWorkout,
   GeneratedWorkoutExercise,
 } from "./workoutGenerator";
 
 // ✅ import shared picker
-import { ExercisePickerModal } from "../../../_components/ExercisePickerModal";
+import { ExercisePickerModal } from "../../../../_components/ExercisePickerModal";
 
 type ExerciseOption = {
   id: string;
