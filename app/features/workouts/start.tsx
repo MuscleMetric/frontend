@@ -109,6 +109,7 @@ type InProgressState = {
   startedAt: number; // ms epoch
   cardioTimeBonusSec: number;
   anyCompleted: boolean;
+  supersetRoundByGroup?: Record<string, number>;
 };
 
 type SupersetInfo = {
@@ -294,7 +295,10 @@ function buildSupersets(workout: Workout): SupersetInfo {
         byGroupTmp[gid] = [];
         groupOrder.push(gid); // remember first appearance order
       }
-      byGroupTmp[gid].push({ id: we.id, pos: we.superset_index ?? 0 });
+      byGroupTmp[gid].push({
+        id: we.id,
+        pos: we.superset_index ?? we.order_index ?? 0, // ✅ stable fallback
+      });
     }
   }
 
@@ -375,6 +379,12 @@ export default function StartWorkoutScreen() {
   const [lastSetsByWeId, setLastSetsByWeId] = useState<
     Record<string, LastSetSnapshot[]>
   >({});
+
+  const [lastSetsByExerciseId, setLastSetsByExerciseId] = useState<
+    Record<string, LastSetSnapshot[]>
+  >({});
+
+  const [isPlanWorkout, setIsPlanWorkout] = useState(false);
 
   // scrolling to open exercise
   const scrollRef = useRef<ScrollView>(null);
@@ -671,12 +681,18 @@ export default function StartWorkoutScreen() {
     const exState = state.byWeId[openWe.id];
     if (!exState) return {};
 
-    const currentIdx = exState.currentSet;
+    const node = supersets.byWeId[openWe.id];
+    const currentIdx = node
+      ? state.supersetRoundByGroup?.[node.group] ?? 0
+      : exState.currentSet;
+
     let setLabel: string | undefined;
     let prevLabel: string | undefined;
 
     // Grab history snapshots for this WE (from last workout)
-    const histArr = lastSetsByWeId[openWe.id];
+    const histArr = isPlanWorkout
+      ? lastSetsByWeId[openWe.id]
+      : lastSetsByExerciseId[openWe.exercise_id];
 
     if (exState.kind === "strength") {
       setLabel = `Set ${currentIdx + 1} of ${exState.sets.length}`;
@@ -803,84 +819,161 @@ export default function StartWorkoutScreen() {
 
       setWorkout(w);
 
-      // last workout notes + last set history for this workout & user
+      let planFlag = false;
+
       try {
-        const { data: lastHist, error: lastErr } = await supabase
-          .from("workout_history")
-          .select("id, notes")
-          .eq("user_id", userId)
+        const { data: planLink, error: planErr } = await supabase
+          .from("plan_workouts")
+          .select("id")
           .eq("workout_id", workoutId)
-          .order("completed_at", { ascending: false })
+          .eq("is_archived", false)
           .limit(1)
           .maybeSingle();
 
-        // workout notes history (last 10)
-        const { data: noteRows, error: noteErr } = await supabase
-          .from("workout_history")
-          .select("completed_at, notes")
-          .eq("user_id", userId)
-          .eq("workout_id", workoutId)
-          .not("notes", "is", null)
-          .order("completed_at", { ascending: false })
-          .limit(10);
-
-        if (!noteErr) {
-          const list: DatedNote[] = (noteRows ?? [])
-            .map((r: any) => {
-              const text = (r.notes ?? "").trim();
-              if (!text) return null; // guards against empty-string notes
-              return { date: fmtDate(r.completed_at), text };
-            })
-            .filter(Boolean) as DatedNote[];
-
-          setWorkoutNotesHistory(list);
+        if (planErr) {
+          console.warn("[isPlanWorkout] query failed", planErr);
+          planFlag = false;
         } else {
-          console.warn("workoutNotesHistory load error", noteErr);
-          setWorkoutNotesHistory([]);
+          planFlag = !!planLink;
+        }
+      } catch (e) {
+        console.warn("[isPlanWorkout] exception", e);
+        planFlag = false;
+      }
+
+      setIsPlanWorkout(planFlag);
+
+      const exerciseIds = Array.from(
+        new Set(
+          (w?.workout_exercises ?? [])
+            .map((we) => we.exercise_id)
+            .filter(Boolean)
+        )
+      );
+
+      // -------------------- LOOSE WORKOUT HISTORY (per exercise) --------------------
+      if (!planFlag) {
+        // clear plan map so UI can't accidentally read stale plan data
+        setLastSetsByWeId({});
+        lastSetMap = {};
+
+        if (exerciseIds.length) {
+          const { data: rows, error } = await supabase.rpc(
+            "get_last_exercise_session_sets",
+            { p_user_id: userId, p_exercise_ids: exerciseIds }
+          );
+
+          if (error) {
+            console.warn("[loose history rpc] failed", error);
+            setLastSetsByExerciseId({});
+          } else {
+            const map: Record<string, LastSetSnapshot[]> = {};
+
+            (rows ?? []).forEach((r: any) => {
+              const exId = String(r.exercise_id);
+              const setIdx = Math.max(0, Number(r.set_number ?? 1) - 1);
+
+              if (!map[exId]) map[exId] = [];
+              if (!map[exId][setIdx]) {
+                map[exId][setIdx] = {
+                  reps: r.reps != null ? Number(r.reps) : null,
+                  weight: r.weight != null ? Number(r.weight) : null,
+                  distance: r.distance != null ? Number(r.distance) : null,
+                  timeSec:
+                    r.time_seconds != null ? Number(r.time_seconds) : null,
+                };
+              }
+            });
+
+            setLastSetsByExerciseId(map);
+          }
+        } else {
+          setLastSetsByExerciseId({});
         }
 
-        const { data: weNotes, error: weNotesErr } = await supabase
-          .from("workout_exercise_history")
-          .select(
-            `
-    workout_exercise_id,
-    notes,
-    workout_history:workout_history_id (
-      completed_at,
-      workout_id,
-      user_id
-    )
-  `
-          )
-          // filter through the joined workout_history
-          .eq("workout_history.workout_id", workoutId)
-          .eq("workout_history.user_id", userId)
-          .not("notes", "is", null)
-          .order("workout_history.completed_at", { ascending: false })
-          .limit(500); // enough to build per-exercise lists
+        // Optional: loose workout notes history doesn't really exist at "template workout" level.
+        // Keep this empty so it doesn't confuse users.
+        setLastWorkoutNotes(null);
+        setWorkoutNotesHistory([]);
+        setExerciseNotesHistoryByWeId({});
+      }
 
-        if (!weNotesErr) {
-          const map: Record<string, DatedNote[]> = {};
-          (weNotes ?? []).forEach((row: any) => {
-            const text = (row.notes ?? "").trim();
-            if (!text) return;
+      // -------------------- PLAN WORKOUT HISTORY (per workout_exercise template id) --------------------
+      if (planFlag) {
+        // clear loose map so UI can't accidentally read stale loose data
+        setLastSetsByExerciseId({});
 
-            const weId = String(row.workout_exercise_id); // template workout_exercises.id
-            const dt = fmtDate(row.workout_history?.completed_at);
+        try {
+          const { data: lastHist, error: lastErr } = await supabase
+            .from("workout_history")
+            .select("id, notes")
+            .eq("user_id", userId)
+            .eq("workout_id", workoutId)
+            .order("completed_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
 
-            if (!map[weId]) map[weId] = [];
-            // keep last 10 per exercise
-            if (map[weId].length < 10) map[weId].push({ date: dt, text });
-          });
+          // workout notes history (last 10)
+          const { data: noteRows, error: noteErr } = await supabase
+            .from("workout_history")
+            .select("completed_at, notes")
+            .eq("user_id", userId)
+            .eq("workout_id", workoutId)
+            .not("notes", "is", null)
+            .order("completed_at", { ascending: false })
+            .limit(10);
 
-          setExerciseNotesHistoryByWeId(map);
-        }
+          if (!noteErr) {
+            const list: DatedNote[] = (noteRows ?? [])
+              .map((r: any) => {
+                const text = (r.notes ?? "").trim();
+                if (!text) return null;
+                return { date: fmtDate(r.completed_at), text };
+              })
+              .filter(Boolean) as DatedNote[];
 
-        if (!lastErr && lastHist) {
-          setLastWorkoutNotes(lastHist.notes ?? null);
+            setWorkoutNotesHistory(list);
+          } else {
+            setWorkoutNotesHistory([]);
+          }
 
-          if (lastHist.id) {
-            // NEW: match the actual schema
+          const { data: weNotes, error: weNotesErr } = await supabase
+            .from("workout_exercise_history")
+            .select(
+              `
+        workout_exercise_id,
+        notes,
+        workout_history:workout_history_id (
+          completed_at,
+          workout_id,
+          user_id
+        )
+      `
+            )
+            .eq("workout_history.workout_id", workoutId)
+            .eq("workout_history.user_id", userId)
+            .not("notes", "is", null)
+            .order("workout_history.completed_at", { ascending: false })
+            .limit(500);
+
+          if (!weNotesErr) {
+            const map: Record<string, DatedNote[]> = {};
+            (weNotes ?? []).forEach((row: any) => {
+              const text = (row.notes ?? "").trim();
+              if (!text) return;
+              const weId = String(row.workout_exercise_id);
+              const dt = fmtDate(row.workout_history?.completed_at);
+              if (!map[weId]) map[weId] = [];
+              if (map[weId].length < 10) map[weId].push({ date: dt, text });
+            });
+            setExerciseNotesHistoryByWeId(map);
+          } else {
+            setExerciseNotesHistoryByWeId({});
+          }
+
+          if (!lastErr && lastHist?.id) {
+            setLastWorkoutNotes(lastHist.notes ?? null);
+
             const { data: lastSets, error: lastSetsErr } = await supabase
               .from("workout_set_history")
               .select(
@@ -904,31 +997,17 @@ export default function StartWorkoutScreen() {
               (lastSets as any[]).forEach((row) => {
                 const weh = row.workout_exercise_history;
                 const weId: string | null = weh?.workout_exercise_id ?? null;
-                if (!weId) return; // ad-hoc exercise with no template WE.id
+                if (!weId) return;
 
-                const setIndexRaw = row.set_number ?? 1;
-                const setIndex = Math.max(0, Number(setIndexRaw) - 1);
-
+                const setIndex = Math.max(0, Number(row.set_number ?? 1) - 1);
                 if (!map[weId]) map[weId] = [];
 
                 map[weId][setIndex] = {
-                  reps:
-                    row.reps != null && !Number.isNaN(Number(row.reps))
-                      ? Number(row.reps)
-                      : null,
-                  weight:
-                    row.weight != null && !Number.isNaN(Number(row.weight))
-                      ? Number(row.weight)
-                      : null,
-                  distance:
-                    row.distance != null && !Number.isNaN(Number(row.distance))
-                      ? Number(row.distance)
-                      : null,
+                  reps: row.reps != null ? Number(row.reps) : null,
+                  weight: row.weight != null ? Number(row.weight) : null,
+                  distance: row.distance != null ? Number(row.distance) : null,
                   timeSec:
-                    row.time_seconds != null &&
-                    !Number.isNaN(Number(row.time_seconds))
-                      ? Number(row.time_seconds)
-                      : null,
+                    row.time_seconds != null ? Number(row.time_seconds) : null,
                 };
               });
 
@@ -939,19 +1018,18 @@ export default function StartWorkoutScreen() {
               setLastSetsByWeId({});
             }
           } else {
+            setLastWorkoutNotes(null);
             lastSetMap = {};
             setLastSetsByWeId({});
           }
-        } else {
+        } catch (e) {
+          console.warn("plan history load error", e);
           setLastWorkoutNotes(null);
           lastSetMap = {};
           setLastSetsByWeId({});
+          setWorkoutNotesHistory([]);
+          setExerciseNotesHistoryByWeId({});
         }
-      } catch (e) {
-        console.warn("load lastWorkoutNotes / last set history error", e);
-        setLastWorkoutNotes(null);
-        lastSetMap = {};
-        setLastSetsByWeId({});
       }
 
       // initialize in-progress state (prefill from lastSetMap if available)
@@ -959,7 +1037,9 @@ export default function StartWorkoutScreen() {
         const byWeId: Record<string, ExerciseState> = {};
 
         for (const we of w.workout_exercises) {
-          const histSets = lastSetMap[we.id] ?? [];
+          const histSets = planFlag
+            ? lastSetMap[we.id] ?? []
+            : lastSetsByExerciseId[we.exercise_id] ?? [];
 
           if (isCardio(we)) {
             const sets: CardioSet[] =
@@ -1031,12 +1111,18 @@ export default function StartWorkoutScreen() {
           }
         }
 
+        const supersetRoundByGroup: Record<string, number> = {};
+        Object.keys(supersets.byGroup).forEach(
+          (gid) => (supersetRoundByGroup[gid] = 0)
+        );
+
         setState({
           workoutNotes: "",
           byWeId,
           cardioTimeBonusSec: 0,
           startedAt: Date.now(),
           anyCompleted: false,
+          supersetRoundByGroup, // ✅ ADD THIS
         });
       } else {
         setState(null);
@@ -1403,30 +1489,25 @@ export default function StartWorkoutScreen() {
       };
     });
 
-  function hasSetDataForNext(ex: ExerciseState): boolean {
-    const i = ex.currentSet;
-
+  function hasSetDataAtIndex(ex: ExerciseState, i: number): boolean {
     if (ex.kind === "strength") {
       const cur = ex.sets[i] as StrengthSet;
       if ((ex as any).dropMode) {
-        const drops = cur.drops ?? [];
-        // at least one drop row has reps or weight
+        const drops = cur?.drops ?? [];
         return drops.some(
           (d) => (d.reps && d.reps !== "0") || (d.weight && d.weight !== "0")
         );
       }
-      // regular: reps or weight present
       return !!(
-        (cur.reps && cur.reps !== "0") ||
-        (cur.weight && cur.weight !== "0")
+        (cur?.reps && cur.reps !== "0") ||
+        (cur?.weight && cur.weight !== "0")
       );
     }
 
-    // cardio: distance or time present
     const cur = ex.sets[i] as CardioSet;
     return !!(
-      (cur.distance && cur.distance !== "0") ||
-      (cur.timeSec && cur.timeSec !== "0")
+      (cur?.distance && cur.distance !== "0") ||
+      (cur?.timeSec && cur.timeSec !== "0")
     );
   }
 
@@ -1436,8 +1517,13 @@ export default function StartWorkoutScreen() {
       const ex = s.byWeId[weId];
       if (!ex) return s;
 
-      // 🚫 Block next if current set is empty
-      if (!hasSetDataForNext(ex)) {
+      const node = supersets.byWeId[weId];
+      const i = node
+        ? s.supersetRoundByGroup?.[node.group] ?? 0
+        : ex.currentSet;
+
+      // 🚫 Block next if the *displayed* set is empty
+      if (!hasSetDataAtIndex(ex, i)) {
         Alert.alert(
           "Add a set",
           "Please enter reps/weight (or a drop row) before moving to the next set."
@@ -1449,26 +1535,38 @@ export default function StartWorkoutScreen() {
       const isCardioT = isCardioState(ex);
 
       // If this WE is in a superset group, alternate to the next WE in the same group
-      const node = supersets.byWeId[weId];
       if (node && supersets.byGroup[node.group]?.length > 1) {
         const groupIds = supersets.byGroup[node.group];
+        const groupId = node.group;
 
         let updated: InProgressState = s;
 
-        // Advance current exercise set cursor (and prefill if needed)
-        if (isStrength) {
-          const _ex = updated.byWeId[weId] as Extract<
-            ExerciseState,
-            { kind: "strength" }
-          >;
-          const cur = _ex.currentSet;
-          const atEndLocal = cur >= _ex.sets.length - 1;
-          if (atEndLocal) {
-            const prev = _ex.sets[cur] as StrengthSet;
-            const nextSet: StrengthSet = {
-              reps: prev.reps ?? "",
-              weight: prev.weight ?? "",
-              drops: (prev.drops ?? []).map((d) => ({
+        const round = updated.supersetRoundByGroup?.[groupId] ?? 0;
+
+        console.log("SUP", {
+          weId,
+          node,
+          round: s.supersetRoundByGroup?.[node.group],
+          currentSet: s.byWeId[weId]?.currentSet,
+        });
+
+        // helper: ensure this WE has a set slot for "round"
+        const ensureSetSlot = (weX: string, idx: number) => {
+          const exX = updated.byWeId[weX];
+          if (!exX) return;
+
+          if (exX.kind === "strength") {
+            const e = exX as Extract<ExerciseState, { kind: "strength" }>;
+            if (idx < e.sets.length) return;
+            const last = e.sets[e.sets.length - 1] ?? {
+              reps: "",
+              weight: "",
+              drops: [],
+            };
+            const clone: StrengthSet = {
+              reps: (last as any).reps ?? "",
+              weight: (last as any).weight ?? "",
+              drops: ((last as any).drops ?? []).map((d: any) => ({
                 reps: d.reps ?? "",
                 weight: d.weight ?? "",
               })),
@@ -1477,79 +1575,64 @@ export default function StartWorkoutScreen() {
               ...updated,
               byWeId: {
                 ...updated.byWeId,
-                [weId]: {
-                  ..._ex,
-                  sets: [..._ex.sets, nextSet],
-                  currentSet: cur + 1,
-                },
+                [weX]: { ...e, sets: [...e.sets, clone] },
               },
             };
           } else {
+            const e = exX as Extract<ExerciseState, { kind: "cardio" }>;
+            if (idx < e.sets.length) return;
+            const last = e.sets[e.sets.length - 1] ?? {
+              distance: "",
+              timeSec: "",
+            };
+            const clone: CardioSet = {
+              distance: (last as any).distance ?? "",
+              timeSec: (last as any).timeSec ?? "",
+            };
             updated = {
               ...updated,
               byWeId: {
                 ...updated.byWeId,
-                [weId]: { ..._ex, currentSet: cur + 1 },
+                [weX]: { ...e, sets: [...e.sets, clone] },
               },
             };
           }
-        } else if (isCardioT) {
-          const _ex = updated.byWeId[weId] as Extract<
-            ExerciseState,
-            { kind: "cardio" }
-          >;
-          const cur = _ex.currentSet;
-          const atEndLocal = cur >= _ex.sets.length - 1;
-          if (atEndLocal) {
-            const prev = _ex.sets[cur];
-            const nextSet: CardioSet = {
-              distance: prev.distance ?? "",
-              timeSec: prev.timeSec ?? "",
-            };
-            updated = {
-              ...updated,
-              byWeId: {
-                ...updated.byWeId,
-                [weId]: {
-                  ..._ex,
-                  sets: [..._ex.sets, nextSet],
-                  currentSet: cur + 1,
-                },
-              },
-            };
-          } else {
-            updated = {
-              ...updated,
-              byWeId: {
-                ...updated.byWeId,
-                [weId]: { ..._ex, currentSet: cur + 1 },
-              },
-            };
-          }
-        }
+        };
 
-        // 2) Open NEXT exercise in the group (same set index)
-        const curPos = node.pos;
-        const nextPos = (curPos + 1) % groupIds.length;
+        // make sure every exercise in group has a slot for current round (so inputs exist)
+        groupIds.forEach((id) => ensureSetSlot(id, round));
+
+        const isLastInGroup = node.pos === groupIds.length - 1;
+        const nextPos = (node.pos + 1) % groupIds.length;
         const nextWeId = groupIds[nextPos];
 
-        const nextEx = updated.byWeId[nextWeId];
-        if (nextEx && !nextEx.completed) {
-          const updatedBy: Record<string, ExerciseState> = {};
-          for (const [id, val] of Object.entries(updated.byWeId)) {
-            if (id === nextWeId)
-              updatedBy[id] = { ...val, open: true } as ExerciseState;
-            else updatedBy[id] = { ...val, open: false } as ExerciseState;
-          }
-          requestAnimationFrame(() => scrollToExercise(nextWeId));
-          return { ...updated, byWeId: updatedBy };
+        // If we just finished the last exercise in the group, advance the round
+        if (isLastInGroup) {
+          const nextRound = round + 1;
+
+          // ensure next round slot exists for each exercise (prefill)
+          groupIds.forEach((id) => ensureSetSlot(id, nextRound));
+
+          updated = {
+            ...updated,
+            supersetRoundByGroup: {
+              ...(updated.supersetRoundByGroup ?? {}),
+              [groupId]: nextRound,
+            },
+          };
         }
 
-        return updated;
+        // open next exercise
+        const updatedBy: Record<string, ExerciseState> = {};
+        for (const [id, val] of Object.entries(updated.byWeId)) {
+          updatedBy[id] = { ...val, open: id === nextWeId } as ExerciseState;
+        }
+
+        requestAnimationFrame(() => scrollToExercise(nextWeId));
+        return { ...updated, byWeId: updatedBy };
       }
 
       // --- Non-superset fallback (original logic) ---
-      const i = ex.currentSet;
       const atEnd = i >= ex.sets.length - 1;
       if (atEnd) {
         if (isStrength) {
@@ -1800,6 +1883,11 @@ export default function StartWorkoutScreen() {
         {workout.workout_exercises.map((we, idx) => {
           const exState = state.byWeId[we.id];
           const isOpen = exState.open;
+          const node = supersets.byWeId[we.id];
+          const displaySetIdx = node
+            ? state.supersetRoundByGroup?.[node.group] ?? 0
+            : exState.currentSet;
+
           const subtitle = formatTargetSubtitle(we);
 
           const isLastSet =
@@ -1808,7 +1896,9 @@ export default function StartWorkoutScreen() {
 
           const shouldShowComplete = isLastSet;
 
-          const lastHistorySets = lastSetsByWeId[we.id];
+          const lastHistorySets = isPlanWorkout
+            ? lastSetsByWeId[we.id]
+            : lastSetsByExerciseId[we.exercise_id];
 
           return (
             <View
@@ -2056,7 +2146,11 @@ export default function StartWorkoutScreen() {
 
                   {/* History preview for this set */}
                   {(() => {
-                    const i = exState.currentSet;
+                    const node = supersets.byWeId[we.id];
+                    const i = node
+                      ? state.supersetRoundByGroup?.[node.group] ?? 0
+                      : exState.currentSet;
+
                     const histArr = lastHistorySets;
 
                     if (!histArr || histArr.length === 0) {
@@ -2128,7 +2222,10 @@ export default function StartWorkoutScreen() {
 
                   {/* Active set editor */}
                   {(() => {
-                    const i = exState.currentSet;
+                    const node = supersets.byWeId[we.id];
+                    const i = node
+                      ? state.supersetRoundByGroup?.[node.group] ?? 0
+                      : exState.currentSet;
 
                     if (exState.kind === "strength" && exState.dropMode) {
                       // DROPMODE: list of (reps, weight) inside the single current set
@@ -2419,12 +2516,12 @@ export default function StartWorkoutScreen() {
                   >
                     {/* Prev */}
                     <Pressable
-                      disabled={exState.currentSet === 0}
+                      disabled={displaySetIdx === 0}
                       onPress={() => setPrevSet(we.id)}
                       style={[
                         styles.pill,
                         styles.ghost,
-                        exState.currentSet === 0 && { opacity: 0.5 },
+                        displaySetIdx === 0 && { opacity: 0.5 },
                       ]}
                     >
                       <Text style={{ color: colors.text, fontWeight: "800" }}>
@@ -2441,10 +2538,10 @@ export default function StartWorkoutScreen() {
                             styles.dot,
                             {
                               backgroundColor:
-                                exState.currentSet === dotIdx
+                                displaySetIdx === dotIdx
                                   ? colors.primaryText
                                   : colors.subtle,
-                              opacity: exState.currentSet === dotIdx ? 1 : 0.4,
+                              opacity: displaySetIdx === dotIdx ? 1 : 0.4,
                             },
                           ]}
                         />
@@ -2481,7 +2578,7 @@ export default function StartWorkoutScreen() {
                       { textAlign: "center", marginTop: 8, marginBottom: 4 },
                     ]}
                   >
-                    Set {exState.currentSet + 1} of {exState.sets.length}
+                    Set {displaySetIdx + 1} of {exState.sets.length}
                   </Text>
 
                   {/* Add / Remove Set */}

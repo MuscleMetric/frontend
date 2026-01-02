@@ -10,7 +10,7 @@ import {
   Modal,
   Linking,
 } from "react-native";
-import { useLocalSearchParams, router } from "expo-router";
+import { useLocalSearchParams, router, useFocusEffect } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { supabase } from "../../../lib/supabase";
 import { useAuth } from "../../../lib/authContext";
@@ -56,11 +56,32 @@ type Workout = {
   workout_exercises: WorkoutExercise[];
 };
 
+type HistorySetRow = {
+  exercise_id: string;
+  workout_history_id: string | null;
+  reps: number | null;
+  weight: number | null;
+  created_at?: string | null; // or performed_at if you have it
+};
+
+const epley1RM = (weight: number, reps: number) => {
+  // reps <= 1 => basically weight
+  if (!weight || !reps) return 0;
+  if (reps <= 1) return weight;
+  return weight * (1 + reps / 30);
+};
+
+const formatHistoryTargets = (
+  setsCount: number,
+  bestReps: number,
+  bestWeight: number
+) => `${setsCount} sets × ${bestReps} reps • ${bestWeight}kg`;
+
 /* ---------- Helpers ---------- */
 const formatTargets = (we: WorkoutExercise): string | null => {
   if (we.target_sets || we.target_reps || we.target_weight != null) {
     const sets = we.target_sets ? `${we.target_sets} sets` : null;
-    const reps = we.target_reps != null ? `${we.target_reps}` : null;
+    const reps = we.target_reps != null ? `${we.target_reps} reps` : null;
     const weight = we.target_weight != null ? `${we.target_weight}kg` : null;
 
     const left = [sets, reps ? `× ${reps}` : null].filter(Boolean).join(" ");
@@ -126,7 +147,13 @@ function HeaderBar({ title, onEdit }: { title: string; onEdit?: () => void }) {
               { backgroundColor: colors.warnBg, borderColor: colors.warnText },
             ]}
           >
-            <Text style={{ color: colors.warnText, fontWeight: "700", fontSize: 12 }}>
+            <Text
+              style={{
+                color: colors.warnText,
+                fontWeight: "700",
+                fontSize: 12,
+              }}
+            >
               Edit
             </Text>
           </Pressable>
@@ -155,7 +182,9 @@ function ExerciseInfoModal({
     exercise.exercise_muscles
       ?.map((em) =>
         em.muscles?.name
-          ? `${em.muscles.name}${em.contribution ? ` (${em.contribution}%)` : ""}`
+          ? `${em.muscles.name}${
+              em.contribution ? ` (${em.contribution}%)` : ""
+            }`
           : null
       )
       .filter(Boolean)
@@ -232,7 +261,12 @@ const supersetColorFor = (groupId: string, fallbackPrimary?: string) => {
 
 type DisplayItem =
   | { kind: "single"; key: string; we: WorkoutExercise }
-  | { kind: "superset"; key: string; groupId: string; items: WorkoutExercise[] };
+  | {
+      kind: "superset";
+      key: string;
+      groupId: string;
+      items: WorkoutExercise[];
+    };
 
 // assumes list already sorted by order_index
 const buildDisplayItems = (arr: WorkoutExercise[]): DisplayItem[] => {
@@ -260,8 +294,10 @@ const buildDisplayItems = (arr: WorkoutExercise[]): DisplayItem[] => {
 
     // order within block by superset_index (fallback to order_index)
     items.sort((a, b) => {
-      const ai = a.superset_index != null ? a.superset_index : a.order_index ?? 0;
-      const bi = b.superset_index != null ? b.superset_index : b.order_index ?? 0;
+      const ai =
+        a.superset_index != null ? a.superset_index : a.order_index ?? 0;
+      const bi =
+        b.superset_index != null ? b.superset_index : b.order_index ?? 0;
       return ai - bi;
     });
 
@@ -297,6 +333,9 @@ export default function WorkoutUseScreen() {
   const [workout, setWorkout] = useState<Workout | null>(null);
   const [infoTarget, setInfoTarget] = useState<Exercise | null>(null);
   const [infoOpen, setInfoOpen] = useState(false);
+  const [historyTargetsByExerciseId, setHistoryTargetsByExerciseId] = useState<
+    Record<string, string>
+  >({});
 
   const openInfo = (ex: Exercise | null) => {
     setInfoTarget(ex);
@@ -357,9 +396,13 @@ export default function WorkoutUseScreen() {
 
                 target_sets: we.target_sets ?? null,
                 target_reps: we.target_reps ?? null,
-                target_weight: we.target_weight != null ? Number(we.target_weight) : null,
+                target_weight:
+                  we.target_weight != null ? Number(we.target_weight) : null,
                 target_time_seconds: we.target_time_seconds ?? null,
-                target_distance: we.target_distance != null ? Number(we.target_distance) : null,
+                target_distance:
+                  we.target_distance != null
+                    ? Number(we.target_distance)
+                    : null,
                 notes: we.notes ?? null,
                 exercises: we.exercises
                   ? {
@@ -370,18 +413,71 @@ export default function WorkoutUseScreen() {
                       level: we.exercises.level ?? null,
                       instructions: we.exercises.instructions ?? null,
                       video_url: we.exercises.video_url ?? null,
-                      exercise_muscles: (we.exercises.exercise_muscles ?? []).map((em: any) => ({
+                      exercise_muscles: (
+                        we.exercises.exercise_muscles ?? []
+                      ).map((em: any) => ({
                         contribution: em.contribution ?? null,
-                        muscles: em.muscles ? { name: em.muscles.name ?? null } : null,
+                        muscles: em.muscles
+                          ? { name: em.muscles.name ?? null }
+                          : null,
                       })),
                     }
                   : null,
               }))
-              .sort((a: WorkoutExercise, b: WorkoutExercise) => (a.order_index ?? 0) - (b.order_index ?? 0)),
+              .sort(
+                (a: WorkoutExercise, b: WorkoutExercise) =>
+                  (a.order_index ?? 0) - (b.order_index ?? 0)
+              ),
           }
         : null;
 
       setWorkout(normalized);
+
+      // build exercise id list
+      const exerciseIds = Array.from(
+        new Set(
+          (normalized?.workout_exercises ?? [])
+            .map((we) => we.exercises?.id)
+            .filter(Boolean) as string[]
+        )
+      );
+
+      // default empty if none
+      if (!exerciseIds.length) {
+        setHistoryTargetsByExerciseId({});
+        return;
+      }
+
+      const { data: summaries, error: sumErr } = await supabase.rpc(
+        "get_last_exercise_session_summaries",
+        { p_user_id: userId, p_exercise_ids: exerciseIds }
+      );
+
+      if (sumErr) {
+        console.warn("[historyTargets rpc] failed", sumErr);
+        setHistoryTargetsByExerciseId({});
+      } else {
+        const map: Record<string, string> = {};
+        (summaries ?? []).forEach((r: any) => {
+          if (!r.exercise_id) return;
+
+          // be defensive: allow 0 sets but still show if reps/weight exist
+          const setsCount = Number(r.sets_count ?? 0);
+          const bestReps = r.best_reps != null ? Number(r.best_reps) : null;
+          const bestWeight =
+            r.best_weight != null ? Number(r.best_weight) : null;
+
+          if (bestReps == null || bestWeight == null) return;
+
+          map[String(r.exercise_id)] = formatHistoryTargets(
+            setsCount,
+            bestReps,
+            bestWeight
+          );
+        });
+
+        setHistoryTargetsByExerciseId(map);
+      }
     } catch (e) {
       console.warn("workout use load error:", e);
       setWorkout(null);
@@ -390,9 +486,11 @@ export default function WorkoutUseScreen() {
     }
   }, [userId, workoutId]);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load])
+  );
 
   const displayItems = useMemo(
     () => buildDisplayItems(workout?.workout_exercises ?? []),
@@ -437,7 +535,9 @@ export default function WorkoutUseScreen() {
         }
       />
 
-      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 110, gap: 16 }}>
+      <ScrollView
+        contentContainerStyle={{ padding: 16, paddingBottom: 110, gap: 16 }}
+      >
         {workout.notes?.trim() ? (
           <View style={styles.card}>
             <Text style={styles.h3}>Workout Notes</Text>
@@ -446,7 +546,9 @@ export default function WorkoutUseScreen() {
         ) : null}
 
         <View style={{ gap: 12 }}>
-          <Text style={styles.h2}>Exercises ({workout.workout_exercises.length})</Text>
+          <Text style={styles.h2}>
+            Exercises ({workout.workout_exercises.length})
+          </Text>
 
           {/* ✅ grouped rendering (same as view.tsx) */}
           {displayItems.map((it) => {
@@ -492,7 +594,9 @@ export default function WorkoutUseScreen() {
 
           {workout.workout_exercises.length === 0 && (
             <View style={styles.card}>
-              <Text style={styles.muted}>No exercises in this workout yet.</Text>
+              <Text style={styles.muted}>
+                No exercises in this workout yet.
+              </Text>
             </View>
           )}
         </View>
@@ -508,7 +612,9 @@ export default function WorkoutUseScreen() {
           }
           style={[styles.startBtn, { backgroundColor: "#22c55e" }]}
         >
-          <Text style={{ color: "white", fontWeight: "800" }}>▶ Start Workout</Text>
+          <Text style={{ color: "white", fontWeight: "800" }}>
+            ▶ Start Workout
+          </Text>
         </Pressable>
       </View>
 
@@ -538,21 +644,37 @@ export default function WorkoutUseScreen() {
     dropOrange?: string;
   }) {
     const ex = we.exercises;
-    const targets = formatTargets(we);
+
     const DROP = dropOrange ?? "#f97316";
+
+    const exId = ex?.id ?? null;
+    const targets =
+      (exId ? historyTargetsByExerciseId[exId] : null) ?? formatTargets(we);
 
     return (
       <View
         style={[
           styles.exerciseCard,
           noOuterCardBorder && { borderWidth: 0, borderRadius: 0 },
-          noOuterCardBorder && isFirst && { borderTopLeftRadius: 14, borderTopRightRadius: 14 },
-          noOuterCardBorder && isLast && { borderBottomLeftRadius: 14, borderBottomRightRadius: 14 },
+          noOuterCardBorder &&
+            isFirst && { borderTopLeftRadius: 14, borderTopRightRadius: 14 },
+          noOuterCardBorder &&
+            isLast && {
+              borderBottomLeftRadius: 14,
+              borderBottomRightRadius: 14,
+            },
         ]}
       >
         <View style={{ flexDirection: "row", alignItems: "center" }}>
           <View style={{ flex: 1, paddingRight: 8 }}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 8,
+                flexWrap: "wrap",
+              }}
+            >
               <Text style={styles.h3}>{ex?.name ?? "Exercise"}</Text>
 
               {/* Superset badge */}
@@ -567,7 +689,13 @@ export default function WorkoutUseScreen() {
                     backgroundColor: colors.surface,
                   }}
                 >
-                  <Text style={{ fontSize: 11, fontWeight: "900", color: outlineColor ?? colors.primary }}>
+                  <Text
+                    style={{
+                      fontSize: 11,
+                      fontWeight: "900",
+                      color: outlineColor ?? colors.primary,
+                    }}
+                  >
                     Superset
                   </Text>
                 </View>
@@ -585,7 +713,11 @@ export default function WorkoutUseScreen() {
                     backgroundColor: colors.surface,
                   }}
                 >
-                  <Text style={{ fontSize: 11, fontWeight: "900", color: DROP }}>Dropset</Text>
+                  <Text
+                    style={{ fontSize: 11, fontWeight: "900", color: DROP }}
+                  >
+                    Dropset
+                  </Text>
                 </View>
               ) : null}
             </View>
@@ -599,7 +731,9 @@ export default function WorkoutUseScreen() {
         </View>
 
         {we.notes?.trim() ? (
-          <Text style={[styles.muted, { marginTop: 6 }]}>{we.notes.trim()}</Text>
+          <Text style={[styles.muted, { marginTop: 6 }]}>
+            {we.notes.trim()}
+          </Text>
         ) : null}
       </View>
     );
