@@ -701,10 +701,20 @@ export default function StartWorkoutScreen() {
       if (currentIdx === 0 && histArr && histArr.length > 0) {
         // pick matching index if available, else last available history set
         const histIdx = Math.min(currentIdx, histArr.length - 1);
-        const snap = histArr[histIdx];
-        const reps = snap.reps ?? 0;
-        const weight = snap.weight ?? 0;
-        prevLabel = `${reps}×${weight}kg`;
+
+        // snap might be undefined if history array is sparse
+        const snap =
+          histArr?.[histIdx] ??
+          // fallback: first defined snapshot
+          histArr?.find((x) => !!x) ??
+          // fallback: last defined snapshot
+          [...(histArr ?? [])].reverse().find((x) => !!x);
+
+        if (snap) {
+          const reps = snap.reps ?? 0;
+          const weight = snap.weight ?? 0;
+          prevLabel = `${reps}×${weight}kg`;
+        }
       }
 
       // --- 2️⃣ LATER SETS → keep existing “previous set in this workout” behavior ---
