@@ -1,6 +1,16 @@
 // lib/saveWorkout.ts
 import { supabase } from "./supabase";
 import type { ReviewPayload, StrengthSet, CardioSet } from "./sessionStore";
+import * as Sentry from "@sentry/react-native";
+
+function bc(message: string, data?: Record<string, any>) {
+  Sentry.addBreadcrumb({
+    category: "save_rpc",
+    message,
+    level: "info",
+    data,
+  });
+}
 
 function n(x: any): number | null {
   const v = Number(x);
@@ -236,18 +246,93 @@ function buildRpcPayload(args: SaveArgs): RpcWorkout {
   };
 }
 
+function summarizeRpcPayload(p: RpcWorkout) {
+  const exerciseCount = p.exercise_history.length;
+  const setCount = p.exercise_history.reduce(
+    (acc, ex) => acc + ex.sets.length,
+    0
+  );
+  const updateCount = p.workout_exercise_updates.length;
+
+  // Rough size to debug “payload too large” style issues
+  let approxBytes = 0;
+  try {
+    approxBytes = JSON.stringify(p).length;
+  } catch {}
+
+  return {
+    client_save_id: p.client_save_id,
+    workout_id: p.workout_id,
+    completed_at: p.completed_at,
+    duration_seconds: p.duration_seconds,
+    plan_workout_id: p.plan_workout_id,
+    exerciseCount,
+    setCount,
+    updateCount,
+    approxBytes,
+  };
+}
+
 export async function saveCompletedWorkout(
   args: SaveArgs
 ): Promise<SaveResult> {
   const payload = buildRpcPayload(args);
+  const summary = summarizeRpcPayload(payload);
 
-  const { data, error } = await supabase.rpc("save_completed_workout_v1", {
-    p_workout: payload,
-  });
+  bc("rpc start", summary);
 
-  if (error) {
-    throw new Error(error.message);
+  try {
+    const { data, error } = await supabase.rpc("save_completed_workout_v1", {
+      p_workout: payload,
+    });
+
+    if (error) {
+      // breadcrumb first (always)
+      bc("rpc error", {
+        ...summary,
+        code: (error as any).code,
+        details: (error as any).details,
+        hint: (error as any).hint,
+        message: error.message,
+      });
+
+      // capture exception (creates an issue)
+      Sentry.captureException(error, {
+        tags: {
+          area: "save_rpc",
+          fn: "save_completed_workout_v1",
+        },
+        extra: {
+          ...summary,
+          code: (error as any).code,
+          details: (error as any).details,
+          hint: (error as any).hint,
+          message: error.message,
+        },
+      });
+
+      // still throw (so caller can keep UX behavior)
+      throw new Error(error.message);
+    }
+
+    bc("rpc success", { ...summary, workoutHistoryId: String(data) });
+
+    return { workoutHistoryId: String(data) };
+  } catch (e: any) {
+    // This catches non-Supabase errors too (JSON issues, unexpected runtime, etc.)
+    bc("rpc exception", {
+      ...summary,
+      message: String(e?.message ?? e),
+    });
+
+    // Only capture if it's not already a Supabase error we captured above
+    if (!(e && (e as any).name === "PostgrestError")) {
+      Sentry.captureException(e, {
+        tags: { area: "save_rpc", stage: "unexpected" },
+        extra: summary,
+      });
+    }
+
+    throw e;
   }
-
-  return { workoutHistoryId: String(data) };
 }

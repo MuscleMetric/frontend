@@ -25,6 +25,31 @@ import {
   enqueuePendingWorkout,
   syncPendingWorkouts,
 } from "../../../lib/pendingWorkoutSync";
+import * as Sentry from "@sentry/react-native";
+
+function countTotals(payload: ReviewPayload) {
+  const workoutExercises = payload.workout.workout_exercises ?? [];
+  let exerciseCount = 0;
+  let setCount = 0;
+
+  for (const we of workoutExercises) {
+    const exState = payload.state.byWeId?.[we.id];
+    if (!exState) continue;
+    exerciseCount += 1;
+    setCount += exState.sets?.length ?? 0;
+  }
+
+  return { exerciseCount, setCount };
+}
+
+function bc(message: string, data?: Record<string, any>) {
+  Sentry.addBreadcrumb({
+    category: "workout_save",
+    message,
+    level: "info",
+    data,
+  });
+}
 
 /* ---------- utils ---------- */
 function secondsToHMS(total: number) {
@@ -411,8 +436,33 @@ export default function ReviewWorkoutScreen() {
               return;
             }
 
+            const { exerciseCount, setCount } = countTotals(payload);
+
+            // ✅ breadcrumb: user pressed save
+            bc("Save pressed", {
+              workoutId: payload.workout.id,
+              title: payload.workout.title,
+              planWorkoutId,
+              totalSec,
+              exerciseCount,
+              setCount,
+              hasSupersets:
+                Object.keys(payload.supersets?.labels ?? {}).length > 0,
+            });
+
+            // Optional: set context for any later error from this flow
+            Sentry.setContext("workout_review", {
+              workoutId: payload.workout.id,
+              planWorkoutId,
+              totalSec,
+              exerciseCount,
+              setCount,
+            });
+
             try {
               setSaving(true);
+
+              bc("Enqueue pending workout start");
 
               // 1) Local-first enqueue (guarantee)
               await enqueuePendingWorkout({
@@ -422,15 +472,18 @@ export default function ReviewWorkoutScreen() {
                 planWorkoutIdToComplete: planWorkoutId,
               });
 
+              bc("Enqueue pending workout success");
+
               // 2) Clear local session payload immediately (user is safe now)
               clearReviewPayload();
+              bc("Review payload cleared");
 
               // 3) Tell the user it's saved (syncing)
               Alert.alert("Saved", "Saved (syncing in the background).", [
                 {
                   text: "OK",
                   onPress: () => {
-                    // Defer to next tick so RootLayout/ExpoRouter is definitely mounted
+                    bc("User confirmed saved alert");
                     requestAnimationFrame(() =>
                       router.replace("/(tabs)/workout")
                     );
@@ -439,10 +492,33 @@ export default function ReviewWorkoutScreen() {
               ]);
 
               // 4) Best-effort sync (don’t block UX)
-              syncPendingWorkouts().catch((e) =>
-                console.warn("syncPendingWorkouts failed", e)
+              bc("Background sync start");
+              syncPendingWorkouts().then(
+                () => bc("Background sync success"),
+                (e) => {
+                  bc("Background sync failed", {
+                    message: String(e?.message ?? e),
+                  });
+                  // This creates an issue in Sentry (good)
+                  Sentry.captureException(e, {
+                    tags: {
+                      area: "workout_save",
+                      stage: "syncPendingWorkouts",
+                    },
+                  });
+                }
               );
             } catch (e: any) {
+              bc("Save flow failed", { message: String(e?.message ?? e) });
+
+              // ✅ This creates the Sentry issue (only on failure)
+              Sentry.captureException(e, {
+                tags: {
+                  area: "workout_save",
+                  stage: "enqueue_pending_workout",
+                },
+              });
+
               Alert.alert(
                 "Save failed",
                 String(e?.message ?? "Something went wrong.")

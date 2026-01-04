@@ -1,7 +1,12 @@
 // app/_layout.tsx
 import "react-native-url-polyfill/auto";
 import React, { useEffect } from "react";
-import { Stack, useRouter, useSegments, useRootNavigationState } from "expo-router";
+import {
+  Stack,
+  useRouter,
+  useSegments,
+  useRootNavigationState,
+} from "expo-router";
 import * as Linking from "expo-linking";
 import { ThemeProvider } from "@react-navigation/native";
 import { useColorScheme, View, StyleSheet } from "react-native";
@@ -12,6 +17,10 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { AuthProvider, useAuth } from "../lib/authContext";
 import { SplashScreen } from "./_components/splashScreen";
 import "react-native-get-random-values";
+import * as Sentry from "@sentry/react-native";
+import { initSentry } from "./sentry";
+
+initSentry();
 
 export default function RootLayout() {
   const scheme = useColorScheme();
@@ -37,6 +46,28 @@ function RootNavigator() {
   const navState = useRootNavigationState();
   const navReady = !!navState?.key;
 
+  // ✅ Route breadcrumbs (expo-router segments)
+  useEffect(() => {
+    if (!navReady) return;
+
+    Sentry.addBreadcrumb({
+      category: "navigation",
+      message: "route",
+      level: "info",
+      data: {
+        segments: (segments as string[])?.join("/"),
+      },
+    });
+  }, [navReady, segments]);
+
+  useEffect(() => {
+    if (session?.user?.id) {
+      Sentry.setUser({ id: session.user.id });
+    } else {
+      Sentry.setUser(null);
+    }
+  }, [session?.user?.id]);
+
   // Deep links + exchangeCodeForSession
   useEffect(() => {
     const handleUrl = async (url: string | null) => {
@@ -49,7 +80,9 @@ function RootNavigator() {
       try {
         await supabase.auth.exchangeCodeForSession(code);
       } catch (err) {
-        console.warn("❌ exchangeCodeForSession failed:", err);
+        Sentry.captureException(err, {
+          tags: { area: "auth", action: "exchangeCodeForSession" },
+        });
       }
     };
 

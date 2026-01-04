@@ -5,6 +5,7 @@
     "version": "1.0.4",
     "scheme": "musclemetric",
     "newArchEnabled": true,
+    "plugins": ["@sentry/react-native/expo"],
     "experiments": {
       "typedRoutes": false,
       "reactCompiler": false

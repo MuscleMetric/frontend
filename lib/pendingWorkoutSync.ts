@@ -4,6 +4,16 @@ import { supabase } from "./supabase";
 import { saveCompletedWorkout } from "./saveWorkout";
 import type { ReviewPayload } from "./sessionStore";
 import { v4 as uuidv4 } from "uuid";
+import * as Sentry from "@sentry/react-native";
+
+function bc(message: string, data?: Record<string, any>) {
+  Sentry.addBreadcrumb({
+    category: "pending_sync",
+    message,
+    level: "info",
+    data,
+  });
+}
 
 const KEY = "mm_pending_workout_saves_v1";
 
@@ -71,9 +81,23 @@ export async function enqueuePendingWorkout(input: {
     lastError: null,
   };
 
+  bc("enqueue start", {
+    clientSaveId: job.clientSaveId,
+    totalDurationSec: job.totalDurationSec,
+    planWorkoutIdToComplete: job.planWorkoutIdToComplete,
+    workoutId: input.payload?.workout?.id,
+    title: input.payload?.workout?.title,
+  });
+
   const q = await readQueue();
   q.push(job);
   await writeQueue(q);
+
+  bc("enqueue success", {
+    clientSaveId: job.clientSaveId,
+    queueLength: q.length,
+  });
+
   return job;
 }
 
@@ -109,14 +133,24 @@ export async function syncPendingWorkouts(): Promise<{
   stoppedBecauseAuth: boolean;
 }> {
   // quick auth check – if no session, don't thrash the network
+  bc("sync start");
+
   const { data } = await supabase.auth.getSession();
   const sess = data.session;
+
+  bc("session checked", {
+    authed: !!sess?.user?.id,
+  });
+
   if (!sess?.user?.id) {
     const q = await readQueue();
+    bc("sync stopped: no session", { remaining: q.length });
     return { synced: 0, remaining: q.length, stoppedBecauseAuth: true };
   }
 
   let q = await readQueue();
+  bc("queue loaded", { count: q.length });
+
   if (!q.length) return { synced: 0, remaining: 0, stoppedBecauseAuth: false };
 
   let synced = 0;
@@ -130,6 +164,13 @@ export async function syncPendingWorkouts(): Promise<{
       // Attempt server save using *current* authed user id
       const uid = sess.user.id;
 
+      bc("job start", {
+        clientSaveId: job.clientSaveId,
+        attempts: job.attempts,
+        workoutId: job.payload?.workout?.id,
+        planWorkoutIdToComplete: job.planWorkoutIdToComplete,
+      });
+
       await saveCompletedWorkout({
         clientSaveId: job.clientSaveId,
         payload: job.payload,
@@ -138,21 +179,45 @@ export async function syncPendingWorkouts(): Promise<{
         planWorkoutIdToComplete: job.planWorkoutIdToComplete ?? undefined,
       });
 
+      bc("job success", { clientSaveId: job.clientSaveId });
+
       synced += 1;
       // drop the job (do not add to next[])
     } catch (e: any) {
       const msg = String(e?.message ?? "unknown");
 
       // record failure and keep it
-      next.push({
-        ...job,
-        attempts: job.attempts + 1,
+      bc("job failed", {
+        clientSaveId: job.clientSaveId,
+        attemptsNext: job.attempts + 1,
         lastError: msg,
+        authProblem: isAuthProblem(msg),
+        networkProblem: isNetworkProblem(msg),
       });
+
+      // ✅ Capture exception ONLY on first few attempts to avoid spamming
+      if ((job.attempts ?? 0) < 2) {
+        Sentry.captureException(e, {
+          tags: {
+            area: "pending_sync",
+            stage: "saveCompletedWorkout",
+            auth_problem: String(isAuthProblem(msg)),
+            network_problem: String(isNetworkProblem(msg)),
+          },
+          extra: {
+            clientSaveId: job.clientSaveId,
+            attempts: job.attempts,
+            lastError: msg,
+            workoutId: job.payload?.workout?.id,
+            planWorkoutIdToComplete: job.planWorkoutIdToComplete,
+          },
+        });
+      }
 
       // If it smells like auth expired, stop processing remaining jobs.
       if (isAuthProblem(msg)) {
         stoppedBecauseAuth = true;
+        bc("sync stopped: auth problem", { clientSaveId: job.clientSaveId });
 
         // carry the rest forward untouched
         const idx = q.indexOf(job);
@@ -162,6 +227,7 @@ export async function syncPendingWorkouts(): Promise<{
 
       // Network problems: also stop early to avoid hammering
       if (isNetworkProblem(msg)) {
+        bc("sync stopped: network problem", { clientSaveId: job.clientSaveId });
         const idx = q.indexOf(job);
         for (let j = idx + 1; j < q.length; j++) next.push(q[j]);
         break;
@@ -170,5 +236,6 @@ export async function syncPendingWorkouts(): Promise<{
   }
 
   await writeQueue(next);
+  bc("sync end", { synced, remaining: next.length, stoppedBecauseAuth });
   return { synced, remaining: next.length, stoppedBecauseAuth };
 }
