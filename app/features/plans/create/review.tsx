@@ -208,9 +208,19 @@ export default function Review() {
       }
       // ---------------------------------------------------------------
 
-      Alert.alert("Plan created", "Your plan has been saved.");
-      reset();
-      router.replace("/(tabs)/workout");
+      Alert.alert(
+        "Plan created",
+        "Your plan has been saved.",
+        [
+          {
+            text: "OK",
+            onPress: () => {
+              router.replace("/(tabs)/workout");
+            },
+          },
+        ],
+        { cancelable: false }
+      );
     } catch (e: any) {
       console.error("Unexpected error creating plan:", e);
       Alert.alert("Could not create plan", e?.message ?? String(e));
@@ -219,13 +229,7 @@ export default function Review() {
     }
   }
 
-  if (loading || !userId) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator />
-      </View>
-    );
-  }
+  const blocked = loading || !userId;
 
   const SUPERSET_COLORS = [
     "#2563eb",
@@ -395,10 +399,10 @@ export default function Review() {
             style={[
               styles.btn,
               styles.primary,
-              { flex: 1, opacity: !canSave || saving ? 0.6 : 1 },
+              { flex: 1, opacity: blocked || !canSave || saving ? 0.6 : 1 },
             ]}
             onPress={handleCreate}
-            disabled={!canSave || saving}
+            disabled={blocked || !canSave || saving}
           >
             {saving ? (
               <ActivityIndicator color={"#fff"} />

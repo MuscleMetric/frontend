@@ -6,7 +6,7 @@ export default function PlansLayout() {
   return (
     <Stack
       screenOptions={{
-        headerShown: false, // 🔥 No headers anywhere in plan creation
+        headerShown: false, 
         gestureEnabled: true,
       }}
     >

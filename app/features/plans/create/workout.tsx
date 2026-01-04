@@ -10,6 +10,8 @@ import {
   Alert,
   ScrollView,
   ActivityIndicator,
+  Modal,
+  FlatList,
 } from "react-native";
 import { usePlanDraft, type ExerciseRow, type WorkoutExercise } from "./store";
 import { nanoid } from "nanoid/non-secure";
@@ -25,16 +27,18 @@ import {
 import { ExercisePickerModal } from "../../../_components/ExercisePickerModal";
 import { useAuth } from "../../../../lib/authContext";
 
-/* ---------- local row types ---------- */
+/* ---------- types ---------- */
 
 type PlanExerciseRow = WorkoutExercise;
 
-type SupersetRow = {
-  key: string;
-  items: PlanExerciseRow[]; // either 1 (normal) or >1 (superset group)
-};
-
-/* ---------- picker types ---------- */
+type DisplayItem =
+  | { kind: "single"; key: string; ex: PlanExerciseRow }
+  | {
+      kind: "superset";
+      key: string;
+      groupId: string;
+      items: PlanExerciseRow[];
+    };
 
 type ExerciseOption = {
   id: string;
@@ -43,59 +47,26 @@ type ExerciseOption = {
   equipment: string | null;
 };
 
-/* ---------- muscle + equipment filters (same as index.tsx) ---------- */
+type WorkoutPickRow = {
+  id: string;
+  title: string;
+  updated_at: string | null;
+  created_at: string | null;
+};
+
+/* ---------- muscle + equipment filters ---------- */
 
 const MUSCLE_GROUPS = [
-  {
-    id: "chest",
-    label: "Chest",
-    muscleIds: [1], // Chest
-  },
-  {
-    id: "back",
-    label: "Back",
-    muscleIds: [2, 88, 89, 90, 99, 98], // Back, Lats, Upper Back, Lower Back, Rear Delts, Traps
-  },
-  {
-    id: "shoulders",
-    label: "Shoulders",
-    muscleIds: [8],
-  },
-  {
-    id: "biceps",
-    label: "Biceps",
-    muscleIds: [6, 91], // Biceps, Forearms
-  },
-  {
-    id: "triceps",
-    label: "Triceps",
-    muscleIds: [7],
-  },
-  {
-    id: "core",
-    label: "Abs / Core",
-    muscleIds: [96, 97, 10, 100, 101], // Abs, Obliques, Core, Core Stabilizers, Serratus
-  },
-  {
-    id: "quads",
-    label: "Quads",
-    muscleIds: [3, 92], // Quads, Quadriceps
-  },
-  {
-    id: "hamstrings",
-    label: "Hamstrings",
-    muscleIds: [4],
-  },
-  {
-    id: "glutes_hips",
-    label: "Glutes & Hips",
-    muscleIds: [5, 94, 93, 95], // Glutes, Abductors, Adductors, Hip Flexors
-  },
-  {
-    id: "calves",
-    label: "Calves",
-    muscleIds: [9],
-  },
+  { id: "chest", label: "Chest", muscleIds: [1] },
+  { id: "back", label: "Back", muscleIds: [2, 88, 89, 90, 99, 98] },
+  { id: "shoulders", label: "Shoulders", muscleIds: [8] },
+  { id: "biceps", label: "Biceps", muscleIds: [6, 91] },
+  { id: "triceps", label: "Triceps", muscleIds: [7] },
+  { id: "core", label: "Abs / Core", muscleIds: [96, 97, 10, 100, 101] },
+  { id: "quads", label: "Quads", muscleIds: [3, 92] },
+  { id: "hamstrings", label: "Hamstrings", muscleIds: [4] },
+  { id: "glutes_hips", label: "Glutes & Hips", muscleIds: [5, 94, 93, 95] },
+  { id: "calves", label: "Calves", muscleIds: [9] },
 ] as const;
 
 const EQUIPMENT_OPTIONS: string[] = [
@@ -147,18 +118,25 @@ const EQUIPMENT_OPTIONS: string[] = [
 ];
 
 function normalizeExerciseType(raw: string | null): ExerciseRow["type"] {
-  if (raw === "strength" || raw === "cardio" || raw === "mobility") {
-    return raw;
-  }
+  if (raw === "strength" || raw === "cardio" || raw === "mobility") return raw;
   return null;
+}
+
+function safeInt(v: string) {
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.trunc(n) : null;
+}
+function safeNum(v: string) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
 }
 
 export default function WorkoutPage() {
   const { session } = useAuth();
   const userId = session?.user?.id ?? null;
+
   const { colors } = useAppTheme();
   const s = useMemo(() => makeStyles(colors), [colors]);
-
   const insets = useSafeAreaInsets();
 
   const { index: idxParam } = useLocalSearchParams<{ index: string }>();
@@ -168,73 +146,7 @@ export default function WorkoutPage() {
   const draft = workouts?.[index] ?? null;
   const exercises: PlanExerciseRow[] = draft?.exercises ?? [];
 
-  /* ---------- helpers for identifying rows ---------- */
-
-  const rowKey = (ex: PlanExerciseRow, fallbackIndex: number) =>
-    `${ex.exercise.id ?? "NA"}-${
-      typeof ex.order_index === "number" ? ex.order_index : fallbackIndex
-    }`;
-
-  const hasExercise = useCallback(
-    (exerciseId: string) => exercises.some((e) => e.exercise.id === exerciseId),
-    [exercises]
-  );
-
-  /* ---------- Superset selection state ---------- */
-
-  const [selecting, setSelecting] = useState(false);
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
-
-  function toggleSelect(key: string) {
-    setSelectedIds((prev) =>
-      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
-    );
-  }
-
-  function makeSuperset() {
-    if (selectedIds.length < 2) {
-      Alert.alert("Pick at least 2 exercises to create a superset.");
-      return;
-    }
-    if (!draft) return;
-    const groupId = `ss-${nanoid(6)}`;
-    const updated = exercises.map((ex, i) =>
-      selectedIds.includes(rowKey(ex, i))
-        ? { ...ex, supersetGroup: groupId }
-        : ex
-    );
-    setWorkout(index, { ...draft, exercises: updated });
-    setSelecting(false);
-    setSelectedIds([]);
-  }
-
-  function clearSupersetForSelected() {
-    if (selectedIds.length === 0 || !draft) return;
-    const updated = exercises.map((ex, i) =>
-      selectedIds.includes(rowKey(ex, i)) ? { ...ex, supersetGroup: null } : ex
-    );
-    setWorkout(index, { ...draft, exercises: updated });
-    setSelecting(false);
-    setSelectedIds([]);
-  }
-
-  /* ---------- Dropset & remove handlers ---------- */
-
-  function toggleDropset(exerciseId: string) {
-    if (!draft) return;
-    const updated = exercises.map((ex) =>
-      ex.exercise.id === exerciseId ? { ...ex, isDropset: !ex.isDropset } : ex
-    );
-    const reindexed = updated.map((e, i) => ({ ...e, order_index: i }));
-    setWorkout(index, { ...draft, exercises: reindexed });
-  }
-
-  function removeExercise(exerciseId: string) {
-    if (!draft) return;
-    const updated = exercises.filter((ex) => ex.exercise.id !== exerciseId);
-    const reindexed = updated.map((e, i) => ({ ...e, order_index: i }));
-    setWorkout(index, { ...draft, exercises: reindexed });
-  }
+  /* ---------- guards ---------- */
 
   useEffect(() => {
     if (!Number.isFinite(index) || !workouts?.[index]) {
@@ -242,63 +154,18 @@ export default function WorkoutPage() {
     }
   }, [index, workouts]);
 
-  /* ---------- SUPERCARD ROWS (superset groups drag as one) ---------- */
+  const invalid = !Number.isFinite(index) || !draft;
+  if (invalid) {
+    return (
+      <View style={s.center}>
+        <ActivityIndicator />
+      </View>
+    );
+  }
 
-  const SUPERSET_COLORS = [
-    "#2563eb",
-    "#22c55e",
-    "#f59e0b",
-    "#ef4444",
-    "#8b5cf6",
-  ];
+  /* ---------- local UI state ---------- */
 
-  const supersetGroups = useMemo(
-    () => [
-      ...new Set(
-        exercises.map((x) => x.supersetGroup).filter(Boolean) as string[]
-      ),
-    ],
-    [exercises]
-  );
-
-  const supersetColorForGroup = (groupId: string | null | undefined) => {
-    if (!groupId) return null;
-    const idx = supersetGroups.indexOf(groupId);
-    if (idx < 0) return null;
-    return SUPERSET_COLORS[idx % SUPERSET_COLORS.length];
-  };
-
-  // Build draggable rows: each superset group is a block row
-  const draggableRows: SupersetRow[] = useMemo(() => {
-    const rows: SupersetRow[] = [];
-    let i = 0;
-    while (i < exercises.length) {
-      const ex = exercises[i];
-      if (ex.supersetGroup) {
-        const groupId = ex.supersetGroup;
-        const items: PlanExerciseRow[] = [ex];
-        let j = i + 1;
-        while (j < exercises.length && exercises[j].supersetGroup === groupId) {
-          items.push(exercises[j]);
-          j++;
-        }
-        rows.push({
-          key: `group-${groupId}-${i}`,
-          items,
-        });
-        i = j;
-      } else {
-        rows.push({
-          key: `single-${ex.exercise.id}-${i}`,
-          items: [ex],
-        });
-        i++;
-      }
-    }
-    return rows;
-  }, [exercises]);
-
-  /* ---------- Exercise picker modal state ---------- */
+  const [openExerciseId, setOpenExerciseId] = useState<string | null>(null);
 
   const [exerciseModalVisible, setExerciseModalVisible] = useState(false);
   const [exerciseSearch, setExerciseSearch] = useState("");
@@ -316,6 +183,242 @@ export default function WorkoutPage() {
     Record<string, number>
   >({});
 
+  // Clone existing workout modal
+  const [cloneOpen, setCloneOpen] = useState(false);
+  const [cloneLoading, setCloneLoading] = useState(false);
+  const [cloneSearch, setCloneSearch] = useState("");
+  const [workoutChoices, setWorkoutChoices] = useState<WorkoutPickRow[]>([]);
+
+  // Superset picker modal (when multiple existing groups)
+  const [pickSupersetForExerciseId, setPickSupersetForExerciseId] = useState<
+    string | null
+  >(null);
+
+  /* ---------- helpers ---------- */
+
+  const updateExercise = useCallback(
+    (exerciseId: string, patch: Partial<PlanExerciseRow>) => {
+      if (!draft) return;
+      const updated = exercises.map((ex) =>
+        ex.exercise.id === exerciseId ? { ...ex, ...patch } : ex
+      );
+      const reindexed = updated.map((e, i) => ({ ...e, order_index: i }));
+      setWorkout(index, { ...draft, exercises: reindexed });
+    },
+    [draft, exercises, index, setWorkout]
+  );
+
+  const removeExercise = useCallback(
+    (exerciseId: string) => {
+      if (!draft) return;
+      const updated = exercises.filter((ex) => ex.exercise.id !== exerciseId);
+      const reindexed = updated.map((e, i) => ({ ...e, order_index: i }));
+      setWorkout(index, { ...draft, exercises: reindexed });
+      if (openExerciseId === exerciseId) setOpenExerciseId(null);
+    },
+    [draft, exercises, index, setWorkout, openExerciseId]
+  );
+
+  const toggleDropset = useCallback(
+    (exerciseId: string) => {
+      const ex = exercises.find((x) => x.exercise.id === exerciseId);
+      if (!ex) return;
+      updateExercise(exerciseId, { isDropset: !ex.isDropset });
+    },
+    [exercises, updateExercise]
+  );
+
+  /* ---------- Supersets (same UX as loose workout) ---------- */
+
+  const SUPERSET_COLORS = [
+    colors.primary ?? "#3b82f6",
+    "#8b5cf6",
+    "#14b8a6",
+    "#22c55e",
+    "#f59e0b",
+    "#ec4899",
+    "#06b6d4",
+  ];
+
+  const supersetGroups = useMemo(() => {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const ex of exercises) {
+      if (!ex.supersetGroup) continue;
+      if (seen.has(ex.supersetGroup)) continue;
+      seen.add(ex.supersetGroup);
+      out.push(ex.supersetGroup);
+    }
+    return out;
+  }, [exercises]);
+
+  const supersetColorForGroup = useCallback(
+    (groupId: string) => {
+      const idx = supersetGroups.indexOf(groupId);
+      const safeIdx = idx >= 0 ? idx : 0;
+      return SUPERSET_COLORS[safeIdx % SUPERSET_COLORS.length];
+    },
+    [supersetGroups, SUPERSET_COLORS]
+  );
+
+  // Keep all exercises of a group contiguous, anchored at first occurrence
+  const makeSupersetContiguous = useCallback(
+    (arr: PlanExerciseRow[], groupId: string) => {
+      const anchorIdx = arr.findIndex((x) => x.supersetGroup === groupId);
+      if (anchorIdx === -1) return arr;
+
+      const members = arr.filter((x) => x.supersetGroup === groupId);
+      if (members.length <= 1) return arr;
+
+      const anchor = arr[anchorIdx];
+      const withoutAnchor = members.filter(
+        (x) => x.exercise.id !== anchor.exercise.id
+      );
+      const block = [anchor, ...withoutAnchor];
+
+      const stripped = arr.filter((x) => x.supersetGroup !== groupId);
+
+      const next = [
+        ...stripped.slice(0, anchorIdx),
+        ...block,
+        ...stripped.slice(anchorIdx),
+      ];
+
+      return next;
+    },
+    []
+  );
+
+  const startSupersetAt = useCallback(
+    (exerciseId: string) => {
+      if (!draft) return;
+      const ex = exercises.find((x) => x.exercise.id === exerciseId);
+      if (!ex || ex.supersetGroup) return;
+
+      const groupId = `ss-${nanoid(6)}`;
+      const updated = exercises.map((x) =>
+        x.exercise.id === exerciseId ? { ...x, supersetGroup: groupId } : x
+      );
+
+      const reindexed = updated.map((e, i) => ({ ...e, order_index: i }));
+      setWorkout(index, { ...draft, exercises: reindexed });
+    },
+    [draft, exercises, index, setWorkout]
+  );
+
+  const addToSuperset = useCallback(
+    (exerciseId: string, groupId: string) => {
+      if (!draft) return;
+
+      const updated = exercises.map((x) =>
+        x.exercise.id === exerciseId ? { ...x, supersetGroup: groupId } : x
+      );
+
+      // snap into block
+      const snapped = makeSupersetContiguous(updated, groupId);
+
+      const reindexed = snapped.map((e, i) => ({ ...e, order_index: i }));
+      setWorkout(index, { ...draft, exercises: reindexed });
+    },
+    [draft, exercises, index, setWorkout, makeSupersetContiguous]
+  );
+
+  const removeFromSuperset = useCallback(
+    (exerciseId: string) => {
+      if (!draft) return;
+      const ex = exercises.find((x) => x.exercise.id === exerciseId);
+      const groupId = ex?.supersetGroup ?? null;
+
+      const updated = exercises.map((x) =>
+        x.exercise.id === exerciseId ? { ...x, supersetGroup: null } : x
+      );
+
+      const snapped = groupId
+        ? makeSupersetContiguous(updated, groupId)
+        : updated;
+      const reindexed = snapped.map((e, i) => ({ ...e, order_index: i }));
+      setWorkout(index, { ...draft, exercises: reindexed });
+    },
+    [draft, exercises, index, setWorkout, makeSupersetContiguous]
+  );
+
+  /* ---------- display items (singles + superset blocks) ---------- */
+
+  const buildDisplayItems = useCallback(
+    (arr: PlanExerciseRow[]): DisplayItem[] => {
+      const out: DisplayItem[] = [];
+      for (let i = 0; i < arr.length; i++) {
+        const ex = arr[i];
+        if (!ex.supersetGroup) {
+          out.push({
+            kind: "single",
+            key: `single:${ex.exercise.id}:${i}`,
+            ex,
+          });
+          continue;
+        }
+
+        const groupId = ex.supersetGroup;
+        const prev = i > 0 ? arr[i - 1] : null;
+        const isStart = !prev || prev.supersetGroup !== groupId;
+        if (!isStart) continue;
+
+        const items: PlanExerciseRow[] = [];
+        let j = i;
+        while (j < arr.length && arr[j].supersetGroup === groupId) {
+          items.push(arr[j]);
+          j++;
+        }
+
+        out.push({
+          kind: "superset",
+          key: `ss:${groupId}:${i}`,
+          groupId,
+          items,
+        });
+      }
+      return out;
+    },
+    []
+  );
+
+  const flattenDisplayItems = useCallback(
+    (items: DisplayItem[]): PlanExerciseRow[] => {
+      const out: PlanExerciseRow[] = [];
+      for (const it of items) {
+        if (it.kind === "single") out.push(it.ex);
+        else out.push(...it.items);
+      }
+
+      // enforce contiguity for any group that exists
+      const groups = Array.from(
+        new Set(out.map((x) => x.supersetGroup).filter(Boolean) as string[])
+      );
+      let next = out;
+      for (const gid of groups) next = makeSupersetContiguous(next, gid);
+      return next.map((e, i) => ({ ...e, order_index: i }));
+    },
+    [makeSupersetContiguous]
+  );
+
+  const displayItems = useMemo(
+    () => buildDisplayItems(exercises),
+    [exercises, buildDisplayItems]
+  );
+
+  /* ---------- drag handler ---------- */
+
+  const handleDragEnd = useCallback(
+    ({ data }: { data: DisplayItem[] }) => {
+      if (!draft) return;
+      const flattened = flattenDisplayItems(data);
+      setWorkout(index, { ...draft, exercises: flattened });
+    },
+    [draft, index, setWorkout, flattenDisplayItems]
+  );
+
+  /* ---------- exercise usage (for picker) ---------- */
+
   useEffect(() => {
     let alive = true;
     if (!exerciseModalVisible || !userId) return;
@@ -327,7 +430,6 @@ export default function WorkoutPage() {
         .eq("user_id", userId);
 
       if (error) {
-        console.warn("usage load error", error);
         if (alive) setUsageByExerciseId({});
         return;
       }
@@ -345,6 +447,8 @@ export default function WorkoutPage() {
     };
   }, [exerciseModalVisible, userId]);
 
+  /* ---------- picker filters ---------- */
+
   const toggleMuscleGroup = (groupId: string) => {
     setSelectedMuscleGroups((prev) =>
       prev.includes(groupId)
@@ -359,15 +463,11 @@ export default function WorkoutPage() {
     );
   };
 
-  // Load picker options whenever modal is open or filters change
+  /* ---------- load picker options ---------- */
+
   useEffect(() => {
     let alive = true;
-
-    if (!exerciseModalVisible) {
-      return () => {
-        alive = false;
-      };
-    }
+    if (!exerciseModalVisible || !userId) return;
 
     (async () => {
       setExLoading(true);
@@ -379,20 +479,18 @@ export default function WorkoutPage() {
           .select(
             hasMuscleFilter
               ? `
-              id,
-              name,
-              type,
-              equipment,
-              exercise_muscles!inner(
-                muscle_id
-              )
-            `
+                id,
+                name,
+                type,
+                equipment,
+                exercise_muscles!inner(muscle_id)
+              `
               : `
-              id,
-              name,
-              type,
-              equipment
-            `
+                id,
+                name,
+                type,
+                equipment
+              `
           )
           .or(`is_public.eq.true,user_id.eq.${userId}`)
           .order("name", { ascending: true })
@@ -420,7 +518,6 @@ export default function WorkoutPage() {
 
         const { data, error } = await q;
         if (error) {
-          console.warn("plan workout exercise picker error", error);
           if (alive) setExerciseOptions([]);
           return;
         }
@@ -448,6 +545,7 @@ export default function WorkoutPage() {
     exerciseSearch,
     selectedMuscleGroups,
     selectedEquipment,
+    userId,
   ]);
 
   const handleConfirmAddExercises = (selectedIds: string[]) => {
@@ -467,9 +565,15 @@ export default function WorkoutPage() {
           name: ex.name ?? "Exercise",
           type: normalizeExerciseType(ex.type),
         },
-        order_index: 0, // temporary; reindexed below
+        order_index: 0,
         supersetGroup: null,
         isDropset: false,
+        target_sets: null,
+        target_reps: null,
+        target_weight: null,
+        target_time_seconds: null,
+        target_distance: null,
+        notes: null,
       });
 
       return acc;
@@ -487,7 +591,6 @@ export default function WorkoutPage() {
 
     setWorkout(index, { ...draft, exercises: merged });
 
-    // reset + close (same pattern as your other screens)
     setExerciseModalVisible(false);
     setExerciseSearch("");
     setSelectedMuscleGroups([]);
@@ -496,12 +599,138 @@ export default function WorkoutPage() {
     setEquipmentFilterOpen(false);
   };
 
+  /* ---------- clone existing workout ---------- */
+
+  const loadWorkoutChoices = useCallback(async () => {
+    if (!userId) return;
+    setCloneLoading(true);
+    try {
+      let q = supabase
+        .from("workouts")
+        .select("id,title,updated_at,created_at")
+        .eq("user_id", userId)
+        .order("updated_at", { ascending: false })
+        .limit(60);
+
+      if (cloneSearch.trim()) {
+        q = q.ilike("title", `%${cloneSearch.trim()}%`);
+      }
+
+      const { data, error } = await q;
+      if (error) throw error;
+
+      setWorkoutChoices((data ?? []) as WorkoutPickRow[]);
+    } catch (e) {
+      console.warn("load workouts for clone error", e);
+      setWorkoutChoices([]);
+    } finally {
+      setCloneLoading(false);
+    }
+  }, [userId, cloneSearch]);
+
+  useEffect(() => {
+    if (!cloneOpen) return;
+    loadWorkoutChoices();
+  }, [cloneOpen, loadWorkoutChoices]);
+
+  const applyClonedWorkout = useCallback(
+    async (workoutId: string) => {
+      if (!draft) return;
+
+      try {
+        setCloneLoading(true);
+
+        // load workout core
+        const { data: wRow, error: wErr } = await supabase
+          .from("workouts")
+          .select("title,notes")
+          .eq("id", workoutId)
+          .maybeSingle();
+
+        if (wErr) throw wErr;
+
+        // load workout exercises (+ exercise name/type)
+        const { data: weRows, error: weErr } = await supabase
+          .from("workout_exercises")
+          .select(
+            `
+            exercise_id,
+            order_index,
+            target_sets,
+            target_reps,
+            target_weight,
+            target_time_seconds,
+            target_distance,
+            notes,
+            superset_group,
+            is_dropset,
+            exercises:exercise_id ( id, name, type )
+          `
+          )
+          .eq("workout_id", workoutId)
+          .eq("is_archived", false)
+          .order("order_index", { ascending: true });
+
+        if (weErr) throw weErr;
+
+        const mapped: PlanExerciseRow[] = (weRows ?? []).map(
+          (r: any, i: number) => {
+            const ex = r.exercises;
+            return {
+              exercise: {
+                id: r.exercise_id,
+                name: ex?.name ?? "Exercise",
+                type: normalizeExerciseType(ex?.type ?? null),
+              },
+              order_index: i,
+              supersetGroup: r.superset_group ?? null,
+              isDropset: !!r.is_dropset,
+              target_sets: r.target_sets ?? null,
+              target_reps: r.target_reps ?? null,
+              target_weight: r.target_weight ?? null,
+              target_time_seconds: r.target_time_seconds ?? null,
+              target_distance: r.target_distance ?? null,
+              notes: r.notes ?? null,
+            };
+          }
+        );
+
+        // enforce contiguity on any imported groups
+        const groups = Array.from(
+          new Set(
+            mapped.map((x) => x.supersetGroup).filter(Boolean) as string[]
+          )
+        );
+        let next = mapped;
+        for (const gid of groups) next = makeSupersetContiguous(next, gid);
+        next = next.map((e, i) => ({ ...e, order_index: i }));
+
+        setWorkout(index, {
+          ...draft,
+          title: (wRow?.title ?? draft.title) || draft.title,
+          notes: wRow?.notes ?? draft.notes ?? "",
+          exercises: next,
+        });
+
+        setCloneOpen(false);
+        setOpenExerciseId(null);
+      } catch (e) {
+        console.warn("apply cloned workout error", e);
+        Alert.alert("Could not use workout", "Please try again.");
+      } finally {
+        setCloneLoading(false);
+      }
+    },
+    [draft, index, setWorkout, makeSupersetContiguous]
+  );
+
   /* ---------- navigation ---------- */
 
   function next() {
     if (!draft) return;
     if (!draft.title.trim()) return Alert.alert("Add a workout title");
     if (exercises.length === 0) return Alert.alert("Add at least one exercise");
+
     if (index < workoutsPerWeek - 1) {
       router.push({
         pathname: "/features/plans/create/workout",
@@ -512,96 +741,107 @@ export default function WorkoutPage() {
     }
   }
 
-  /* ---------- drag handler (works on grouped rows) ---------- */
-
-  const handleDragEnd = useCallback(
-    ({ data }: { data: SupersetRow[] }) => {
-      if (!draft) return;
-      // Flatten grouped rows back into a single exercise list
-      const flattened: PlanExerciseRow[] = data.flatMap((row) => row.items);
-      const reindexed = flattened.map((e, i) => ({
-        ...e,
-        order_index: i,
-      }));
-      setWorkout(index, { ...draft, exercises: reindexed });
-    },
-    [draft, index, setWorkout]
-  );
-
-  /* ---------- guard AFTER all hooks ---------- */
-
-  const invalid = !Number.isFinite(index) || !draft;
-
-  if (invalid) {
-    return (
-      <View style={s.center}>
-        <ActivityIndicator />
-      </View>
-    );
-  }
-
   /* ---------- render ---------- */
+
+  const canUseSupersets = exercises.length >= 2;
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
       <ScrollView
         style={{ flex: 1, backgroundColor: colors.background }}
-        contentContainerStyle={{ padding: 16 }}
+        contentContainerStyle={{ padding: 16, paddingBottom: 28, gap: 14 }}
         keyboardShouldPersistTaps="handled"
       >
-        <Text style={s.h2}>
-          Workout {index + 1} of {workoutsPerWeek}
+        {/* Header */}
+        <View style={s.headerRow}>
+          <Pressable onPress={() => router.back()} style={s.backBtn}>
+            <Text style={s.backChevron}>←</Text>
+            <Text style={s.backText}>Back</Text>
+          </Pressable>
+
+          <View style={{ flex: 1 }} />
+
+          <View style={s.stepPill}>
+            <Text style={s.stepPillText}>
+              Workout {index + 1}/{workoutsPerWeek}
+            </Text>
+          </View>
+        </View>
+
+        <Text style={s.h2}>Build this workout</Text>
+        <Text style={s.subtle}>
+          Supersets, dropsets, and targets will be saved into your plan.
         </Text>
 
-        <Text style={s.label}>Title</Text>
-        <TextInput
-          style={s.input}
-          value={draft.title}
-          onChangeText={(t) => setWorkout(index, { ...draft, title: t })}
-          placeholder="e.g. Push, Pull, Legs…"
-          placeholderTextColor={colors.subtle}
-        />
+        {/* Title */}
+        <View style={s.card}>
+          <Text style={s.label}>Title</Text>
+          <TextInput
+            style={s.input}
+            value={draft.title}
+            onChangeText={(t) => setWorkout(index, { ...draft, title: t })}
+            placeholder="e.g. Push, Pull, Legs…"
+            placeholderTextColor={colors.subtle}
+          />
 
-        {/* Workout-level notes */}
-        <Text style={s.label}>Notes (optional)</Text>
-        <TextInput
-          style={[s.input, { minHeight: 80, textAlignVertical: "top" }]}
-          value={draft.notes ?? ""}
-          placeholder="Any instructions, tempo, warm-up details…"
-          placeholderTextColor={colors.subtle}
-          multiline
-          onChangeText={(t) => setWorkout(index, { ...draft, notes: t })}
-        />
-
-        <Text style={s.label}>Exercises</Text>
-
-        {/* Superset toolbar */}
-        {selecting && (
-          <View style={{ flexDirection: "row", gap: 8, marginBottom: 8 }}>
-            <Pressable style={[s.btn, s.primary]} onPress={makeSuperset}>
-              <Text style={s.btnPrimaryText}>Create Superset</Text>
-            </Pressable>
-            <Pressable style={s.btn} onPress={clearSupersetForSelected}>
-              <Text style={s.btnText}>Ungroup</Text>
-            </Pressable>
+          {/* Clone workout */}
+          <View style={{ flexDirection: "row", gap: 10, marginTop: 12 }}>
             <Pressable
-              style={s.btn}
-              onPress={() => {
-                setSelecting(false);
-                setSelectedIds([]);
-              }}
+              style={[s.pillAction, { flex: 1 }]}
+              onPress={() => setCloneOpen(true)}
             >
-              <Text style={s.btnText}>Cancel</Text>
+              <Text style={s.pillActionText}>Use existing workout</Text>
+            </Pressable>
+
+            <Pressable
+              style={[s.pillAction, s.pillPrimary, { flex: 1 }]}
+              onPress={() => setExerciseModalVisible(true)}
+            >
+              <Text style={s.pillPrimaryText}>＋ Add exercises</Text>
             </Pressable>
           </View>
-        )}
+        </View>
 
-        {/* Draggable exercise list – superset groups move as one */}
-        {draggableRows.length > 0 && (
-          <View style={{ marginBottom: 8 }}>
-            <DraggableFlatList<SupersetRow>
-              data={draggableRows}
-              keyExtractor={(row) => row.key}
+        {/* Notes */}
+        <View style={s.card}>
+          <Text style={s.label}>Notes (optional)</Text>
+          <TextInput
+            style={[s.input, { minHeight: 80, textAlignVertical: "top" }]}
+            value={draft.notes ?? ""}
+            placeholder="Instructions, tempo, warm-up details…"
+            placeholderTextColor={colors.subtle}
+            multiline
+            onChangeText={(t) => setWorkout(index, { ...draft, notes: t })}
+          />
+        </View>
+
+        {/* Exercises */}
+        <View style={s.card}>
+          <View style={s.rowBetween}>
+            <Text style={s.label}>Exercises</Text>
+            {exercises.length > 0 ? (
+              <Text style={s.countText}>{exercises.length}</Text>
+            ) : null}
+          </View>
+
+          {exercises.length === 0 ? (
+            <View style={s.empty}>
+              <Text style={s.emptyTitle}>No exercises yet</Text>
+              <Text style={s.emptyText}>
+                Add exercises or clone an existing workout to get started.
+              </Text>
+
+              <Pressable
+                style={[s.btn, s.primary, { marginTop: 10 }]}
+                onPress={() => setExerciseModalVisible(true)}
+              >
+                <Text style={s.btnPrimaryText}>＋ Add exercises</Text>
+              </Pressable>
+            </View>
+          ) : (
+            <DraggableFlatList<DisplayItem>
+              data={displayItems}
+              keyExtractor={(item) => item.key}
               scrollEnabled={false}
               activationDistance={4}
               onDragEnd={handleDragEnd}
@@ -609,205 +849,52 @@ export default function WorkoutPage() {
                 item,
                 drag,
                 isActive,
-              }: RenderItemParams<SupersetRow>) => {
-                const firstEx = item.items[0];
-                const groupId = firstEx.supersetGroup ?? null;
-                const groupColor = supersetColorForGroup(groupId);
-                const isGroup = item.items.length > 1;
+              }: RenderItemParams<DisplayItem>) => {
+                if (item.kind === "single") {
+                  return (
+                    <ExerciseRow
+                      ex={item.ex}
+                      drag={drag}
+                      isActive={isActive}
+                      outlineColor={null}
+                      isSuperset={false}
+                    />
+                  );
+                }
 
+                const outline = supersetColorForGroup(item.groupId);
                 return (
-                  <View
-                    style={[
-                      s.groupCard,
-                      groupColor && {
-                        borderColor: groupColor,
-                        borderWidth: 2,
-                      },
-                      isActive && { opacity: 0.9 },
-                    ]}
-                  >
-                    {/* Header row: label + drag handle */}
+                  <View style={{ marginTop: 10 }}>
                     <View
                       style={{
-                        flexDirection: "row",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        marginBottom: isGroup ? 4 : 0,
+                        borderWidth: 2,
+                        borderColor: outline,
+                        borderRadius: 16,
+                        overflow: "hidden",
                       }}
                     >
-                      {isGroup && (
-                        <Text
-                          style={{
-                            fontSize: 12,
-                            fontWeight: "700",
-                            color: groupColor ?? colors.subtle,
-                          }}
-                        >
-                          Superset
-                        </Text>
-                      )}
-
-                      {/* drag handle */}
-                      <Pressable
-                        onPressIn={drag}
-                        disabled={isActive}
-                        hitSlop={10}
-                      >
-                        <Text
-                          style={{
-                            color: colors.subtle,
-                            fontSize: 18,
-                            paddingHorizontal: 4,
-                          }}
-                        >
-                          ≡
-                        </Text>
-                      </Pressable>
+                      {item.items.map((ex, idx) => (
+                        <ExerciseRow
+                          key={`${ex.exercise.id}-${idx}`}
+                          ex={ex}
+                          drag={drag}
+                          isActive={isActive}
+                          outlineColor={outline}
+                          isSuperset={true}
+                          isFirst={idx === 0}
+                          isLast={idx === item.items.length - 1}
+                        />
+                      ))}
                     </View>
-
-                    {/* Exercises inside this group */}
-                    {item.items.map((exRow, idx) => {
-                      const displayIndex =
-                        typeof exRow.order_index === "number"
-                          ? exRow.order_index + 1
-                          : 1;
-
-                      const thisRowId = rowKey(exRow, idx);
-                      const isSelected = selectedIds.includes(thisRowId);
-
-                      return (
-                        <Pressable
-                          key={thisRowId}
-                          onPress={() => selecting && toggleSelect(thisRowId)}
-                          style={[
-                            s.item,
-                            idx < item.items.length - 1 && {
-                              marginBottom: 6,
-                            },
-                            selecting &&
-                              isSelected && {
-                                backgroundColor:
-                                  colors.primaryBg ?? colors.surface,
-                              },
-                          ]}
-                        >
-                          <View style={{ flex: 1 }}>
-                            <Text
-                              style={{ fontWeight: "700", color: colors.text }}
-                            >
-                              {displayIndex}. {exRow.exercise.name}
-                            </Text>
-
-                            <View
-                              style={{
-                                flexDirection: "row",
-                                flexWrap: "wrap",
-                                gap: 6,
-                                marginTop: 4,
-                              }}
-                            >
-                              {exRow.isDropset && (
-                                <Text
-                                  style={{
-                                    fontSize: 11,
-                                    fontWeight: "700",
-                                    color: colors.warnText ?? "#f59e0b",
-                                  }}
-                                >
-                                  Dropset
-                                </Text>
-                              )}
-                              {exRow.notes ? (
-                                <Text
-                                  style={{
-                                    fontSize: 11,
-                                    color: colors.subtle,
-                                    flexShrink: 1,
-                                  }}
-                                  numberOfLines={1}
-                                >
-                                  {exRow.notes}
-                                </Text>
-                              ) : null}
-                            </View>
-                          </View>
-
-                          <View
-                            style={{
-                              alignItems: "flex-end",
-                              justifyContent: "center",
-                              gap: 6,
-                            }}
-                          >
-                            {/* Dropset toggle */}
-                            <Pressable
-                              onPress={() =>
-                                toggleDropset(exRow.exercise.id as string)
-                              }
-                            >
-                              <Text
-                                style={{
-                                  fontSize: 12,
-                                  fontWeight: "700",
-                                  color: exRow.isDropset
-                                    ? colors.warnText ?? "#f59e0b"
-                                    : colors.subtle,
-                                }}
-                              >
-                                {exRow.isDropset ? "Dropset ✓" : "Make dropset"}
-                              </Text>
-                            </Pressable>
-
-                            {/* Remove exercise */}
-                            <Pressable
-                              onPress={() =>
-                                removeExercise(exRow.exercise.id as string)
-                              }
-                              hitSlop={10}
-                            >
-                              <Text
-                                style={{
-                                  fontSize: 12,
-                                  fontWeight: "700",
-                                  color: colors.danger ?? "#ef4444",
-                                }}
-                              >
-                                Remove
-                              </Text>
-                            </Pressable>
-                          </View>
-                        </Pressable>
-                      );
-                    })}
                   </View>
                 );
               }}
             />
-          </View>
-        )}
-
-        {/* Controls */}
-        <View style={{ flexDirection: "row", gap: 12, marginTop: 12 }}>
-          <Pressable
-            style={[s.btn, s.primary]}
-            onPress={() => setExerciseModalVisible(true)}
-          >
-            <Text style={s.btnPrimaryText}>＋ Add Exercises</Text>
-          </Pressable>
-
-          {!selecting && (
-            <Pressable
-              style={[s.btn, exercises.length < 2 && { opacity: 0.5 }]}
-              disabled={exercises.length < 2}
-              onPress={() => setSelecting(true)}
-            >
-              <Text style={s.btnText}>Select for Superset</Text>
-            </Pressable>
           )}
         </View>
 
-        {/* Bottom nav */}
-        <View style={{ flexDirection: "row", gap: 12, marginTop: 16 }}>
+        {/* Next */}
+        <View style={{ flexDirection: "row", gap: 12 }}>
           {index > 0 && (
             <Pressable style={s.btn} onPress={() => router.back()}>
               <Text style={s.btnText}>← Back</Text>
@@ -815,161 +902,703 @@ export default function WorkoutPage() {
           )}
           <Pressable style={[s.btn, s.primary, { flex: 1 }]} onPress={next}>
             <Text style={s.btnPrimaryText}>
-              {index < workoutsPerWeek - 1 ? "Next Workout →" : "Next → Goals"}
+              {index < workoutsPerWeek - 1 ? "Next workout →" : "Next → Goals"}
             </Text>
           </Pressable>
         </View>
 
-        {/* FULL-SCREEN EXERCISE PICKER WITH SAFE AREA */}
-        <ExercisePickerModal
-          userId={userId}
-          alreadyInWorkoutIds={draft.exercises.map((e) => e.exercise.id)}
-          usageByExerciseId={usageByExerciseId}
-          visible={exerciseModalVisible}
-          title="Select exercises"
-          loading={exLoading}
-          exerciseOptions={exerciseOptions}
-          muscleGroups={MUSCLE_GROUPS as any}
-          equipmentOptions={EQUIPMENT_OPTIONS}
-          initialSelectedIds={[]}
-          multiSelect={true}
-          onClose={() => setExerciseModalVisible(false)}
-          onConfirm={(ids) => handleConfirmAddExercises(ids)}
-          search={exerciseSearch}
-          onChangeSearch={setExerciseSearch}
-          selectedMuscleGroups={selectedMuscleGroups}
-          toggleMuscleGroup={toggleMuscleGroup}
-          muscleFilterOpen={muscleFilterOpen}
-          setMuscleFilterOpen={setMuscleFilterOpen}
-          selectedEquipment={selectedEquipment}
-          toggleEquipment={toggleEquipment}
-          equipmentFilterOpen={equipmentFilterOpen}
-          setEquipmentFilterOpen={setEquipmentFilterOpen}
-          styles={s}
-          colors={colors}
-          safeAreaTop={insets.top}
-        />
+        {/* Superset chooser modal */}
+        {pickSupersetForExerciseId ? (
+          <View style={s.overlay}>
+            <View style={s.overlayCard}>
+              <Text style={s.overlayTitle}>Add to which superset?</Text>
+              <Text style={s.overlaySub}>
+                Pick the superset block you want this exercise to join.
+              </Text>
+
+              <View style={{ marginTop: 12, gap: 10 }}>
+                {supersetGroups.map((gid, i) => {
+                  const c = supersetColorForGroup(gid);
+                  return (
+                    <Pressable
+                      key={gid}
+                      onPress={() => {
+                        addToSuperset(pickSupersetForExerciseId, gid);
+                        setPickSupersetForExerciseId(null);
+                      }}
+                      style={[
+                        s.supersetPickRow,
+                        { borderColor: c, borderWidth: 2 },
+                      ]}
+                    >
+                      <Text style={{ color: colors.text, fontWeight: "800" }}>
+                        Superset {i + 1}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+
+              <Pressable
+                onPress={() => setPickSupersetForExerciseId(null)}
+                style={s.overlayCancel}
+              >
+                <Text style={s.overlayCancelText}>Cancel</Text>
+              </Pressable>
+            </View>
+          </View>
+        ) : null}
+
+        {/* Clone workout modal */}
+        <Modal visible={cloneOpen} transparent animationType="slide">
+          <View style={s.modalScrim}>
+            <View style={s.modalCard}>
+              <View style={s.modalHeader}>
+                <Text style={s.modalTitle}>Use existing workout</Text>
+                <Pressable onPress={() => setCloneOpen(false)}>
+                  <Text style={[s.btnText, { color: colors.primary }]}>
+                    Close
+                  </Text>
+                </Pressable>
+              </View>
+
+              <TextInput
+                style={[s.input, { marginBottom: 10 }]}
+                value={cloneSearch}
+                onChangeText={setCloneSearch}
+                placeholder="Search workouts…"
+                placeholderTextColor={colors.subtle}
+                onSubmitEditing={loadWorkoutChoices}
+                returnKeyType="search"
+              />
+
+              {cloneLoading ? (
+                <View style={{ paddingVertical: 18, alignItems: "center" }}>
+                  <ActivityIndicator />
+                  <Text style={[s.subtle, { marginTop: 8 }]}>Loading…</Text>
+                </View>
+              ) : (
+                <FlatList
+                  data={workoutChoices}
+                  keyExtractor={(x) => x.id}
+                  keyboardShouldPersistTaps="handled"
+                  contentContainerStyle={{ paddingBottom: 10 }}
+                  renderItem={({ item }) => (
+                    <Pressable
+                      style={s.cloneRow}
+                      onPress={() => applyClonedWorkout(item.id)}
+                    >
+                      <Text style={s.cloneTitle} numberOfLines={1}>
+                        {item.title || "Untitled workout"}
+                      </Text>
+                      <Text style={s.cloneMeta} numberOfLines={1}>
+                        {item.updated_at
+                          ? `Updated ${new Date(
+                              item.updated_at
+                            ).toDateString()}`
+                          : item.created_at
+                          ? `Created ${new Date(
+                              item.created_at
+                            ).toDateString()}`
+                          : ""}
+                      </Text>
+                    </Pressable>
+                  )}
+                  ListEmptyComponent={
+                    <View style={{ paddingVertical: 14 }}>
+                      <Text style={s.subtle}>No workouts found.</Text>
+                    </View>
+                  }
+                />
+              )}
+            </View>
+          </View>
+        </Modal>
       </ScrollView>
+      {/* Exercise picker */}
+      <ExercisePickerModal
+        userId={userId}
+        alreadyInWorkoutIds={draft.exercises.map((e) => e.exercise.id)}
+        usageByExerciseId={usageByExerciseId}
+        visible={exerciseModalVisible}
+        title="Select exercises"
+        loading={exLoading}
+        exerciseOptions={exerciseOptions}
+        muscleGroups={MUSCLE_GROUPS as any}
+        equipmentOptions={EQUIPMENT_OPTIONS}
+        initialSelectedIds={[]}
+        multiSelect={true}
+        onClose={() => setExerciseModalVisible(false)}
+        onConfirm={(ids) => handleConfirmAddExercises(ids)}
+        search={exerciseSearch}
+        onChangeSearch={setExerciseSearch}
+        selectedMuscleGroups={selectedMuscleGroups}
+        toggleMuscleGroup={toggleMuscleGroup}
+        muscleFilterOpen={muscleFilterOpen}
+        setMuscleFilterOpen={setMuscleFilterOpen}
+        selectedEquipment={selectedEquipment}
+        toggleEquipment={toggleEquipment}
+        equipmentFilterOpen={equipmentFilterOpen}
+        setEquipmentFilterOpen={setEquipmentFilterOpen}
+        styles={s}
+        colors={colors}
+        safeAreaTop={insets.top}
+      />
     </SafeAreaView>
   );
+
+  /* ---------- row component ---------- */
+
+  function ExerciseRow({
+    ex,
+    drag,
+    isActive,
+    outlineColor,
+    isSuperset,
+    isFirst,
+    isLast,
+  }: {
+    ex: PlanExerciseRow;
+    drag: () => void;
+    isActive: boolean;
+    outlineColor: string | null;
+    isSuperset: boolean;
+    isFirst?: boolean;
+    isLast?: boolean;
+  }) {
+    const isOpen = openExerciseId === ex.exercise.id;
+    const type = ex.exercise.type;
+
+    const dropsOn = !!ex.isDropset;
+
+    const showStrength = type === "strength" || type === null;
+    const showCardio = type === "cardio";
+    const showMobility = type === "mobility";
+
+    return (
+      <View
+        style={[
+          s.exerciseRow,
+          isSuperset && { marginTop: 0, borderWidth: 0, borderRadius: 0 },
+          isSuperset &&
+            isFirst && { borderTopLeftRadius: 14, borderTopRightRadius: 14 },
+          isSuperset &&
+            isLast && {
+              borderBottomLeftRadius: 14,
+              borderBottomRightRadius: 14,
+            },
+          isActive && { opacity: 0.85 },
+        ]}
+      >
+        {/* Drag */}
+        <Pressable onLongPress={drag} hitSlop={10} style={s.dragHandle}>
+          <Text style={s.dragIcon}>≡</Text>
+          <Text style={s.dragText}>Drag</Text>
+        </Pressable>
+
+        {/* Content */}
+        <View style={{ flex: 1 }}>
+          <Pressable
+            onPress={() =>
+              setOpenExerciseId((cur) =>
+                cur === ex.exercise.id ? null : ex.exercise.id
+              )
+            }
+            style={{ paddingRight: 6 }}
+          >
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                flexWrap: "wrap",
+                gap: 8,
+              }}
+            >
+              <Text style={s.exerciseName}>{ex.exercise.name}</Text>
+
+              {ex.supersetGroup ? (
+                <View
+                  style={[
+                    s.badge,
+                    {
+                      borderColor: outlineColor ?? colors.primary,
+                    },
+                  ]}
+                >
+                  <Text
+                    style={{
+                      fontSize: 11,
+                      fontWeight: "900",
+                      color: outlineColor ?? colors.primary,
+                    }}
+                  >
+                    Superset
+                  </Text>
+                </View>
+              ) : null}
+
+              {dropsOn ? (
+                <View style={[s.badge, s.badgeDropset]}>
+                  <Text style={s.badgeDropsetText}>Dropset</Text>
+                </View>
+              ) : null}
+            </View>
+
+            <Text style={s.exerciseMeta}>
+              {type ? type.toUpperCase() : "STRENGTH"} • Tap to{" "}
+              {isOpen ? "collapse" : "edit targets"}
+            </Text>
+          </Pressable>
+
+          {/* Actions */}
+          <View
+            style={{
+              flexDirection: "row",
+              gap: 8,
+              marginTop: 10,
+              flexWrap: "wrap",
+            }}
+          >
+            <Pressable
+              onPress={() => toggleDropset(ex.exercise.id)}
+              style={[s.pillBtn, dropsOn && s.pillDropsetOn]}
+            >
+              <Text style={[s.pillBtnText, dropsOn && s.pillDropsetText]}>
+                {dropsOn ? "Dropset on" : "Dropset"}
+              </Text>
+            </Pressable>
+
+            {!ex.supersetGroup ? (
+              <>
+                <Pressable
+                  onPress={() => startSupersetAt(ex.exercise.id)}
+                  style={[s.pillBtn, !canUseSupersets && { opacity: 0.5 }]}
+                  disabled={!canUseSupersets}
+                >
+                  <Text style={s.pillBtnText}>Start superset</Text>
+                </Pressable>
+
+                {supersetGroups.length > 0 ? (
+                  <Pressable
+                    onPress={() => {
+                      if (supersetGroups.length === 1) {
+                        addToSuperset(ex.exercise.id, supersetGroups[0]);
+                      } else {
+                        setPickSupersetForExerciseId(ex.exercise.id);
+                      }
+                    }}
+                    style={[s.pillBtn, !canUseSupersets && { opacity: 0.5 }]}
+                    disabled={!canUseSupersets}
+                  >
+                    <Text style={s.pillBtnText}>Add to superset</Text>
+                  </Pressable>
+                ) : null}
+              </>
+            ) : (
+              <Pressable
+                onPress={() => removeFromSuperset(ex.exercise.id)}
+                style={s.pillBtn}
+              >
+                <Text style={[s.pillBtnText, { color: colors.subtle }]}>
+                  Remove from superset
+                </Text>
+              </Pressable>
+            )}
+          </View>
+
+          {/* Targets panel */}
+          {isOpen ? (
+            <View style={s.targetsBox}>
+              {showStrength ? (
+                <View style={s.targetsGrid}>
+                  <TargetField
+                    label="Sets"
+                    value={ex.target_sets}
+                    placeholder="e.g. 3"
+                    onChange={(t) =>
+                      updateExercise(ex.exercise.id, {
+                        target_sets: safeInt(t),
+                      })
+                    }
+                  />
+                  <TargetField
+                    label="Reps"
+                    value={ex.target_reps}
+                    placeholder="e.g. 8"
+                    onChange={(t) =>
+                      updateExercise(ex.exercise.id, {
+                        target_reps: safeInt(t),
+                      })
+                    }
+                  />
+                  <TargetField
+                    label="Weight"
+                    value={ex.target_weight}
+                    placeholder="kg"
+                    onChange={(t) =>
+                      updateExercise(ex.exercise.id, {
+                        target_weight: safeNum(t),
+                      })
+                    }
+                  />
+                </View>
+              ) : null}
+
+              {showCardio ? (
+                <View style={s.targetsGrid}>
+                  <TargetField
+                    label="Time"
+                    value={ex.target_time_seconds}
+                    placeholder="seconds"
+                    onChange={(t) =>
+                      updateExercise(ex.exercise.id, {
+                        target_time_seconds: safeInt(t),
+                      })
+                    }
+                  />
+                  <TargetField
+                    label="Distance"
+                    value={ex.target_distance}
+                    placeholder="km"
+                    onChange={(t) =>
+                      updateExercise(ex.exercise.id, {
+                        target_distance: safeNum(t),
+                      })
+                    }
+                  />
+                </View>
+              ) : null}
+
+              {showMobility ? (
+                <View style={s.targetsGrid}>
+                  <TargetField
+                    label="Time"
+                    value={ex.target_time_seconds}
+                    placeholder="seconds"
+                    onChange={(t) =>
+                      updateExercise(ex.exercise.id, {
+                        target_time_seconds: safeInt(t),
+                      })
+                    }
+                  />
+                </View>
+              ) : null}
+
+              <Text style={[s.labelSm, { marginTop: 10 }]}>Exercise notes</Text>
+              <TextInput
+                value={ex.notes ?? ""}
+                onChangeText={(t) =>
+                  updateExercise(ex.exercise.id, { notes: t })
+                }
+                placeholder="Cueing, tempo, RPE, warm-up…"
+                placeholderTextColor={colors.subtle}
+                style={[s.input, { marginTop: 6 }]}
+                multiline
+              />
+            </View>
+          ) : null}
+        </View>
+
+        {/* Remove */}
+        <Pressable onPress={() => removeExercise(ex.exercise.id)} hitSlop={10}>
+          <Text style={s.remove}>Remove</Text>
+        </Pressable>
+      </View>
+    );
+  }
+
+  function TargetField({
+    label,
+    value,
+    placeholder,
+    onChange,
+  }: {
+    label: string;
+    value: number | null | undefined;
+    placeholder: string;
+    onChange: (t: string) => void;
+  }) {
+    return (
+      <View style={{ flex: 1, minWidth: 90 }}>
+        <Text style={s.labelSm}>{label}</Text>
+        <TextInput
+          value={typeof value === "number" ? String(value) : ""}
+          onChangeText={onChange}
+          placeholder={placeholder}
+          placeholderTextColor={colors.subtle}
+          keyboardType="numeric"
+          style={[s.input, { marginTop: 6 }]}
+        />
+      </View>
+    );
+  }
 }
 
-/* ---- themed styles ---- */
+/* ---------- styles ---------- */
+
 const makeStyles = (colors: any) =>
   StyleSheet.create({
     center: { flex: 1, alignItems: "center", justifyContent: "center" },
-    h2: {
-      fontSize: 18,
-      fontWeight: "800",
-      marginBottom: 12,
-      color: colors.text,
+
+    headerRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 12,
     },
-    h3: {
-      fontSize: 16,
-      fontWeight: "800",
-      marginBottom: 8,
-      color: colors.text,
+    backBtn: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+      paddingVertical: 6,
+      paddingHorizontal: 10,
+      borderRadius: 999,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      backgroundColor: colors.card,
     },
+    backChevron: { color: colors.primary, fontSize: 16, fontWeight: "900" },
+    backText: { color: colors.primary, fontSize: 14, fontWeight: "800" },
+
+    stepPill: {
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      borderRadius: 999,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      backgroundColor: colors.card,
+    },
+    stepPillText: { color: colors.subtle, fontWeight: "800", fontSize: 12 },
+
+    h2: { fontSize: 20, fontWeight: "900", color: colors.text, marginTop: 6 },
+    subtle: { color: colors.subtle },
+
+    card: {
+      backgroundColor: colors.card,
+      borderRadius: 16,
+      padding: 14,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+    },
+
+    rowBetween: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: 10,
+    },
+
     label: {
-      fontWeight: "700",
-      marginTop: 12,
-      marginBottom: 6,
+      fontSize: 14,
+      fontWeight: "800",
       color: colors.text,
+      marginBottom: 6,
     },
+    labelSm: { fontSize: 12, fontWeight: "800", color: colors.text },
 
     input: {
-      backgroundColor: colors.card,
-      padding: 12,
-      borderRadius: 10,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: colors.border,
+      backgroundColor: colors.surface,
       color: colors.text,
-    },
-
-    groupCard: {
-      backgroundColor: colors.surface,
-      borderRadius: 12,
-      padding: 10,
-      marginTop: 6,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: colors.border,
-    },
-
-    item: {
-      backgroundColor: colors.surface,
-      borderRadius: 8,
-      padding: 10,
-      flexDirection: "row",
-      justifyContent: "space-between",
-      alignItems: "center",
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: colors.border,
-    },
-
-    row: {
-      backgroundColor: colors.card,
       borderRadius: 10,
-      padding: 12,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.border,
-      flexDirection: "row",
-      justifyContent: "space-between",
-      alignItems: "center",
     },
+
+    pillAction: {
+      paddingVertical: 10,
+      borderRadius: 999,
+      alignItems: "center",
+      justifyContent: "center",
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+    },
+    pillActionText: { color: colors.text, fontWeight: "800" },
+    pillPrimary: {
+      backgroundColor: colors.primary,
+      borderColor: colors.primary,
+    },
+    pillPrimaryText: { color: colors.onPrimary ?? "#fff", fontWeight: "900" },
+
+    countText: { color: colors.subtle, fontWeight: "900" },
+
+    empty: {
+      padding: 14,
+      borderRadius: 14,
+      backgroundColor: colors.surface,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      marginTop: 10,
+    },
+    emptyTitle: { color: colors.text, fontWeight: "900", fontSize: 14 },
+    emptyText: { color: colors.subtle, marginTop: 4 },
 
     btn: {
       backgroundColor: colors.surface,
-      paddingVertical: 10,
-      borderRadius: 10,
+      paddingVertical: 12,
+      borderRadius: 12,
       alignItems: "center",
       paddingHorizontal: 14,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.border,
     },
-    btnText: { fontWeight: "700", color: colors.text },
+    btnText: { fontWeight: "800", color: colors.text },
     primary: { backgroundColor: colors.primary, borderColor: colors.primary },
-    btnPrimaryText: { color: colors.onPrimary ?? "#fff", fontWeight: "800" },
+    btnPrimaryText: { color: colors.onPrimary ?? "#fff", fontWeight: "900" },
 
-    chip: {
-      height: 34,
-      paddingHorizontal: 12,
-      borderRadius: 999,
+    exerciseRow: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      paddingVertical: 10,
+      paddingHorizontal: 8,
+      borderRadius: 12,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.border,
+      marginTop: 10,
       backgroundColor: colors.surface,
-      marginRight: 8,
-      flexDirection: "row",
+      gap: 10,
+    },
+
+    dragHandle: {
+      paddingHorizontal: 10,
+      paddingVertical: 8,
+      borderRadius: 12,
+      backgroundColor: colors.card,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
       alignItems: "center",
       justifyContent: "center",
     },
-    chipLabel: {
-      fontSize: 12,
-      color: colors.text,
-      fontWeight: "600",
-    },
-    chipSection: {
-      marginBottom: 6,
-    },
-    chipGrid: {
-      flexDirection: "row",
-      flexWrap: "wrap",
-      rowGap: 10,
-      columnGap: 12,
-      marginBottom: 4,
+    dragIcon: { color: colors.subtle, fontWeight: "900", fontSize: 16 },
+    dragText: {
+      color: colors.subtle,
+      fontWeight: "900",
+      fontSize: 10,
+      marginTop: 2,
     },
 
-    empty: {
-      padding: 16,
-      alignItems: "center",
+    exerciseName: { color: colors.text, fontWeight: "800" },
+    exerciseMeta: { color: colors.subtle, marginTop: 4, fontSize: 12 },
+
+    badge: {
+      paddingHorizontal: 8,
+      paddingVertical: 3,
+      borderRadius: 999,
+      borderWidth: 1,
       backgroundColor: colors.card,
-      borderRadius: 12,
-      marginTop: 12,
     },
 
+    badgeDropset: {
+      borderColor: colors.text ?? "#fff",
+      backgroundColor: "#f97316",
+    },
+    badgeDropsetText: {
+      fontSize: 11,
+      fontWeight: "900",
+      color: colors.text ?? "#fff",
+    },
+
+    pillDropsetOn: {
+      borderColor: colors.text ?? "#fff",
+      backgroundColor: "#f97316",
+    },
+    pillDropsetText: { color: colors.text ?? "#fff" },
+
+    targetsBox: {
+      marginTop: 12,
+      padding: 12,
+      borderRadius: 14,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      backgroundColor: colors.card,
+    },
+    targetsGrid: {
+      flexDirection: "row",
+      gap: 10,
+      flexWrap: "wrap",
+    },
+
+    remove: {
+      color: colors.danger ?? "#ef4444",
+      fontSize: 12,
+      fontWeight: "900",
+      marginTop: 2,
+      paddingRight: 6,
+    },
+
+    overlay: {
+      position: "absolute",
+      left: 0,
+      right: 0,
+      top: 0,
+      bottom: 0,
+      backgroundColor: "rgba(0,0,0,0.4)",
+      alignItems: "center",
+      justifyContent: "center",
+      padding: 16,
+    },
+    overlayCard: {
+      width: "100%",
+      maxWidth: 420,
+      backgroundColor: colors.card,
+      borderRadius: 16,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      padding: 14,
+    },
+    overlayTitle: { color: colors.text, fontWeight: "900", fontSize: 16 },
+    overlaySub: { color: colors.subtle, marginTop: 6, fontSize: 12 },
+    supersetPickRow: {
+      paddingVertical: 10,
+      paddingHorizontal: 12,
+      borderRadius: 12,
+      backgroundColor: colors.surface,
+    },
+    overlayCancel: {
+      marginTop: 12,
+      paddingVertical: 10,
+      borderRadius: 999,
+      alignItems: "center",
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+    },
+    overlayCancelText: { color: colors.subtle, fontWeight: "900" },
+
+    //Modal
     modalSafeArea: {
       flex: 1,
       paddingHorizontal: 16,
-      paddingTop: 16,
+    },
+    modalRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingVertical: 10,
+      paddingHorizontal: 12,
+      borderRadius: 12,
+      borderWidth: 1, // was hairline → clearer border
+      borderColor: colors.border,
+      marginBottom: 12, // was 8 → more gap between rows
+      backgroundColor: colors.surface,
+    },
+    modalExerciseName: {
+      fontSize: 15,
+      fontWeight: "700",
+      color: colors.text,
+    },
+    modalExerciseMeta: {
+      fontSize: 12,
+      color: colors.subtle,
+      marginTop: 2,
+    },
+    modalDoneBtn: {
+      marginTop: 4,
+      marginBottom: 12,
+      paddingVertical: 12,
+      borderRadius: 999,
+      alignItems: "center",
+      borderWidth: StyleSheet.hairlineWidth,
     },
     modalHeader: {
       flexDirection: "row",
@@ -994,81 +1623,65 @@ const makeStyles = (colors: any) =>
       borderColor: colors.border,
       marginBottom: 8,
     },
-
-    checkbox: {
-      width: 24,
-      height: 24,
-      borderRadius: 999,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: colors.border,
-      alignItems: "center",
-      justifyContent: "center",
+    filterLabel: {
+      fontSize: 13,
+      fontWeight: "700",
+      color: colors.text,
     },
 
-    filterBar: {
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "space-between",
-      gap: 8,
-      marginBottom: 4,
-    },
-    filterPill: {
-      flex: 1,
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "center",
-      borderRadius: 999,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: colors.border,
-      backgroundColor: colors.surface,
-      paddingVertical: 6,
+    filterToggle: {
       paddingHorizontal: 10,
-      gap: 6,
-    },
-    filterPillLabel: {
-      fontSize: 18,
-      fontWeight: "700",
-      color: colors.text,
-    },
-    filterPillCount: {
-      fontSize: 15,
-      fontWeight: "700",
-      color: colors.subtle,
-    },
-    filterSummaryText: {
-      fontSize: 15,
-      color: colors.subtle,
-      marginBottom: 6,
-      textAlign: "center",
-    },
-
-    modalRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      paddingVertical: 10,
-      paddingHorizontal: 12,
-      borderRadius: 12,
-      borderWidth: 1,
+      paddingVertical: 4,
+      borderRadius: 999,
+      borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.border,
-      marginBottom: 12,
       backgroundColor: colors.surface,
     },
-    modalExerciseName: {
-      fontSize: 15,
+
+    filterToggleText: {
+      fontSize: 11,
       fontWeight: "700",
+      color: colors.primary,
+    },
+
+    pillBtn: {
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      borderRadius: 999,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+    },
+    pillBtnText: {
+      fontSize: 12,
+      fontWeight: "800",
       color: colors.text,
     },
-    modalExerciseMeta: {
-      fontSize: 12,
-      color: colors.subtle,
-      marginTop: 2,
+
+    modalScrim: {
+      flex: 1,
+      backgroundColor: "rgba(0,0,0,0.35)",
+      justifyContent: "flex-end",
     },
-    modalDoneBtn: {
-      marginTop: 4,
-      marginBottom: 12,
+    modalCard: {
+      backgroundColor: colors.card,
+      padding: 16,
+      borderTopLeftRadius: 16,
+      borderTopRightRadius: 16,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      maxHeight: "80%",
+    },
+
+    cloneRow: {
       paddingVertical: 12,
-      borderRadius: 999,
-      alignItems: "center",
+      paddingHorizontal: 12,
+      borderRadius: 14,
       borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+      marginBottom: 10,
     },
+    cloneTitle: { color: colors.text, fontWeight: "900" },
+    cloneMeta: { color: colors.subtle, marginTop: 4, fontSize: 12 },
   });
