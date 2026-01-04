@@ -32,6 +32,7 @@ type WorkoutHistoryRow = {
 };
 
 type SetRow = {
+  id: string;
   set_number: number;
   reps: number | null;
   weight: number | null;
@@ -39,7 +40,11 @@ type SetRow = {
   distance: number | null;
   notes: string | null;
   workout_exercise_history: {
+    id: string;
     order_index: number;
+    superset_group: string | null;
+    superset_index: number | null;
+    is_dropset: boolean | null;
     exercises: { id: string; name: string; type: string | null };
   };
 };
@@ -81,6 +86,32 @@ function Kpi({
 }
 
 const VARIANTS: ("pattern" | "transparent")[] = ["pattern", "transparent"];
+
+type Block =
+  | {
+      kind: "single";
+      wehId: string;
+      name: string;
+      type: string | null;
+      sets: SetRow[];
+      order: number;
+      volume: number;
+      totalDistance: number;
+    }
+  | {
+      kind: "superset";
+      groupId: string;
+      order: number;
+      items: Array<{
+        wehId: string;
+        name: string;
+        type: string | null;
+        supersetIndex: number;
+        sets: SetRow[];
+        volume: number;
+        totalDistance: number;
+      }>;
+    };
 
 export default function WorkoutDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -172,6 +203,7 @@ export default function WorkoutDetail() {
           .eq("id", id)
           .eq("user_id", userId)
           .maybeSingle<WorkoutHistoryRow>();
+
         if (e1) throw e1;
         if (!header) {
           Alert.alert("Not found", "This workout could not be loaded.");
@@ -180,24 +212,35 @@ export default function WorkoutDetail() {
         }
         setWh(header);
 
+        // ✅ include WEH.id + superset + dropset fields so we can render cleanly
         const { data: rows, error: e2 } = await supabase
           .from("workout_set_history")
           .select(
             `
-            set_number, reps, weight, time_seconds, distance, notes,
-            workout_exercise_history:workout_exercise_history!inner(
-              order_index,
-              exercises:exercises!inner(id, name, type)
-            )
-          `
+              id,
+              set_number, reps, weight, time_seconds, distance, notes,
+              workout_exercise_history:workout_exercise_history!inner(
+                id,
+                order_index,
+                superset_group,
+                superset_index,
+                is_dropset,
+                exercises:exercises!inner(id, name, type)
+              )
+            `
           )
           .in("workout_exercise_history.workout_history_id", [header.id])
           .order("order_index", {
             ascending: true,
             referencedTable: "workout_exercise_history",
           })
+          .order("superset_index", {
+            ascending: true,
+            referencedTable: "workout_exercise_history",
+          })
           .order("set_number", { ascending: true })
           .returns<SetRow[]>();
+
         if (e2) throw e2;
 
         setSets(rows ?? []);
@@ -211,45 +254,127 @@ export default function WorkoutDetail() {
     })();
   }, [userId, id]);
 
-  const { grouped, workoutVolume } = useMemo(() => {
-    const map = new Map<
+  // ✅ Build Blocks: singles + superset groups (ordered + stable) and group by WEH.id
+  const blocks: Block[] = useMemo(() => {
+    const byWeh = new Map<
       string,
       {
+        wehId: string;
         name: string;
         type: string | null;
-        sets: SetRow[];
         order: number;
+        supersetGroup: string | null;
+        supersetIndex: number;
+        sets: SetRow[];
         volume: number;
+        totalDistance: number;
       }
     >();
 
-    let total = 0;
-
     for (const r of sets) {
-      const ex = r.workout_exercise_history.exercises;
-      const key = ex.id;
+      const weh = r.workout_exercise_history;
+      const ex = weh.exercises;
+      const wehId = weh.id;
 
-      if (!map.has(key)) {
-        map.set(key, {
+      if (!byWeh.has(wehId)) {
+        byWeh.set(wehId, {
+          wehId,
           name: ex.name,
           type: ex.type,
+          order: weh.order_index ?? 0,
+          supersetGroup: weh.superset_group ?? null,
+          supersetIndex: Number(weh.superset_index ?? 0),
           sets: [],
-          order: r.workout_exercise_history.order_index ?? 0,
           volume: 0,
+          totalDistance: 0,
         });
       }
 
-      const vol = volOfSet(r);
-      total += vol;
-
-      const entry = map.get(key)!;
+      const entry = byWeh.get(wehId)!;
       entry.sets.push(r);
+
+      // volume & distance per exercise (for optional display later)
+      const vol = volOfSet(r);
       entry.volume += vol;
+      entry.totalDistance += Number(r.distance ?? 0);
     }
 
-    const arr = Array.from(map.values()).sort((a, b) => a.order - b.order);
-    return { grouped: arr, workoutVolume: total };
+    const entries = Array.from(byWeh.values()).sort((a, b) => {
+      if (a.order !== b.order) return a.order - b.order;
+      return a.supersetIndex - b.supersetIndex;
+    });
+
+    const ssMap = new Map<string, { order: number; items: typeof entries }>();
+    const singles: typeof entries = [];
+
+    for (const e of entries) {
+      if (e.supersetGroup) {
+        if (!ssMap.has(e.supersetGroup)) {
+          ssMap.set(e.supersetGroup, { order: e.order, items: [] as any });
+        }
+        const g = ssMap.get(e.supersetGroup)!;
+        g.items.push(e as any);
+        g.order = Math.min(g.order, e.order);
+      } else {
+        singles.push(e);
+      }
+    }
+
+    // Superset letter assignment stable by "first appearance order"
+    const supersetGroupsSorted = Array.from(ssMap.entries()).sort(
+      (a, b) => a[1].order - b[1].order
+    );
+
+    const supersetBlocks: Block[] = supersetGroupsSorted.map(
+      ([groupId, g]) => ({
+        kind: "superset",
+        groupId,
+        order: g.order,
+        items: g.items
+          .slice()
+          .sort((a, b) => a.supersetIndex - b.supersetIndex)
+          .map((it) => ({
+            wehId: it.wehId,
+            name: it.name,
+            type: it.type,
+            supersetIndex: it.supersetIndex,
+            sets: it.sets,
+            volume: it.volume,
+            totalDistance: it.totalDistance,
+          })),
+      })
+    );
+
+    const singleBlocks: Block[] = singles.map((it) => ({
+      kind: "single",
+      wehId: it.wehId,
+      name: it.name,
+      type: it.type,
+      sets: it.sets,
+      order: it.order,
+      volume: it.volume,
+      totalDistance: it.totalDistance,
+    }));
+
+    return [...supersetBlocks, ...singleBlocks].sort(
+      (a, b) => a.order - b.order
+    );
   }, [sets]);
+
+  // Derived counts based on blocks (what user actually sees)
+  const exercisesCount = useMemo(() => {
+    let n = 0;
+    for (const b of blocks) {
+      if (b.kind === "single") n += 1;
+      else n += b.items.length;
+    }
+    return n;
+  }, [blocks]);
+
+  const workoutVolume = useMemo(
+    () => sets.reduce((sum, r) => sum + volOfSet(r), 0),
+    [sets]
+  );
 
   const volumeComparison = useMemo(
     () => (hasWeight ? getVolumeComparison(workoutVolume) : null),
@@ -293,6 +418,53 @@ export default function WorkoutDetail() {
     return parts.join(" · ");
   }
 
+  // ✅ Dropset-aware renderer: groups rows by set_number, shows "DROPSET" if repeated or flag set
+  function renderSetsForExercise(exSets: SetRow[]) {
+    const map = new Map<number, SetRow[]>();
+    exSets.forEach((st) => {
+      const k = Number(st.set_number);
+      if (!map.has(k)) map.set(k, []);
+      map.get(k)!.push(st);
+    });
+
+    const setNums = Array.from(map.keys()).sort((a, b) => a - b);
+
+    return setNums.map((k) => {
+      const rows = map.get(k)!;
+
+      const isDrop =
+        rows.length > 1 ||
+        rows.some((r) => !!r.workout_exercise_history.is_dropset);
+
+      // Keep dropsets stable: if you ever add created_at, sort by it here.
+      // For now, fall back to row.id which is stable.
+      const stableRows = rows.slice().sort((a, b) => a.id.localeCompare(b.id));
+
+      return (
+        <View key={`setgrp-${k}`} style={{ marginBottom: 10 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <Text style={s.setNo}>#{k}</Text>
+
+            {isDrop && (
+              <View style={s.badgeDrop}>
+                <Text style={s.badgeDropText}>DROPSET</Text>
+              </View>
+            )}
+          </View>
+
+          <View style={{ marginTop: 6, marginLeft: 6, gap: 4 }}>
+            {stableRows.map((row, i) => (
+              <View key={row.id} style={s.setRow}>
+                {isDrop ? <Text style={s.dropIndex}>{i + 1}.</Text> : null}
+                <Text style={s.setText}>{fmtSetLine(row)}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      );
+    });
+  }
+
   // Lines for the "full workout" share image (stats + all sets)
   const fullLines = useMemo(() => {
     if (!wh) return [];
@@ -304,27 +476,91 @@ export default function WorkoutDetail() {
 
     // header stats
     lines.push(`${title} — ${when}`);
-    if (wh.duration_seconds) {
+    if (wh.duration_seconds)
       lines.push(`Duration: ${fmtDuration(wh.duration_seconds)}`);
-    }
-    lines.push(`Exercises: ${grouped.length}`);
+
+    lines.push(`Exercises: ${exercisesCount}`);
     lines.push(`Total sets: ${sets.length}`);
     lines.push(`Total volume: ${totalVolume.toFixed(0)} kg`);
-
-    // GAP between stats and first exercise
     lines.push("");
 
-    // exercises + sets
-    for (const g of grouped) {
-      lines.push(`${g.name}${g.type ? ` (${g.type})` : ""}`);
-      for (const s of g.sets) {
-        lines.push(`  Set ${s.set_number}: ${fmtSetLine(s)}`);
+    // ✅ Supersets + dropsets in text export too
+    let ssLetter = 0;
+
+    for (const b of blocks) {
+      if (b.kind === "superset") {
+        const letter = String.fromCharCode(65 + (ssLetter % 26));
+        ssLetter++;
+
+        lines.push(`Superset ${letter}`);
+        for (const ex of b.items) {
+          lines.push(`  ${ex.name}${ex.type ? ` (${ex.type})` : ""}`);
+
+          // group rows by set_number
+          const bySet = new Map<number, SetRow[]>();
+          ex.sets.forEach((st) => {
+            const k = Number(st.set_number);
+            if (!bySet.has(k)) bySet.set(k, []);
+            bySet.get(k)!.push(st);
+          });
+
+          const nums = Array.from(bySet.keys()).sort((a, b) => a - b);
+          for (const num of nums) {
+            const rows = (bySet.get(num) ?? [])
+              .slice()
+              .sort((a, b) => a.id.localeCompare(b.id));
+            const isDrop =
+              rows.length > 1 ||
+              rows.some((r) => !!r.workout_exercise_history.is_dropset);
+
+            if (!isDrop) {
+              for (const st of rows)
+                lines.push(`    Set ${st.set_number}: ${fmtSetLine(st)}`);
+            } else {
+              lines.push(`    Set ${num} (DROPSET):`);
+              rows.forEach((st, i) =>
+                lines.push(`      ${i + 1}. ${fmtSetLine(st)}`)
+              );
+            }
+          }
+        }
+        lines.push("");
+      } else {
+        lines.push(`${b.name}${b.type ? ` (${b.type})` : ""}`);
+
+        const bySet = new Map<number, SetRow[]>();
+        b.sets.forEach((st) => {
+          const k = Number(st.set_number);
+          if (!bySet.has(k)) bySet.set(k, []);
+          bySet.get(k)!.push(st);
+        });
+
+        const nums = Array.from(bySet.keys()).sort((a, b) => a - b);
+        for (const num of nums) {
+          const rows = (bySet.get(num) ?? [])
+            .slice()
+            .sort((a, b) => a.id.localeCompare(b.id));
+          const isDrop =
+            rows.length > 1 ||
+            rows.some((r) => !!r.workout_exercise_history.is_dropset);
+
+          if (!isDrop) {
+            for (const st of rows)
+              lines.push(`  Set ${st.set_number}: ${fmtSetLine(st)}`);
+          } else {
+            lines.push(`  Set ${num} (DROPSET):`);
+            rows.forEach((st, i) =>
+              lines.push(`    ${i + 1}. ${fmtSetLine(st)}`)
+            );
+          }
+        }
+
+        lines.push("");
       }
-      lines.push(""); // gap between exercises
     }
 
     return lines;
-  }, [wh, grouped, sets, totalVolume]);
+  }, [wh, blocks, sets.length, totalVolume, exercisesCount]);
 
   const fullText = useMemo(() => fullLines.join("\n"), [fullLines]);
 
@@ -390,6 +626,23 @@ export default function WorkoutDetail() {
 
   const title = wh.workouts?.title ?? "Workout";
 
+  function supersetColorFor(groupId: string) {
+    // stable color per group id
+    const palette = [
+      colors.primary,
+      "#22c55e",
+      "#a855f7", // purple
+      "#f59e0b", // amber
+      "#ef4444", // red
+      "#06b6d4", // cyan
+    ];
+
+    let hash = 0;
+    for (let i = 0; i < groupId.length; i++)
+      hash = (hash * 31 + groupId.charCodeAt(i)) >>> 0;
+    return palette[hash % palette.length];
+  }
+
   return (
     <SafeAreaView
       style={{ flex: 1, backgroundColor: colors.background }}
@@ -429,6 +682,7 @@ export default function WorkoutDetail() {
             </Text>
           </Pressable>
         </View>
+
         {/* Header card */}
         <View style={s.card}>
           <View
@@ -460,7 +714,7 @@ export default function WorkoutDetail() {
             <Kpi
               colors={colors}
               label="Exercises"
-              value={String(grouped.length)}
+              value={String(exercisesCount)}
             />
             <Kpi
               colors={colors}
@@ -468,7 +722,6 @@ export default function WorkoutDetail() {
               value={fmtInt(sets.length)}
             />
 
-            {/* Only show volume if we actually have weight-based sets */}
             {hasWeight && (
               <Kpi
                 colors={colors}
@@ -478,7 +731,6 @@ export default function WorkoutDetail() {
               />
             )}
 
-            {/* If any distance is logged (cardio), show total distance */}
             {hasDistance && (
               <Kpi
                 colors={colors}
@@ -489,7 +741,6 @@ export default function WorkoutDetail() {
             )}
           </View>
 
-          {/* Comparisons row, only when applicable */}
           {(volumeComparison || distanceComparison) && (
             <View style={{ marginTop: 8 }}>
               {volumeComparison && (
@@ -505,7 +756,6 @@ export default function WorkoutDetail() {
             </View>
           )}
 
-          {/* Workout notes (if any) */}
           {wh.notes ? (
             <>
               <View style={s.hr} />
@@ -514,7 +764,6 @@ export default function WorkoutDetail() {
             </>
           ) : null}
 
-          {/* Share button */}
           <View style={{ height: 10 }} />
           <Pressable
             onPress={onShare}
@@ -562,7 +811,7 @@ export default function WorkoutDetail() {
                 Share workout
               </Text>
 
-              {/* Mode toggle: stats vs full */}
+              {/* Mode toggle */}
               <View
                 style={{
                   flexDirection: "row",
@@ -615,13 +864,8 @@ export default function WorkoutDetail() {
                 </Pressable>
               </View>
 
-              {/* Fixed-height preview area */}
-              <View
-                style={{
-                  marginTop: 16,
-                  alignItems: "center",
-                }}
-              >
+              {/* Preview */}
+              <View style={{ marginTop: 16, alignItems: "center" }}>
                 <View
                   style={{
                     height: PREVIEW_BOX_HEIGHT,
@@ -660,7 +904,6 @@ export default function WorkoutDetail() {
                             justifyContent: "center",
                           }}
                         >
-                          {/* Card scaled to always fit inside PREVIEW_BOX_HEIGHT */}
                           <View
                             style={{
                               width: CARD_WIDTH,
@@ -683,7 +926,7 @@ export default function WorkoutDetail() {
                               title={title}
                               dateLabel={fmtDateTime(wh.completed_at)}
                               durationLabel={fmtDuration(wh.duration_seconds)}
-                              exercisesCount={grouped.length}
+                              exercisesCount={exercisesCount}
                               setsCount={sets.length}
                               totalVolumeKg={
                                 hasWeight ? Math.round(totalVolume) : undefined
@@ -693,7 +936,7 @@ export default function WorkoutDetail() {
                                   ? Math.round(totalDistance)
                                   : undefined
                               }
-                              weeklyStreak={weeklyStreak ?? undefined} // NEW
+                              weeklyStreak={weeklyStreak ?? undefined}
                               mode={shareMode}
                               fullText={fullText}
                               variant={v}
@@ -732,7 +975,7 @@ export default function WorkoutDetail() {
                   </ScrollView>
                 </View>
 
-                {/* dots indicator */}
+                {/* dots */}
                 <View
                   style={{
                     flexDirection: "row",
@@ -768,13 +1011,7 @@ export default function WorkoutDetail() {
               >
                 <Pressable
                   onPress={() => setPreviewVisible(false)}
-                  style={[
-                    s.btn,
-                    {
-                      flex: 1,
-                      backgroundColor: colors.surface,
-                    },
-                  ]}
+                  style={[s.btn, { flex: 1, backgroundColor: colors.surface }]}
                 >
                   <Text style={{ color: colors.text, fontWeight: "700" }}>
                     Close
@@ -786,10 +1023,7 @@ export default function WorkoutDetail() {
                   style={[
                     s.btn,
                     s.primary,
-                    {
-                      flex: 1,
-                      opacity: sharing ? 0.7 : 1,
-                    },
+                    { flex: 1, opacity: sharing ? 0.7 : 1 },
                   ]}
                 >
                   <Text style={s.btnPrimaryText}>
@@ -801,60 +1035,95 @@ export default function WorkoutDetail() {
           </View>
         </Modal>
 
-        {/* Exercises & sets list */}
+        {/* Details */}
         <View style={s.card}>
           <Text style={s.h3}>Details</Text>
           <View style={{ height: 8 }} />
-          {grouped.map((g, idx) => {
-            const hasWeightSets = g.sets.some(
-              (s) => s.weight != null && s.reps != null
-            );
-            const totalDistanceEx = g.sets.reduce(
-              (sum, s) => sum + (s.distance ?? 0),
-              0
-            );
 
-            return (
-              <View key={`${g.name}-${idx}`} style={s.exBlock}>
-                <Text style={s.exTitle}>
-                  {g.name}{" "}
-                  <Text style={s.muted}>{g.type ? `· ${g.type}` : ""}</Text>
-                </Text>
+          {(() => {
+            let ssLetter = 0;
 
-                {/* Only show volume if this exercise actually used weight */}
-                {hasWeightSets && (
-                  <Text
+            return blocks.map((b) => {
+              if (b.kind === "superset") {
+                const letter = String.fromCharCode(65 + (ssLetter % 26));
+                ssLetter++;
+
+                const ssColor = supersetColorFor(b.groupId);
+
+                return (
+                  <View
+                    key={`ss-${b.groupId}`}
                     style={[
-                      s.muted,
-                      { marginBottom: totalDistanceEx > 0 ? 2 : 6 },
+                      s.supersetWrap,
+                      {
+                        borderColor: ssColor,
+                        backgroundColor: colors.surface,
+                      },
                     ]}
                   >
-                    Volume:{" "}
-                    <Text style={{ fontWeight: "800", color: colors.text }}>
-                      {fmtInt(g.volume)}kg
-                    </Text>
-                  </Text>
-                )}
+                    {/* left rail */}
+                    <View
+                      style={[s.supersetRail, { backgroundColor: ssColor }]}
+                    />
 
-                {/* Show distance line if there is any distance for this exercise */}
-                {totalDistanceEx > 0 && (
-                  <Text style={[s.muted, { marginBottom: 6 }]}>
-                    Distance:{" "}
-                    <Text style={{ fontWeight: "800", color: colors.text }}>
-                      {fmtInt(totalDistanceEx)}m
-                    </Text>
-                  </Text>
-                )}
+                    <View style={{ flex: 1 }}>
+                      {/* header */}
+                      <View style={s.supersetHeaderRow}>
+                        <View
+                          style={[
+                            s.supersetBadge,
+                            {
+                              backgroundColor: `${ssColor}20`,
+                              borderColor: `${ssColor}55`,
+                            },
+                          ]}
+                        >
+                          <Text
+                            style={[s.supersetBadgeText, { color: ssColor }]}
+                          >
+                            SUPERSET {letter}
+                          </Text>
+                        </View>
+                      </View>
 
-                {g.sets.map((row) => (
-                  <View key={row.set_number} style={s.setRow}>
-                    <Text style={s.setNo}>#{row.set_number}</Text>
-                    <Text style={s.setText}>{fmtSetLine(row)}</Text>
+                      {/* exercises inside the wrap */}
+                      <View style={{ gap: 12 }}>
+                        {b.items.map((ex, i) => (
+                          <View
+                            key={ex.wehId}
+                            style={[
+                              s.supersetExercise,
+                              i > 0 ? s.supersetDividerTop : null,
+                            ]}
+                          >
+                            <Text style={s.exTitle}>
+                              {ex.name}{" "}
+                              <Text style={s.muted}>
+                                {ex.type ? `· ${ex.type}` : ""}
+                              </Text>
+                            </Text>
+
+                            {renderSetsForExercise(ex.sets)}
+                          </View>
+                        ))}
+                      </View>
+                    </View>
                   </View>
-                ))}
-              </View>
-            );
-          })}
+                );
+              }
+
+              return (
+                <View key={b.wehId} style={s.exBlock}>
+                  <Text style={s.exTitle}>
+                    {b.name}{" "}
+                    <Text style={s.muted}>{b.type ? `· ${b.type}` : ""}</Text>
+                  </Text>
+
+                  {renderSetsForExercise(b.sets)}
+                </View>
+              );
+            });
+          })()}
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -922,6 +1191,8 @@ const makeStyles = (colors: any) =>
     notes: { color: colors.subtle },
     link: { color: colors.primary, fontWeight: "700" },
     hr: { height: 1, backgroundColor: colors.border, marginVertical: 10 },
+
+    // Details
     exBlock: {
       backgroundColor: colors.surface,
       borderRadius: 12,
@@ -931,6 +1202,26 @@ const makeStyles = (colors: any) =>
       marginBottom: 10,
     },
     exTitle: { color: colors.text, fontWeight: "800", marginBottom: 8 },
+
+    supersetHeader: {
+      flexDirection: "row",
+      alignItems: "baseline",
+      justifyContent: "space-between",
+      marginBottom: 10,
+    },
+    supersetTitle: {
+      color: colors.primary,
+      fontWeight: "900",
+      fontSize: 14,
+      letterSpacing: 0.6,
+      textTransform: "uppercase",
+    },
+    supersetHint: {
+      color: colors.subtle,
+      fontWeight: "700",
+      fontSize: 12,
+    },
+
     setRow: {
       flexDirection: "row",
       alignItems: "center",
@@ -946,7 +1237,30 @@ const makeStyles = (colors: any) =>
       overflow: "hidden",
       fontWeight: "800",
     },
-    setText: { color: colors.text },
+    setText: { color: colors.text, flexShrink: 1 },
+
+    // Dropset badge + numbering
+    badgeDrop: {
+      paddingHorizontal: 8,
+      paddingVertical: 2,
+      borderRadius: 999,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: "rgba(239,68,68,0.35)",
+      backgroundColor: "rgba(239,68,68,0.10)",
+    },
+    badgeDropText: {
+      color: "#ef4444",
+      fontWeight: "900",
+      fontSize: 12,
+      letterSpacing: 0.5,
+    },
+    dropIndex: {
+      width: 18,
+      color: colors.subtle,
+      fontWeight: "800",
+    },
+
+    // Buttons
     btn: {
       backgroundColor: colors.surface,
       paddingVertical: 10,
@@ -963,5 +1277,44 @@ const makeStyles = (colors: any) =>
       color: colors.subtle,
       fontSize: 12,
       marginTop: 2,
+    },
+
+    supersetWrap: {
+      flexDirection: "row",
+      borderRadius: 14,
+      borderWidth: 2,
+      padding: 12,
+      marginBottom: 10,
+      overflow: "hidden",
+    },
+    supersetRail: {
+      width: 6,
+      borderRadius: 999,
+      marginRight: 10,
+    },
+    supersetHeaderRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      marginBottom: 10,
+    },
+    supersetBadge: {
+      paddingHorizontal: 10,
+      paddingVertical: 4,
+      borderRadius: 999,
+      borderWidth: StyleSheet.hairlineWidth,
+    },
+    supersetBadgeText: {
+      fontWeight: "900",
+      fontSize: 12,
+      letterSpacing: 0.6,
+    },
+    supersetExercise: {
+      borderRadius: 12,
+    },
+    supersetDividerTop: {
+      paddingTop: 12,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: "rgba(255,255,255,0.10)", // works ok in dark; if light mode looks weird, swap to colors.border
     },
   });

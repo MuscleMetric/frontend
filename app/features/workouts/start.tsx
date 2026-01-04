@@ -1389,6 +1389,25 @@ export default function StartWorkoutScreen() {
   };
 
   // ---------- Early loading / auth guards ----------
+  const weIndexById = useMemo(() => {
+    const map: Record<string, number> = {};
+    workout?.workout_exercises.forEach((we, i) => {
+      map[we.id] = i;
+    });
+    return map;
+  }, [workout?.workout_exercises]);
+
+  const scrollToExercise = (weId: string) => {
+    const idx = weIndexById[weId];
+    if (idx == null) return;
+
+    listRef.current?.scrollToIndex({
+      index: idx,
+      animated: true,
+      viewPosition: 0.12,
+    });
+  };
+
   if (!userId) {
     return (
       <SafeAreaView
@@ -1407,25 +1426,6 @@ export default function StartWorkoutScreen() {
       </SafeAreaView>
     );
   }
-
-  const weIndexById = useMemo(() => {
-    const map: Record<string, number> = {};
-    workout.workout_exercises.forEach((we, i) => {
-      map[we.id] = i;
-    });
-    return map;
-  }, [workout.workout_exercises]);
-
-  const scrollToExercise = (weId: string) => {
-    const idx = weIndexById[weId];
-    if (idx == null) return;
-
-    listRef.current?.scrollToIndex({
-      index: idx,
-      animated: true,
-      viewPosition: 0.12,
-    });
-  };
 
   const setExerciseOpen = (weId: string, open: boolean) =>
     setState((s) => {

@@ -139,7 +139,7 @@ export default function WorkoutHistoryList() {
       <Pressable
         onPress={() =>
           router.push({
-            pathname: "/features/history/detail",
+            pathname: "/features/workouts/history/detail",
             params: { id: item.id },
           })
         }
