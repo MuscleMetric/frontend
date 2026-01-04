@@ -102,7 +102,6 @@ export default function Home() {
 
   // Consistency calendar (no-plan + full width card)
   const [trainedKeys, setTrainedKeys] = useState<Set<string>>(new Set());
-  const [calendarOpen, setCalendarOpen] = useState(false);
   const [selectedDayKey, setSelectedDayKey] = useState<string | null>(null);
 
   // month shown in modal (default = current month start)
@@ -132,12 +131,69 @@ export default function Home() {
     return new Date(d.getFullYear(), d.getMonth() + delta, 1);
   }
 
+  const [pendingCount, setPendingCount] = useState(0);
+  const [syncingPending, setSyncingPending] = useState(false);
+
+  // join date (from profiles.created_at)
+  const [joinDayKey, setJoinDayKey] = useState<string | null>(null);
+  const [minMonthStart, setMinMonthStart] = useState<Date | null>(null);
+
+  useEffect(() => {
+    if (!userId) {
+      setJoinDayKey(null);
+      setMinMonthStart(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const { data, error } = await supabase
+          .from("profiles")
+          .select("created_at")
+          .eq("id", userId)
+          .maybeSingle();
+
+        if (cancelled) return;
+        if (error) throw error;
+
+        const iso = data?.created_at ? String(data.created_at) : null;
+        if (!iso) return;
+
+        const d = new Date(iso); // device local time used when we derive key
+        const key = dayKeyLocal(d); // yyyy-mm-dd in local time
+
+        const monthStart = new Date(d.getFullYear(), d.getMonth(), 1);
+        setJoinDayKey(key);
+        setMinMonthStart(monthStart);
+
+        // optional: if current calendarMonth is earlier than join month, clamp it forward
+        setCalendarMonth((prev) => {
+          const p = new Date(prev.getFullYear(), prev.getMonth(), 1);
+          return p.getTime() < monthStart.getTime() ? monthStart : prev;
+        });
+      } catch (e) {
+        console.warn("failed to load profile created_at:", e);
+        // leave null -> we won’t block navigation backwards if unknown
+        setJoinDayKey(null);
+        setMinMonthStart(null);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
+
   const currentMonthStart = monthStartLocal(new Date());
+
   const canGoNextMonth =
     monthStartLocal(calendarMonth).getTime() < currentMonthStart.getTime();
 
-  const [pendingCount, setPendingCount] = useState(0);
-  const [syncingPending, setSyncingPending] = useState(false);
+  const canGoPrevMonth = minMonthStart
+    ? monthStartLocal(calendarMonth).getTime() > minMonthStart.getTime()
+    : true; // if we couldn't load created_at, don't block
 
   useEffect(() => {
     let alive = true;
@@ -1000,21 +1056,104 @@ export default function Home() {
               );
 
             case "consistency":
-              return !hasActivePlan ? (
+              return (
                 <View style={[styles.gridCard, { width: "100%" }]}>
-                  <Text style={styles.title}>CONSISTENCY</Text>
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      marginBottom: 10,
+                    }}
+                  >
+                    <Text style={styles.title}>CONSISTENCY</Text>
+
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: 10,
+                      }}
+                    >
+                      {/* Prev month */}
+                      <Pressable
+                        disabled={!canGoPrevMonth}
+                        onPress={() => {
+                          if (!canGoPrevMonth) return;
+                          setCalendarMonth((m) => addMonths(m, -1));
+                          setSelectedDayKey(null);
+                          setSelectedDayWorkouts([]);
+                        }}
+                        hitSlop={10}
+                        style={{
+                          opacity: canGoPrevMonth ? 1 : 0.35,
+                          padding: 6,
+                        }}
+                      >
+                        <Text
+                          style={{
+                            color: colors.text,
+                            fontWeight: "900",
+                            fontSize: 18,
+                          }}
+                        >
+                          ←
+                        </Text>
+                      </Pressable>
+
+                      {/* Month label */}
+                      <Text
+                        style={{
+                          color: colors.text,
+                          fontWeight: "900",
+                          fontSize: 16,
+                        }}
+                      >
+                        {calendarMonth.toLocaleDateString(undefined, {
+                          month: "long",
+                          year: "numeric",
+                        })}
+                      </Text>
+
+                      {/* Next month */}
+                      <Pressable
+                        disabled={!canGoNextMonth}
+                        onPress={() => {
+                          if (!canGoNextMonth) return;
+                          setCalendarMonth((m) => addMonths(m, 1));
+                          setSelectedDayKey(null);
+                          setSelectedDayWorkouts([]);
+                        }}
+                        hitSlop={10}
+                        style={{
+                          opacity: canGoNextMonth ? 1 : 0.35,
+                          padding: 6,
+                        }}
+                      >
+                        <Text
+                          style={{
+                            color: colors.text,
+                            fontWeight: "900",
+                            fontSize: 18,
+                          }}
+                        >
+                          →
+                        </Text>
+                      </Pressable>
+                    </View>
+                  </View>
 
                   <MiniMonthCalendar
                     colors={colors}
                     trainedKeys={trainedKeys}
                     monthDate={calendarMonth}
-                    onPressHeader={() => setCalendarOpen(true)}
                     onPressDay={onPickDay}
                     selectedDayKey={selectedDayKey}
                     compact={false}
+                    joinDayKey={joinDayKey}
                   />
 
-                  <View style={{ marginTop: 12, gap: 8 }}>
+                  <View style={{ marginTop: 0, gap: 0 }}>
                     {!selectedDayKey ? (
                       <Text style={{ color: colors.subtle, fontWeight: "700" }}>
                         Tap a day to see workouts.
@@ -1026,11 +1165,11 @@ export default function Home() {
                         No workouts on {selectedDayKey}.
                       </Text>
                     ) : (
-                      selectedDayWorkouts.slice(0, 4).map((w) => (
+                      selectedDayWorkouts.map((w) => (
                         <Pressable
                           key={w.id}
                           onPress={() => {
-                            // optional: open workout session
+                            // optional: open workout history view or session
                           }}
                           style={{
                             paddingVertical: 10,
@@ -1059,22 +1198,9 @@ export default function Home() {
                         </Pressable>
                       ))
                     )}
-
-                    {selectedDayWorkouts.length > 4 && (
-                      <Pressable
-                        onPress={() => setCalendarOpen(true)}
-                        style={{ paddingVertical: 6 }}
-                      >
-                        <Text
-                          style={{ color: colors.primary, fontWeight: "900" }}
-                        >
-                          View all →
-                        </Text>
-                      </Pressable>
-                    )}
                   </View>
                 </View>
-              ) : null;
+              );
 
             case "next_workout":
               return (
@@ -1525,160 +1651,6 @@ export default function Home() {
                 </Text>
               </Pressable>
             </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
-
-      <Modal
-        visible={calendarOpen}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setCalendarOpen(false)}
-      >
-        <Pressable
-          onPress={() => setCalendarOpen(false)}
-          style={{
-            flex: 1,
-            backgroundColor: "rgba(0,0,0,0.38)",
-            justifyContent: "center",
-            alignItems: "center",
-            padding: 18,
-          }}
-        >
-          <Pressable
-            onPress={() => {}}
-            style={{
-              width: "100%",
-              maxWidth: 520,
-              backgroundColor: colors.card,
-              borderRadius: 22,
-              borderWidth: StyleSheet.hairlineWidth,
-              borderColor: colors.border,
-              padding: 16,
-            }}
-          >
-            <View
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                justifyContent: "space-between",
-                marginBottom: 10,
-              }}
-            >
-              <Pressable
-                onPress={() => setCalendarMonth((m) => addMonths(m, -1))}
-                hitSlop={10}
-                style={{ padding: 8 }}
-              >
-                <Text
-                  style={{
-                    color: colors.text,
-                    fontWeight: "900",
-                    fontSize: 18,
-                  }}
-                >
-                  ←
-                </Text>
-              </Pressable>
-
-              <Text
-                style={{
-                  color: colors.text,
-                  fontWeight: "900",
-                  fontSize: 18,
-                }}
-              >
-                {calendarMonth.toLocaleDateString(undefined, {
-                  month: "long",
-                  year: "numeric",
-                })}
-              </Text>
-
-              <Pressable
-                disabled={!canGoNextMonth}
-                onPress={() =>
-                  canGoNextMonth && setCalendarMonth((m) => addMonths(m, 1))
-                }
-                hitSlop={10}
-                style={{ padding: 8, opacity: canGoNextMonth ? 1 : 0.35 }}
-              >
-                <Text
-                  style={{
-                    color: colors.text,
-                    fontWeight: "900",
-                    fontSize: 18,
-                  }}
-                >
-                  →
-                </Text>
-              </Pressable>
-            </View>
-
-            <MiniMonthCalendar
-              colors={colors}
-              trainedKeys={trainedKeys}
-              monthDate={calendarMonth}
-              onPressDay={(k) => onPickDay(k)}
-              selectedDayKey={selectedDayKey}
-              compact={false}
-            />
-
-            <View style={{ marginTop: 14, gap: 8 }}>
-              {!selectedDayKey ? null : selectedDayLoading ? (
-                <ActivityIndicator />
-              ) : selectedDayWorkouts.length === 0 ? (
-                <Text style={{ color: colors.subtle, fontWeight: "700" }}>
-                  No workouts on {selectedDayKey}.
-                </Text>
-              ) : (
-                selectedDayWorkouts.map((w) => (
-                  <View
-                    key={w.id}
-                    style={{
-                      paddingVertical: 10,
-                      paddingHorizontal: 12,
-                      borderRadius: 12,
-                      borderWidth: StyleSheet.hairlineWidth,
-                      borderColor: colors.border,
-                      backgroundColor: colors.surface ?? colors.card,
-                    }}
-                  >
-                    <Text
-                      style={{ color: colors.text, fontWeight: "900" }}
-                      numberOfLines={1}
-                    >
-                      {w.workout_title}
-                    </Text>
-                    <Text
-                      style={{ color: colors.subtle, marginTop: 2 }}
-                      numberOfLines={1}
-                    >
-                      {formatLongDate(w.completed_at)}{" "}
-                      {w.duration_seconds
-                        ? `· ${Math.round(w.duration_seconds / 60)}m`
-                        : ""}
-                    </Text>
-                  </View>
-                ))
-              )}
-            </View>
-
-            <Pressable
-              onPress={() => setCalendarOpen(false)}
-              style={{
-                marginTop: 14,
-                paddingVertical: 12,
-                borderRadius: 14,
-                alignItems: "center",
-                backgroundColor: "rgba(59,130,246,0.12)",
-                borderWidth: StyleSheet.hairlineWidth,
-                borderColor: "rgba(59,130,246,0.25)",
-              }}
-            >
-              <Text style={{ color: colors.primary, fontWeight: "900" }}>
-                Done
-              </Text>
-            </Pressable>
           </Pressable>
         </Pressable>
       </Modal>

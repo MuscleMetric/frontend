@@ -33,6 +33,7 @@ export function MiniMonthCalendar({
   onPressDay,
   selectedDayKey,
   compact = true,
+  joinDayKey,
 }: {
   colors: any;
   trainedKeys: TrainedKeysInput;
@@ -41,6 +42,7 @@ export function MiniMonthCalendar({
   onPressDay?: (dayKey: string) => void;
   selectedDayKey?: string | null;
   compact?: boolean;
+  joinDayKey?: string | null;
 }) {
   const base = monthDate ?? new Date();
 
@@ -64,7 +66,7 @@ export function MiniMonthCalendar({
 
   const cells = useMemo(() => {
     const firstDow = mondayIndex(monthStart.getDay());
-    const totalCells = 42; // 6-week grid
+    const totalCells = Math.ceil((firstDow + daysInMonth) / 7) * 7; // 28, 35, or 42
     const out: Array<{ date: Date | null; key: string | null }> = [];
 
     for (let i = 0; i < totalCells; i++) {
@@ -88,7 +90,7 @@ export function MiniMonthCalendar({
   const weekdays = ["M", "T", "W", "T", "F", "S", "S"];
 
   return (
-    <View style={{ gap: 10 }}>
+    <View style={{ gap: 11 }}>
       {/* Header */}
       <Pressable
         onPress={onPressHeader}
@@ -118,6 +120,7 @@ export function MiniMonthCalendar({
             return <View key={`empty-${idx}`} style={styles.cell} />;
           }
 
+          const isJoinDay = !!joinDayKey && c.key === joinDayKey;
           const trained = trainedSet.has(c.key);
           const selected = !!selectedDayKey && c.key === selectedDayKey;
 
@@ -133,6 +136,7 @@ export function MiniMonthCalendar({
                   styles.dayPill,
                   trained ? styles.dayPillTrained : null,
                   selected ? styles.dayPillSelected : null,
+                  isJoinDay ? styles.dayPillJoin : null,
                 ]}
               >
                 <Text
@@ -140,6 +144,7 @@ export function MiniMonthCalendar({
                     styles.dayText,
                     trained ? styles.dayTextTrained : null,
                     selected ? styles.dayTextSelected : null,
+                    isJoinDay ? styles.dayTextJoin : null,
                   ]}
                 >
                   {c.date.getDate()}
@@ -201,10 +206,19 @@ const makeStyles = (colors: any, compact: boolean) =>
       backgroundColor: "rgba(59,130,246,0.08)",
     },
     dayPillSelected: {
-      backgroundColor: "rgba(59,130,246,0.18)",
+      borderColor: "rgba(59, 131, 246, 1)",
+      backgroundColor: "rgba(59,130,246,0.08)",
       borderWidth: 2,
-      borderColor: colors.primaryText ?? colors.primary,
     },
+    dayPillJoin: {
+      borderWidth: 2,
+      borderColor: colors.success ?? "#22c55e",
+      backgroundColor: "rgba(34,197,94,0.08)",
+    },
+    dayTextJoin: {
+      color: colors.text,
+    },
+
     dayText: {
       fontSize: compact ? 13 : 15,
       fontWeight: "900",
