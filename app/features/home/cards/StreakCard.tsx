@@ -15,6 +15,26 @@ import { supabase } from "../../../../lib/supabase";
 
 type DayItem = { day: string; trained: boolean; workout_count?: number };
 
+function dayKeyFromAny(v: any): string {
+  if (!v) return "";
+  // handles "YYYY-MM-DD" and "YYYY-MM-DDTHH:mm:ss..."
+  return String(v).slice(0, 10);
+}
+
+function normalizeDays(raw: any): DayItem[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((it) => ({
+      day: dayKeyFromAny(it?.day),
+      trained: Boolean(
+        it?.trained === true || it?.trained === "true" || it?.trained === 1
+      ),
+      workout_count:
+        it?.workout_count == null ? undefined : Number(it.workout_count),
+    }))
+    .filter((it) => !!it.day);
+}
+
 type DayWorkout = {
   workout_history_id: string;
   workout_id?: string | null;
@@ -82,9 +102,10 @@ export function StreakCard({ card }: { card: any }) {
   const [monthStartStr, setMonthStartStr] = useState<string>(
     String(card?.month_start ?? "")
   );
-  const [days, setDays] = useState<DayItem[]>(
-    Array.isArray(card?.trained_days_month) ? card.trained_days_month : []
+  const [days, setDays] = useState<DayItem[]>(() =>
+    normalizeDays(card?.trained_days_month)
   );
+
   const [monthLoading, setMonthLoading] = useState(false);
 
   // selection + workouts list for selected day
@@ -97,13 +118,10 @@ export function StreakCard({ card }: { card: any }) {
   useEffect(() => {
     const nextOffset = Number(card?.month_offset ?? 0);
     const nextStart = String(card?.month_start ?? "");
-    const nextDays = Array.isArray(card?.trained_days_month)
-      ? card.trained_days_month
-      : [];
 
+    setDays(normalizeDays(card?.trained_days_month));
     setMonthOffset(nextOffset);
     setMonthStartStr(nextStart);
-    setDays(nextDays);
   }, [card?.month_offset, card?.month_start, card?.trained_days_month]);
 
   // When month changes, clear selection/workouts (prevents bleed)
@@ -124,9 +142,7 @@ export function StreakCard({ card }: { card: any }) {
 
       setMonthOffset(Number(data?.month_offset ?? nextOffset));
       setMonthStartStr(String(data?.month_start ?? ""));
-      setDays(
-        Array.isArray(data?.trained_days_month) ? data.trained_days_month : []
-      );
+      setDays(normalizeDays(data?.trained_days_month));
     } catch {
       // if it fails, don't change the view
     } finally {
@@ -151,7 +167,7 @@ export function StreakCard({ card }: { card: any }) {
 
   const trainedSet = useMemo(() => {
     const s = new Set<string>();
-    for (const it of days) if (it?.trained) s.add(it.day);
+    for (const it of days) if (it?.trained) s.add(dayKeyFromAny(it.day));
     return s;
   }, [days]);
 

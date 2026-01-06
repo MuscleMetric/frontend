@@ -16,7 +16,6 @@ function groupHomeCards(cards: any[]): RowItem[] {
     const cur = cards[i];
     const next = cards[i + 1];
 
-    // weekly goal + latest PR side-by-side
     if (cur?.type === "weekly_goal" && next?.type === "latest_pr") {
       out.push({ kind: "pair", left: cur, right: next });
       i++;
@@ -29,17 +28,7 @@ function groupHomeCards(cards: any[]): RowItem[] {
   return out;
 }
 
-export function HomeScreen({
-  summary,
-  userId,
-  monthOffset,
-  onChangeMonthOffset,
-}: {
-  summary: any;
-  userId: string;
-  monthOffset: number;
-  onChangeMonthOffset: (next: number) => void;
-}) {
+export function HomeScreen({ summary, userId }: { summary: any; userId: string }) {
   const cards = summary?.cards ?? [];
   const rows = useMemo(() => groupHomeCards(cards), [cards]);
 
@@ -59,7 +48,7 @@ export function HomeScreen({
       showsVerticalScrollIndicator={false}
       contentContainerStyle={{
         paddingTop: 8,
-        paddingBottom: 20,
+        paddingBottom: 22,
       }}
       ListHeaderComponent={
         <View style={{ paddingHorizontal: 16, marginBottom: 6 }}>
@@ -78,21 +67,10 @@ export function HomeScreen({
               }}
             >
               <View style={{ flex: 1 }}>
-                <HomeCardRenderer
-                  card={item.left}
-                  summary={summary}
-                  monthOffset={monthOffset}
-                  onChangeMonthOffset={onChangeMonthOffset}
-                />
+                <HomeCardRenderer card={item.left} summary={summary} />
               </View>
-
               <View style={{ flex: 1 }}>
-                <HomeCardRenderer
-                  card={item.right}
-                  summary={summary}
-                  monthOffset={monthOffset}
-                  onChangeMonthOffset={onChangeMonthOffset}
-                />
+                <HomeCardRenderer card={item.right} summary={summary} />
               </View>
             </View>
           );
@@ -100,12 +78,7 @@ export function HomeScreen({
 
         return (
           <View style={{ paddingHorizontal: 16, marginBottom: 14 }}>
-            <HomeCardRenderer
-              card={item.card}
-              summary={summary}
-              monthOffset={monthOffset}
-              onChangeMonthOffset={onChangeMonthOffset}
-            />
+            <HomeCardRenderer card={item.card} summary={summary} />
           </View>
         );
       }}

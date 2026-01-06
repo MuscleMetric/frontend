@@ -1,31 +1,79 @@
-import React from "react";
-import { View, Text, StyleSheet } from "react-native";
+import React, { useMemo } from "react";
+import { View, Text, StyleSheet, Pressable } from "react-native";
+import { router } from "expo-router";
 import { BaseCard } from "../ui/BaseCard";
 import { ProgressBar } from "../ui/ProgressBar";
+import { useAppTheme } from "../../../../lib/useAppTheme";
+import { homeTokens } from "../ui/homeTheme";
+
+type GoalItem = {
+  id: string;
+  title: string;
+  progress_pct: number;
+};
 
 export function PlanGoalsCard({ card }: { card: any }) {
-  const items: Array<{ id: string; title: string; progress_pct: number }> =
-    Array.isArray(card?.items) ? card.items : [];
+  const { colors } = useAppTheme();
+  const t = useMemo(() => homeTokens(colors), [colors]);
+
+  const items: GoalItem[] = Array.isArray(card?.items) ? card.items : [];
 
   return (
     <BaseCard>
       <View style={{ gap: 14 }}>
-        <Text style={styles.kicker}>Plan goals</Text>
+        {/* Header row */}
+        <View style={styles.headerRow}>
+          <Text style={[styles.headerTitle, { color: t.text }]}>
+            Plan goals
+          </Text>
+
+          <Pressable
+            onPress={() => router.push("/features/goals/goals")}
+            hitSlop={10}
+            style={({ pressed }) => [pressed ? { opacity: 0.7 } : null]}
+          >
+            <Text style={[styles.viewAll, { color: "#22c55e" }]}>View all</Text>
+          </Pressable>
+        </View>
+
+        <View style={[styles.divider, { backgroundColor: t.trackBorder }]} />
 
         {items.length === 0 ? (
-          <Text style={styles.empty}>No active goals yet.</Text>
+          <Text style={[styles.empty, { color: t.subtle }]}>
+            No active goals yet.
+          </Text>
         ) : (
-          items.map((it) => (
-            <View key={it.id} style={{ gap: 8 }}>
-              <View style={styles.row}>
-                <Text style={styles.title} numberOfLines={1}>
-                  {it.title}
-                </Text>
-                <Text style={styles.pct}>{Math.round(it.progress_pct)}%</Text>
-              </View>
-              <ProgressBar valuePct={Number(it.progress_pct ?? 0)} />
-            </View>
-          ))
+          <View style={{ gap: 18 }}>
+            {items.map((it) => {
+              const pct = Math.round(Number(it.progress_pct ?? 0));
+
+              // Fallbacks so this works even before backend adds labels
+
+              return (
+                <View key={it.id} style={{ gap: 10 }}>
+                  <View style={styles.rowTop}>
+                    <View style={{ flex: 1, gap: 4 }}>
+                      <Text
+                        style={[styles.title, { color: t.text }]}
+                        numberOfLines={1}
+                      >
+                        {it.title}
+                      </Text>
+                    </View>
+
+                    {/* Right side: current value + (pct) */}
+                    <View style={styles.rightMeta}>
+                      <Text
+                        style={[styles.pct, { color: "#22c55e" }]}
+                      >{`${pct}%`}</Text>
+                    </View>
+                  </View>
+
+                  <ProgressBar valuePct={Number(it.progress_pct ?? 0)} />
+                </View>
+              );
+            })}
+          </View>
         )}
       </View>
     </BaseCard>
@@ -33,29 +81,34 @@ export function PlanGoalsCard({ card }: { card: any }) {
 }
 
 const styles = StyleSheet.create({
-  kicker: {
-    fontSize: 12,
-    fontWeight: "900",
-    letterSpacing: 1.2,
-    color: "rgba(255,255,255,0.60)",
-    textTransform: "uppercase",
+  headerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
   },
-  empty: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: "rgba(255,255,255,0.60)",
+  headerTitle: { fontSize: 18, fontWeight: "900", letterSpacing: -0.3 },
+  viewAll: { fontSize: 14, fontWeight: "900" },
+
+  divider: { height: StyleSheet.hairlineWidth, width: "100%", opacity: 0.9 },
+  empty: { fontSize: 13, fontWeight: "700" },
+
+  rowTop: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 12,
   },
-  row: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  title: {
-    flex: 1,
-    fontSize: 14,
-    fontWeight: "900",
-    color: "rgba(255,255,255,0.92)",
-    marginRight: 10,
+
+  title: { fontSize: 16, fontWeight: "900", letterSpacing: -0.2 },
+  target: { fontSize: 12, fontWeight: "700" },
+
+  rightMeta: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    gap: 6,
+    maxWidth: 160,
   },
-  pct: {
-    fontSize: 12,
-    fontWeight: "900",
-    color: "rgba(255,255,255,0.70)",
-  },
+  current: { fontSize: 16, fontWeight: "900" },
+  pct: { fontSize: 14, fontWeight: "900" },
 });

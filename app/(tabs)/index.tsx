@@ -13,9 +13,10 @@ import { useAppTheme } from "../../lib/useAppTheme";
 import { useHomeSummary } from "../features/home/useHomeSummary";
 import { HomeScreen } from "../features/home/HomeScreen";
 import { HomeTransitionModal } from "../features/home/modals/HomeTransitionModal";
+import { supabase } from "../../lib/supabase";
+
 import { BirthdayModal } from "../features/home/modals/BirthdayModal";
 import { ChristmasModal } from "../features/home/modals/ChristmasModal";
-import { supabase } from "../../lib/supabase";
 
 type Celebration = "birthday" | "christmas";
 
@@ -24,17 +25,11 @@ export default function HomeTabIndex() {
   const userId = session?.user?.id ?? null;
   const { colors } = useAppTheme();
 
-  const [monthOffset, setMonthOffset] = useState(0);
-
-  const { summary, loading, error, refetch } = useHomeSummary(
-    userId,
-    monthOffset
-  );
+  const { summary, loading, error, refetch } = useHomeSummary(userId);
 
   // =========================
   // Transition modal (server-owned)
   // =========================
-  // transition modal (server-owned)
   const [transitionOpen, setTransitionOpen] = useState(false);
   useEffect(() => {
     if (summary?.transition) setTransitionOpen(true);
@@ -64,8 +59,6 @@ export default function HomeTabIndex() {
   function enqueueCelebration(type: Celebration) {
     setCelebrationQueue((q) => {
       if (q.includes(type)) return q;
-
-      // birthday always before christmas
       const rank: Record<Celebration, number> = { birthday: 0, christmas: 1 };
       return [...q, type].sort((a, b) => rank[a] - rank[b]);
     });
@@ -85,11 +78,9 @@ export default function HomeTabIndex() {
 
   function closeCelebration() {
     setActiveCelebration(null);
-    // small delay so fade animations don't fight
     setTimeout(() => startNextCelebration(), 200);
   }
 
-  // Run seasonal checks on mount + when app comes foreground
   useEffect(() => {
     if (!userId) return;
 
@@ -106,9 +97,7 @@ export default function HomeTabIndex() {
           setBirthdayAge(typeof data.age === "number" ? data.age : null);
           enqueueCelebration("birthday");
         }
-      } catch {
-        // ignore
-      }
+      } catch {}
     }
 
     async function checkChristmas() {
@@ -121,9 +110,7 @@ export default function HomeTabIndex() {
           setChristmasName(typeof data.name === "string" ? data.name : null);
           enqueueCelebration("christmas");
         }
-      } catch {
-        // ignore
-      }
+      } catch {}
     }
 
     checkBirthday();
@@ -142,7 +129,6 @@ export default function HomeTabIndex() {
     };
   }, [userId]);
 
-  // Start the queue when possible (never on top of transition modal)
   useEffect(() => {
     if (!transitionOpen && !activeCelebration && celebrationQueue.length > 0) {
       startNextCelebration();
@@ -154,7 +140,10 @@ export default function HomeTabIndex() {
   // =========================
   if (!userId) {
     return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
+      <SafeAreaView
+        edges={["top"]}
+        style={{ flex: 1, backgroundColor: colors.background }}
+      >
         <View style={{ padding: 16 }}>
           <Text style={{ color: colors.text, fontWeight: "800" }}>
             Please log in.
@@ -166,7 +155,10 @@ export default function HomeTabIndex() {
 
   if (loading || !summary) {
     return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
+      <SafeAreaView
+        edges={["top"]}
+        style={{ flex: 1, backgroundColor: colors.background }}
+      >
         <View
           style={{ flex: 1, justifyContent: "center", alignItems: "center" }}
         >
@@ -188,32 +180,41 @@ export default function HomeTabIndex() {
     );
   }
 
-  // =========================
-  // Render
-  // =========================
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
+    <SafeAreaView
+      edges={["top"]}
+      style={{ flex: 1, backgroundColor: colors.background }}
+    >
+      {/* Transition modal */}
       <HomeTransitionModal
         visible={transitionOpen}
         transition={summary.transition}
         onClose={async () => {
           await consumeTransition();
           setTransitionOpen(false);
-          refetch(); // refresh summary after consuming
+          refetch();
         }}
         colors={colors}
       />
 
-      <HomeScreen
-        summary={summary}
-        userId={userId}
-        monthOffset={monthOffset}
-        onChangeMonthOffset={(next) => {
-          // clamp 0..2
-          const clamped = Math.max(0, Math.min(2, next));
-          setMonthOffset(clamped);
-        }}
+      {/* Seasonal queue modals */}
+      <BirthdayModal
+        visible={activeCelebration === "birthday"}
+        name={birthdayName}
+        age={birthdayAge}
+        onClose={closeCelebration}
+        colors={colors}
       />
+
+      <ChristmasModal
+        visible={activeCelebration === "christmas"}
+        name={christmasName}
+        onClose={closeCelebration}
+        colors={colors}
+      />
+
+      {/* Home */}
+      <HomeScreen summary={summary} userId={userId} />
     </SafeAreaView>
   );
 }
