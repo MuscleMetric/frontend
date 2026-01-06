@@ -1,4 +1,4 @@
-# MuscleMetric — Mobile Frontend
+# MuscleMetric — Mobile 
 
 MuscleMetric is a full-stack fitness tracking application focused on **structured workout logging**, **training consistency**, and **long-term performance analysis**.  
 This repository contains the **mobile frontend**, built with **Expo + React Native (TypeScript)**.

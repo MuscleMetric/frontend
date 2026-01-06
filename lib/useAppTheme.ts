@@ -18,6 +18,7 @@ type AppThemeColors = {
   warnText: string;
   danger: string;
   surface: string;
+  primarySoft?: string;
 };
 type AppTheme = { colors: AppThemeColors; dark: boolean };
 

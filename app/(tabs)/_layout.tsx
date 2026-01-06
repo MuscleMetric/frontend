@@ -29,7 +29,6 @@ function CustomHeader({ title }: { title: string }) {
 
 export default function TabsLayout() {
   const { colors } = useAppTheme();
-  const styles = useMemo(() => makeStyles(colors), [colors]);
   const { profile } = useAuth(); // 👈 must include role
 
   const isAdmin = profile?.role === "admin";
