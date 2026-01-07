@@ -18,7 +18,7 @@ export function HomeBackground() {
           width: 320,
           height: 320,
           borderRadius: 320,
-          backgroundColor: t.isDark ? "rgba(59,130,246,0.22)" : "rgba(59,130,246,0.12)",
+          backgroundColor: "rgba(59,130,246,0.12)",
         }}
       />
       {/* secondary glow */}
@@ -30,7 +30,7 @@ export function HomeBackground() {
           width: 360,
           height: 360,
           borderRadius: 360,
-          backgroundColor: t.isDark ? "rgba(34,197,94,0.14)" : "rgba(34,197,94,0.08)",
+          backgroundColor: "rgba(34,197,94,0.08)",
         }}
       />
     </View>

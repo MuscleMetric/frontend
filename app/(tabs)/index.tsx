@@ -182,7 +182,7 @@ export default function HomeTabIndex() {
 
   return (
     <SafeAreaView
-      edges={["top"]}
+      edges={["left", "right"]}
       style={{ flex: 1, backgroundColor: colors.background }}
     >
       {/* Transition modal */}

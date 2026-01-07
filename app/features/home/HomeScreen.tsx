@@ -4,6 +4,7 @@ import { FlatList, View } from "react-native";
 import { QuoteHeader } from "./ui/QuoteHeader";
 import { HomeCardRenderer } from "./HomeCardRenderer";
 import { quoteOfTheDay } from "../../../lib/quotes";
+import type { Quote } from "../../../lib/quotes";
 
 type RowItem =
   | { kind: "single"; card: any }
@@ -28,11 +29,17 @@ function groupHomeCards(cards: any[]): RowItem[] {
   return out;
 }
 
-export function HomeScreen({ summary, userId }: { summary: any; userId: string }) {
+export function HomeScreen({
+  summary,
+  userId,
+}: {
+  summary: any;
+  userId: string;
+}) {
   const cards = summary?.cards ?? [];
   const rows = useMemo(() => groupHomeCards(cards), [cards]);
 
-  const dailyQuote = useMemo(() => {
+  const dailyQuote: Quote = useMemo(() => {
     const todayKey = new Date().toISOString().slice(0, 10);
     return quoteOfTheDay(`${userId}|${todayKey}`);
   }, [userId]);
@@ -47,7 +54,7 @@ export function HomeScreen({ summary, userId }: { summary: any; userId: string }
       }
       showsVerticalScrollIndicator={false}
       contentContainerStyle={{
-        paddingTop: 8,
+        paddingTop: 0,
         paddingBottom: 22,
       }}
       ListHeaderComponent={

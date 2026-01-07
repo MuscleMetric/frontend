@@ -2,14 +2,13 @@
 import React from "react";
 import { View, Text } from "react-native";
 import { useAppTheme } from "../../../../lib/useAppTheme";
+import type { Quote } from "../../../../lib/quotes";
 
-export function QuoteHeader({ quote }: { quote: string }) {
+export function QuoteHeader({ quote }: { quote: Quote }) {
   const { colors } = useAppTheme();
 
-  const raw = String(quote ?? "").trim();
-  const parts = raw.split("—");
-  const q = (parts[0] ?? "").trim();
-  const author = parts.length > 1 ? parts.slice(1).join("—").trim() : "";
+  const q = String(quote?.text ?? "").trim();
+  const author = String(quote?.author ?? "").trim();
 
   return (
     <View style={{ paddingTop: 10, paddingBottom: 6 }}>
@@ -33,6 +32,7 @@ export function QuoteHeader({ quote }: { quote: string }) {
             marginTop: 8,
             color: colors.subtle,
             fontWeight: "800",
+            paddingLeft: "6%",
           }}
           numberOfLines={1}
         >

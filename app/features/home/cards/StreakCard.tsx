@@ -11,7 +11,6 @@ import { useAppTheme } from "../../../../lib/useAppTheme";
 import { BaseCard } from "../ui/BaseCard";
 import { Pill } from "../ui/Pill";
 import { homeTokens } from "../ui/homeTheme";
-import { supabase } from "../../../../lib/supabase";
 
 type DayItem = { day: string; trained: boolean; workout_count?: number };
 
@@ -95,18 +94,29 @@ export function StreakCard({ card }: { card: any }) {
 
   const weeklyStreak = Number(card?.weekly_streak ?? 0);
 
-  // Card-local month state (0=this month, 1=last month, 2=two months ago)
-  const [monthOffset, setMonthOffset] = useState<number>(
-    Number(card?.month_offset ?? 0)
-  );
-  const [monthStartStr, setMonthStartStr] = useState<string>(
-    String(card?.month_start ?? "")
-  );
-  const [days, setDays] = useState<DayItem[]>(() =>
-    normalizeDays(card?.trained_days_month)
+  /**
+   * ✅ IMPORTANT CHANGE:
+   * We now use the home summary payload:
+   * card.months = [{ month_start: 'YYYY-MM-01', days: [{day,trained,workout_count}] }]
+   * This fixes "not showing markers on first load".
+   */
+  const monthsPayload = useMemo(
+    () => (Array.isArray(card?.months) ? card.months : []),
+    [card?.months]
   );
 
-  const [monthLoading, setMonthLoading] = useState(false);
+  // Card-local month state (0=this month, 1=last month, 2=two months ago)
+  const [monthOffset, setMonthOffset] = useState<number>(0);
+
+  const [monthStartStr, setMonthStartStr] = useState<string>(() => {
+    const m0 = monthsPayload[0];
+    return typeof m0?.month_start === "string" ? m0.month_start : "";
+  });
+
+  const [days, setDays] = useState<DayItem[]>(() => {
+    const m0 = monthsPayload[0];
+    return normalizeDays(m0?.days);
+  });
 
   // selection + workouts list for selected day
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
@@ -114,15 +124,21 @@ export function StreakCard({ card }: { card: any }) {
   const [dayLoading, setDayLoading] = useState(false);
   const [dayError, setDayError] = useState<string | null>(null);
 
-  // If the home payload changes (initial load), seed local state once
+  /**
+   * ✅ When home payload arrives/changes OR monthOffset changes,
+   * hydrate monthStartStr + days from monthsPayload.
+   */
   useEffect(() => {
-    const nextOffset = Number(card?.month_offset ?? 0);
-    const nextStart = String(card?.month_start ?? "");
-
-    setDays(normalizeDays(card?.trained_days_month));
-    setMonthOffset(nextOffset);
-    setMonthStartStr(nextStart);
-  }, [card?.month_offset, card?.month_start, card?.trained_days_month]);
+    const m = monthsPayload[monthOffset];
+    if (!m) {
+      // fallback if payload not present
+      setMonthStartStr("");
+      setDays([]);
+      return;
+    }
+    setMonthStartStr(String(m.month_start ?? ""));
+    setDays(normalizeDays(m.days));
+  }, [monthsPayload, monthOffset]);
 
   // When month changes, clear selection/workouts (prevents bleed)
   useEffect(() => {
@@ -132,27 +148,8 @@ export function StreakCard({ card }: { card: any }) {
     setDayError(null);
   }, [monthOffset, monthStartStr]);
 
-  const fetchMonth = useCallback(async (nextOffset: number) => {
-    setMonthLoading(true);
-    try {
-      const { data, error } = await supabase.rpc("get_streak_month", {
-        p_month_offset: nextOffset,
-      });
-      if (error) throw error;
-
-      setMonthOffset(Number(data?.month_offset ?? nextOffset));
-      setMonthStartStr(String(data?.month_start ?? ""));
-      setDays(normalizeDays(data?.trained_days_month));
-    } catch {
-      // if it fails, don't change the view
-    } finally {
-      setMonthLoading(false);
-    }
-  }, []);
-
   const monthStart = useMemo(() => {
-    // IMPORTANT: if month_start is empty, fall back to actual current month start,
-    // not "today" (fixes weekday misalignment).
+    // if month_start is empty, fall back to actual current month start
     if (!monthStartStr) {
       const now = new Date();
       return new Date(now.getFullYear(), now.getMonth(), 1);
@@ -224,30 +221,40 @@ export function StreakCard({ card }: { card: any }) {
   const selectedBorder = "rgba(15, 23, 42, 0.95)"; // slate/navy
   const selectedBg = "rgba(15, 23, 42, 0.10)";
 
-  const fetchWorkoutsForDay = useCallback(async (dayKey: string) => {
-    setDayLoading(true);
-    setDayError(null);
-    try {
-      const { data, error } = await supabase.rpc("get_workouts_on_day", {
-        p_day: dayKey,
-      });
-      if (error) throw error;
+  const fetchWorkoutsForDay = useCallback(
+    async (dayKey: string) => {
+      setDayLoading(true);
+      setDayError(null);
+      try {
+        // We keep the same RPC you already use.
+        // If you renamed it, update here.
+        const { data, error } = await (
+          await import("../../../../lib/supabase")
+        ).supabase.rpc("get_workouts_on_day", {
+          p_day: dayKey,
+        });
 
-      setDayWorkouts(Array.isArray(data) ? data : []);
-    } catch (e: any) {
-      setDayWorkouts([]);
-      setDayError(e?.message ?? "Failed to load workouts");
-    } finally {
-      setDayLoading(false);
-    }
-  }, []);
+        if (error) throw error;
+        setDayWorkouts(Array.isArray(data) ? data : []);
+      } catch (e: any) {
+        setDayWorkouts([]);
+        setDayError(e?.message ?? "Failed to load workouts");
+      } finally {
+        setDayLoading(false);
+      }
+    },
+    []
+  );
 
   const onSelectDay = useCallback(
     (dayKey: string) => {
+      // ✅ Disable future days selection (safety net)
+      if (dayKey > todayKey) return;
+
       setSelectedKey(dayKey);
       fetchWorkoutsForDay(dayKey);
     },
-    [fetchWorkoutsForDay]
+    [fetchWorkoutsForDay, todayKey]
   );
 
   const selectedTitle = useMemo(() => {
@@ -260,8 +267,9 @@ export function StreakCard({ card }: { card: any }) {
     });
   }, [selectedKey]);
 
-  const canGoPrev = monthOffset < 2;
-  const canGoNext = monthOffset > 0;
+  // ✅ Month nav now uses monthsPayload length (no RPC month fetching)
+  const canGoPrev = monthOffset < monthsPayload.length - 1; // older
+  const canGoNext = monthOffset > 0; // newer
 
   return (
     <BaseCard>
@@ -283,39 +291,35 @@ export function StreakCard({ card }: { card: any }) {
 
           <View style={{ flexDirection: "row", gap: 10 }}>
             <Pressable
-              onPress={() => fetchMonth(monthOffset + 1)}
-              disabled={!canGoPrev || monthLoading}
+              onPress={() => setMonthOffset((x) => x + 1)}
+              disabled={!canGoPrev}
               style={({ pressed }) => [
                 styles.navPill,
                 {
                   backgroundColor: t.pill.neutral.bg,
                   borderColor: t.pill.neutral.bd,
-                  opacity: canGoPrev && !monthLoading ? 1 : 0.4,
+                  opacity: canGoPrev ? 1 : 0.4,
                 },
-                pressed ? { opacity: 0.75 } : null,
+                pressed && canGoPrev ? { opacity: 0.75 } : null,
               ]}
             >
-              <Text style={[styles.navText, { color: t.text }]}>
-                {monthLoading ? "…" : "Prev"}
-              </Text>
+              <Text style={[styles.navText, { color: t.text }]}>Prev</Text>
             </Pressable>
 
             <Pressable
-              onPress={() => fetchMonth(monthOffset - 1)}
-              disabled={!canGoNext || monthLoading}
+              onPress={() => setMonthOffset((x) => x - 1)}
+              disabled={!canGoNext}
               style={({ pressed }) => [
                 styles.navPill,
                 {
                   backgroundColor: t.pill.neutral.bg,
                   borderColor: t.pill.neutral.bd,
-                  opacity: canGoNext && !monthLoading ? 1 : 0.4,
+                  opacity: canGoNext ? 1 : 0.4,
                 },
-                pressed ? { opacity: 0.75 } : null,
+                pressed && canGoNext ? { opacity: 0.75 } : null,
               ]}
             >
-              <Text style={[styles.navText, { color: t.text }]}>
-                {monthLoading ? "…" : "Next"}
-              </Text>
+              <Text style={[styles.navText, { color: t.text }]}>Next</Text>
             </Pressable>
           </View>
         </View>
@@ -348,25 +352,40 @@ export function StreakCard({ card }: { card: any }) {
                 const isSelected = selectedKey === c.key;
                 const trained = c.trained;
 
-                const borderColor = isSelected
+                // ✅ Future day logic (YYYY-MM-DD string compare is safe)
+                const isFuture = c.key > todayKey;
+
+                const borderColor = isFuture
+                  ? t.trackBorder
+                  : isSelected
                   ? selectedBorder
                   : trained
                   ? ringOnBorder
                   : ringOffBorder;
-                const bgColor = isSelected
+
+                const bgColor = isFuture
+                  ? "transparent"
+                  : isSelected
                   ? selectedBg
                   : trained
                   ? ringOnBg
                   : "transparent";
-                const textColor = isSelected ? selectedBorder : t.text;
+
+                const textColor = isFuture
+                  ? t.subtle
+                  : isSelected
+                  ? selectedBorder
+                  : t.text;
 
                 return (
                   <Pressable
                     key={c.key}
                     onPress={() => onSelectDay(c.key)}
+                    disabled={isFuture}
                     style={({ pressed }) => [
                       styles.cell,
-                      pressed ? { opacity: 0.85 } : null,
+                      isFuture ? { opacity: 0.35 } : null,
+                      pressed && !isFuture ? { opacity: 0.85 } : null,
                     ]}
                     hitSlop={8}
                   >
@@ -521,7 +540,7 @@ const styles = StyleSheet.create({
     width: CELL,
     height: CELL,
     borderRadius: 999,
-    borderWidth: 2, // thinner ring = cleaner
+    borderWidth: 2,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -530,7 +549,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "900",
     letterSpacing: -0.3,
-    lineHeight: 16, // keeps number visually centered
+    lineHeight: 16,
   },
 
   hintText: { marginTop: 2, fontSize: 12, fontWeight: "700" },

@@ -1,115 +1,132 @@
 // lib/quotes.ts
-export const QUOTES: string[] = [
-  "Small steps, big changes.",
-  "Consistency beats intensity.",
-  "One more rep, one more win.",
-  "Strong today, stronger tomorrow.",
-  "Your future self is watching.",
-  "Discipline builds freedom.",
-  "Make sweat your signature.",
-  "Effort compounds like interest.",
-  "Show up before you level up.",
-  "Progress loves patience.",
-  "Motion beats perfection.",
-  "Your pace, your race.",
-  "Win the next 60 seconds.",
-  "Stack good days.",
-  "Strength is a daily choice.",
-  "You don’t find time—you make it.",
-  "Be the reason you believe.",
-  "Reps write the story.",
-  "Hard is the point.",
-  "Start where you stand.",
-  "Goals need groceries and sleep.",
-  "Lift the weight, lose the doubt.",
-  "One habit at a time.",
-  "Quality reps over ego reps.",
-  "The bar tells the truth.",
-  "Sweat is the receipt.",
-  "Tiny PRs still count.",
-  "Build engines, not excuses.",
-  "Chase strong, not tired.",
-  "Earn your endorphins.",
-  "The grind is a gift.",
-  "One session changes the week.",
-  "Volume builds resilience.",
-  "Rest is part of the program.",
-  "Practice being proud later.",
-  "Outwork yesterday’s you.",
-  "You are what you repeat.",
-  "Grit over mood.",
-  "Be where your feet are.",
-  "Recover like you train.",
-  "Strength starts in the mind.",
-  "Fail forward, then reload.",
-  "Routine makes results.",
-  "Add weight to your standards.",
-  "You can do hard things.",
-  "Don’t wait to feel ready.",
-  "Respect the warm-up.",
-  "Form first, PRs second.",
-  "Sweat the process, not the scale.",
-  "Train today so tomorrow is easier.",
-  "Show up especially on average days.",
-  "Keep promises to yourself.",
-  "Strong is a side effect of consistent.",
-  "Be the person who doesn’t quit.",
-  "Micro wins, macro change.",
-  "Your reps are votes for your identity.",
-  "Confidence is built under the bar.",
-  "Write the plan, lift the plan.",
-  "Keep the main thing the main thing.",
-  "Energy follows action.",
-  "Move well before you move more.",
-  "Stack reps, not reasons.",
-  "Patience is progressive overload.",
-  "Sore is a souvenir, not a strategy.",
-  "You’re one choice from momentum.",
-  "Outlast your excuses.",
-  "Better every set.",
-  "No zero days.",
-  "Respect rest days.",
-  "Lift for the life you want.",
-  "Train your weaknesses kindly.",
-  "Hard doesn’t mean hurried.",
-  "Eat like your goals matter.",
-  "A missed day isn’t a lost week.",
-  "Tidy reps, tidy mind.",
-  "Capacity grows quietly.",
-  "Sweat clears the static.",
-  "Strength is self-trust practiced.",
-  "Load the bar with intention.",
-  "Plan the work, enjoy the work.",
-  "Your habits are your coach.",
-  "Fuel the output you expect.",
-  "Progress is a direction, not a dot.",
-  "Effort ages well.",
-  "Meet yourself at the rack.",
-  "Less drama, more data.",
-  "Make hard things normal.",
-  "Keep your reps honest.",
-  "Breathe, brace, believe.",
-  "Lift like you mean it.",
-  "The clock is not your critic.",
-  "Warm-ups are investments.",
-  "Show up messy if needed.",
-  "Tiny hinges swing big doors.",
-  "Slow is smooth; smooth is strong.",
-  "The body becomes what you ask of it.",
-  "Worry less, carry more.",
-  "Your ceiling is consistency.",
-  "Earn your tomorrow today.",
-  "Uncomfortable is where you grow.",
-  "Recovery is where gains cash in.",
-  "Be stubborn about the plan.",
-  "Make the gym your promise kept.",
-  "Your standard sets your strength.",
-  "Start now; adjust later."
+export type Quote = {
+  text: string;
+  author: string;
+};
+
+export const QUOTES: Quote[] = [
+  {
+    text: "It is never too late to be what you might have been.",
+    author: "George Eliot",
+  },
+  { text: "To live is the rarest thing in the world.", author: "Oscar Wilde" },
+  {
+    text: "Pain is inevitable. Suffering is optional.",
+    author: "Haruki Murakami",
+  },
+  {
+    text: "Whatever the mind of man can conceive and believe, it can achieve.",
+    author: "Napoleon Hill",
+  },
+  {
+    text: "Go confidently in the direction of your dreams. Live the life you have imagined.",
+    author: "Henry David Thoreau",
+  },
+  {
+    text: "Shoot for the moon. Even if you miss, you'll land among the stars.",
+    author: "Les Brown",
+  },
+  {
+    text: "If you obey all the rules, you miss all the fun.",
+    author: "Katharine Hepburn",
+  },
+  {
+    text: "Don’t say you don’t have enough time. You have exactly the same number of hours per day as everyone else.",
+    author: "H. Jackson Brown Jr.",
+  },
+  {
+    text: "Be yourself; everyone else is already taken.",
+    author: "Oscar Wilde",
+  },
+  {
+    text: "The future starts today, not tomorrow.",
+    author: "Pope John Paul II",
+  },
+  {
+    text: "You don’t have to be great to start, but you have to start to be great.",
+    author: "Zig Ziglar",
+  },
+  {
+    text: "If you want to build a ship, don’t drum up people to gather wood. Teach them to yearn for the sea.",
+    author: "Antoine de Saint-Exupéry",
+  },
+  {
+    text: "The only way to do great work is to love what you do.",
+    author: "Steve Jobs",
+  },
+  {
+    text: "All that we are is the result of what we have thought.",
+    author: "Buddha",
+  },
+  {
+    text: "Everything is theoretically impossible, until it is done.",
+    author: "Robert A. Heinlein",
+  },
+  {
+    text: "Be the change that you wish to see in the world.",
+    author: "Mahatma Gandhi",
+  },
+  {
+    text: "Success usually comes to those who are too busy to be looking for it.",
+    author: "Henry David Thoreau",
+  },
+  {
+    text: "Don’t watch the clock; do what it does. Keep going.",
+    author: "Sam Levenson",
+  },
+  {
+    text: "What you get by achieving your goals is not as important as what you become by achieving your goals.",
+    author: "Zig Ziglar",
+  },
+  {
+    text: "Believe you can and you’re halfway there.",
+    author: "Theodore Roosevelt",
+  },
+  {
+    text: "It does not matter how slowly you go as long as you do not stop.",
+    author: "Confucius",
+  },
+  {
+    text: "Our greatest glory is not in never falling, but in rising every time we fall.",
+    author: "Confucius",
+  },
+  {
+    text: "You miss 100% of the shots you don’t take.",
+    author: "Wayne Gretzky",
+  },
+  {
+    text: "Start where you are. Use what you have. Do what you can.",
+    author: "Arthur Ashe",
+  },
+  {
+    text: "To be yourself in a world that is constantly trying to make you something else is the greatest accomplishment.",
+    author: "Ralph Waldo Emerson",
+  },
+  {
+    text: "Success is walking from failure to failure with no loss of enthusiasm.",
+    author: "Winston Churchill",
+  },
+  {
+    text: "Do the best you can until you know better. Then when you know better, do better.",
+    author: "Maya Angelou",
+  },
+  {
+    text: "There is nothing noble in being superior to your fellow man; true nobility is being superior to your former self.",
+    author: "Ernest Hemingway",
+  },
+  { text: "Stay afraid, but do it anyway.", author: "Carrie Fisher" },
+  {
+    text: "If there is no struggle, there is no progress.",
+    author: "Frederick Douglass",
+  },
+  {
+    text: "Genius is one percent inspiration and ninety-nine percent perspiration.",
+    author: "Thomas Edison",
+  },
 ];
 
 // Deterministic “quote of the day” using a seed (e.g., userId + YYYY-MM-DD)
-export function quoteOfTheDay(seed: string): string {
-  // Simple hash
+export function quoteOfTheDay(seed: string): Quote {
   let h = 2166136261;
   for (let i = 0; i < seed.length; i++) {
     h ^= seed.charCodeAt(i);

@@ -6,7 +6,7 @@ export function performCTA(cta: any) {
 
   switch (cta.action) {
     case "open_workouts_tab":
-      router.push("/(tabs)/workouts");
+      router.push("/(tabs)/workout");
       return;
 
     case "start_plan_workout":
@@ -17,11 +17,11 @@ export function performCTA(cta: any) {
       return;
 
     case "discover_plans":
-      router.push("/features/plans/discover"); // adjust to your path
+      router.push("/features/plans/create/planInfo"); // adjust to your path
       return;
 
     case "quick_log_workout":
-      router.push("/(tabs)/workouts"); // or your "start workout" entry
+      router.push("/(tabs)/workout"); // or your "start workout" entry
       return;
 
     case "set_goal":
@@ -29,7 +29,7 @@ export function performCTA(cta: any) {
       return;
 
     case "view_history":
-      router.push("/features/history"); // adjust
+      router.push("/features/workouts/history"); // adjust
       return;
   }
 }
