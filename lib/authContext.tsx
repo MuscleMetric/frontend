@@ -19,6 +19,9 @@ export type Profile = {
   id: string;
   name: string | null;
   email: string | null;
+  onboarding_step: number;
+  onboarding_completed_at: string | null;
+  onboarding_dismissed_at: string | null;
   role: UserRole | null;
 };
 
@@ -48,17 +51,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const { data, error } = await supabase
       .from("profiles")
-      .select("id, name, email, role")
+      .select(
+        "id, name, email, role, onboarding_step, onboarding_completed_at, onboarding_dismissed_at"
+      )
       .eq("id", userId)
       .single();
-
     if (reqId !== profileReqId.current) return;
 
     if (error) {
       setProfile(null);
       return;
     }
-    setProfile(data as Profile);
+
+    const safe: Profile = {
+      id: data.id,
+      name: data.name ?? null,
+      email: data.email ?? null,
+      role: (data.role as UserRole) ?? null,
+      onboarding_step: Number(data.onboarding_step ?? 0),
+      onboarding_completed_at: data.onboarding_completed_at ?? null,
+      onboarding_dismissed_at: data.onboarding_dismissed_at ?? null,
+    };
+    setProfile(safe);
   }, []);
 
   const trySync = useCallback(async () => {

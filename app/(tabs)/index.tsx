@@ -1,5 +1,5 @@
 // app/(tabs)/index.tsx
-import React, { useState, useEffect } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
   ActivityIndicator,
@@ -13,6 +13,7 @@ import { useAppTheme } from "../../lib/useAppTheme";
 import { useHomeSummary } from "../features/home/useHomeSummary";
 import { HomeScreen } from "../features/home/HomeScreen";
 import { HomeTransitionModal } from "../features/home/modals/HomeTransitionModal";
+import { OnboardingWizard } from "../features/onboarding/OnboardingWizard";
 import { supabase } from "../../lib/supabase";
 
 import { BirthdayModal } from "../features/home/modals/BirthdayModal";
@@ -21,11 +22,25 @@ import { ChristmasModal } from "../features/home/modals/ChristmasModal";
 type Celebration = "birthday" | "christmas";
 
 export default function HomeTabIndex() {
-  const { session } = useAuth();
+  const { session, profile } = useAuth();
   const userId = session?.user?.id ?? null;
   const { colors } = useAppTheme();
 
   const { summary, loading, error, refetch } = useHomeSummary(userId);
+
+  // ✅ local guard so once they finish, they’re not forced again on this session
+  const [onboardingDoneLocal, setOnboardingDoneLocal] = useState(false);
+
+  // ✅ reset local flag when user changes
+  useEffect(() => {
+    setOnboardingDoneLocal(false);
+  }, [userId]);
+
+  const shouldShowOnboarding = useMemo(() => {
+    if (!profile) return false;
+    if (onboardingDoneLocal) return false;
+    return !profile.onboarding_completed_at;
+  }, [profile, onboardingDoneLocal]);
 
   // =========================
   // Transition modal (server-owned)
@@ -185,7 +200,6 @@ export default function HomeTabIndex() {
       edges={["left", "right"]}
       style={{ flex: 1, backgroundColor: colors.background }}
     >
-      {/* Transition modal */}
       <HomeTransitionModal
         visible={transitionOpen}
         transition={summary.transition}
@@ -197,7 +211,6 @@ export default function HomeTabIndex() {
         colors={colors}
       />
 
-      {/* Seasonal queue modals */}
       <BirthdayModal
         visible={activeCelebration === "birthday"}
         name={birthdayName}
@@ -213,8 +226,18 @@ export default function HomeTabIndex() {
         colors={colors}
       />
 
-      {/* Home */}
       <HomeScreen summary={summary} userId={userId} />
+
+      <OnboardingWizard
+        visible={shouldShowOnboarding}
+        onFinished={() => {
+          // ✅ stop showing immediately
+          setOnboardingDoneLocal(true);
+
+          // optional: refresh home cards/variant after onboarding
+          refetch();
+        }}
+      />
     </SafeAreaView>
   );
 }

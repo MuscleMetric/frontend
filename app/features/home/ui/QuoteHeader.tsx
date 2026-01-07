@@ -21,7 +21,7 @@ export function QuoteHeader({ quote }: { quote: Quote }) {
           lineHeight: 34,
           paddingLeft: "6%",
         }}
-        numberOfLines={3}
+        numberOfLines={5}
       >
         {q ? (q.startsWith("“") ? q : `“${q}”`) : "“Ready to train?”"}
       </Text>
