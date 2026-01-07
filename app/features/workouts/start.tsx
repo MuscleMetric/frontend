@@ -290,6 +290,15 @@ function alphaLabel(n: number) {
   return s;
 }
 
+function densifySnapshots<T>(
+  arr: Array<T | undefined> | undefined,
+  minLen: number
+): Array<T | null> {
+  const a = Array.isArray(arr) ? arr : [];
+  const len = Math.max(minLen, a.length);
+  return Array.from({ length: len }, (_, i) => a[i] ?? null);
+}
+
 function buildSupersets(workout: Workout): SupersetInfo {
   const byGroupTmp: Record<string, { id: string; pos: number }[]> = {};
   const groupOrder: string[] = []; // first-seen order across workout
@@ -1082,29 +1091,31 @@ export default function StartWorkoutScreen() {
         const byWeId: Record<string, ExerciseState> = {};
 
         for (const we of w.workout_exercises) {
-          const histSets = planFlag
-            ? lastSetMap[we.id] ?? []
-            : lastSetsByExerciseId[we.exercise_id] ?? [];
+          const targetLen = Math.max(1, we.target_sets ?? 1);
+
+          const histRaw = planFlag
+            ? lastSetMap[we.id]
+            : lastSetsByExerciseId[we.exercise_id];
+
+          const histSets = densifySnapshots<LastSetSnapshot>(
+            histRaw as any,
+            targetLen
+          );
 
           if (isCardio(we)) {
             const sets: CardioSet[] =
               histSets.length > 0
                 ? histSets.map((h) => ({
                     distance:
-                      h.distance != null && !Number.isNaN(h.distance)
+                      h?.distance != null && !Number.isNaN(h.distance)
                         ? String(h.distance)
                         : "",
                     timeSec:
-                      h.timeSec != null && !Number.isNaN(h.timeSec)
+                      h?.timeSec != null && !Number.isNaN(h.timeSec)
                         ? String(h.timeSec)
                         : "",
                   }))
-                : [
-                    {
-                      distance: "",
-                      timeSec: "",
-                    },
-                  ];
+                : [{ distance: "", timeSec: "" }];
 
             byWeId[we.id] = {
               kind: "cardio",
@@ -1118,32 +1129,27 @@ export default function StartWorkoutScreen() {
             let sets: StrengthSet[];
 
             if (histSets.length > 0) {
-              // Prefill one StrengthSet per historical set
               sets = histSets.map((h) => ({
                 reps:
-                  h.reps != null && !Number.isNaN(h.reps) ? String(h.reps) : "",
+                  h?.reps != null && !Number.isNaN(h.reps)
+                    ? String(h.reps)
+                    : "",
                 weight:
-                  h.weight != null && !Number.isNaN(h.weight)
+                  h?.weight != null && !Number.isNaN(h.weight)
                     ? String(h.weight)
                     : "",
-                drops: [], // can't infer drops from aggregate history
+                drops: [],
               }));
             } else {
-              // Fallback to target_sets / default
               sets =
                 we.target_sets && we.target_sets > 0
-                  ? Array.from(
-                      { length: we.target_sets },
-                      () =>
-                        ({
-                          reps: "",
-                          weight: "",
-                          drops: [],
-                        } as StrengthSet)
-                    )
-                  : [{ reps: "", weight: "", drops: [] } as StrengthSet];
+                  ? Array.from({ length: we.target_sets }, () => ({
+                      reps: "",
+                      weight: "",
+                      drops: [],
+                    }))
+                  : [{ reps: "", weight: "", drops: [] }];
             }
-
             byWeId[we.id] = {
               kind: "strength",
               sets,
@@ -1976,9 +1982,7 @@ export default function StartWorkoutScreen() {
           const subtitle = formatTargetSubtitle(we);
 
           const isLastSet =
-            exState.currentSet >= exState.sets.length - 1 &&
-            exState.sets.length > 0;
-
+            displaySetIdx >= exState.sets.length - 1 && exState.sets.length > 0;
           const shouldShowComplete = isLastSet;
 
           const lastHistorySets = isPlanWorkout
@@ -2314,7 +2318,12 @@ export default function StartWorkoutScreen() {
                       : exState.currentSet;
 
                     if (exState.kind === "strength" && exState.dropMode) {
-                      const set = exState.sets[i] as StrengthSet;
+                      const set = (exState.sets[i] ?? {
+                        reps: "",
+                        weight: "",
+                        drops: [],
+                      }) as StrengthSet;
+
                       const drops = set.drops ?? [];
 
                       return (
@@ -2492,7 +2501,11 @@ export default function StartWorkoutScreen() {
                       );
                     }
 
-                    const set = exState.sets[i];
+                    const set =
+                      exState.sets[i] ??
+                      (exState.kind === "strength"
+                        ? ({ reps: "", weight: "", drops: [] } as StrengthSet)
+                        : ({ distance: "", timeSec: "" } as CardioSet));
 
                     if (exState.kind === "strength") {
                       return (
