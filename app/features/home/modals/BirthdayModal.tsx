@@ -1,5 +1,6 @@
 import React from "react";
 import { Modal, Pressable, View, Text, StyleSheet, Image } from "react-native";
+import { useAppTheme } from "../../../../lib/useAppTheme";
 import { BirthdayConfetti } from "../../../_components/Confetti/BirthdayConfetti";
 
 const logo = require("../../../../assets/icon.png");
@@ -7,19 +8,19 @@ const logo = require("../../../../assets/icon.png");
 export function BirthdayModal({
   visible,
   onClose,
-  colors,
   name,
   age,
 }: {
   visible: boolean;
   onClose: () => void;
-  colors: any;
   name: string | null;
   age: number | null;
 }) {
+  const { colors, typography, layout } = useAppTheme();
+
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable onPress={onClose} style={styles.backdrop}>
+      <Pressable onPress={onClose} style={[styles.backdrop, { backgroundColor: colors.overlay }]}>
         <BirthdayConfetti active={visible} />
 
         <Pressable
@@ -27,33 +28,82 @@ export function BirthdayModal({
           style={[
             styles.sheet,
             {
-              backgroundColor: colors.card,
+              backgroundColor: colors.surface,
               borderColor: colors.border,
+              borderRadius: layout.radius.xl,
             },
           ]}
         >
           <View style={{ alignItems: "center", gap: 16 }}>
-            <Text style={[styles.kicker, { color: colors.muted ?? colors.subtle }]}>
+            <Text
+              style={{
+                fontFamily: typography.fontFamily.medium,
+                fontSize: typography.size.sub,
+                color: colors.textMuted,
+                textAlign: "center",
+              }}
+            >
               To {name || "you"},
             </Text>
 
-            <Text style={[styles.title, { color: colors.text }]}>Happy Birthday 🎉</Text>
+            <Text
+              style={{
+                fontFamily: typography.fontFamily.bold,
+                fontSize: typography.size.h1,
+                lineHeight: typography.lineHeight.h1,
+                color: colors.text,
+                textAlign: "center",
+              }}
+            >
+              Happy Birthday 🎉
+            </Text>
 
-            <Text style={[styles.body, { color: colors.text }]}>
+            <Text
+              style={{
+                fontFamily: typography.fontFamily.medium,
+                fontSize: typography.size.body,
+                lineHeight: typography.lineHeight.body,
+                color: colors.textMuted,
+                textAlign: "center",
+              }}
+            >
               We hope you have the best day and year. We wish you all the best.
             </Text>
 
             {age != null ? (
-              <Text style={[styles.kicker, { color: colors.muted ?? colors.subtle }]}>
+              <Text
+                style={{
+                  fontFamily: typography.fontFamily.medium,
+                  fontSize: typography.size.sub,
+                  color: colors.textMuted,
+                  textAlign: "center",
+                }}
+              >
                 Hope {age} is your strongest year yet.
               </Text>
             ) : null}
 
             <View style={{ alignItems: "center", gap: 6 }}>
-              <Text style={[styles.kicker, { color: colors.muted ?? colors.subtle }]}>
+              <Text
+                style={{
+                  fontFamily: typography.fontFamily.medium,
+                  fontSize: typography.size.sub,
+                  color: colors.textMuted,
+                  textAlign: "center",
+                }}
+              >
                 Best Wishes,
               </Text>
-              <Text style={[styles.sign, { color: colors.text }]}>The MuscleMetric Team</Text>
+              <Text
+                style={{
+                  fontFamily: typography.fontFamily.bold,
+                  fontSize: typography.size.body,
+                  color: colors.text,
+                  textAlign: "center",
+                }}
+              >
+                The MuscleMetric Team
+              </Text>
 
               <Image
                 source={logo}
@@ -64,15 +114,25 @@ export function BirthdayModal({
 
             <Pressable
               onPress={onClose}
-              style={[
+              style={({ pressed }) => [
                 styles.cta,
                 {
-                  backgroundColor: "rgba(59,130,246,0.14)",
-                  borderColor: "rgba(59,130,246,0.25)",
+                  borderRadius: layout.radius.md,
+                  backgroundColor: pressed ? colors.cardPressed : "rgba(37,99,235,0.14)",
+                  borderColor: "rgba(37,99,235,0.25)",
+                  opacity: pressed ? 0.92 : 1,
                 },
               ]}
             >
-              <Text style={[styles.ctaText, { color: colors.primary }]}>Let’s go</Text>
+              <Text
+                style={{
+                  fontFamily: typography.fontFamily.semibold,
+                  fontSize: typography.size.body,
+                  color: colors.primary,
+                }}
+              >
+                Let’s go
+              </Text>
             </Pressable>
           </View>
         </Pressable>
@@ -84,7 +144,6 @@ export function BirthdayModal({
 const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.38)",
     justifyContent: "center",
     alignItems: "center",
     padding: 18,
@@ -92,7 +151,6 @@ const styles = StyleSheet.create({
   sheet: {
     width: "100%",
     maxWidth: 460,
-    borderRadius: 22,
     borderWidth: StyleSheet.hairlineWidth,
     padding: 20,
     shadowColor: "#000",
@@ -101,17 +159,11 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 10 },
     elevation: 10,
   },
-  kicker: { fontWeight: "800", textAlign: "center" },
-  title: { fontSize: 24, fontWeight: "900", textAlign: "center" },
-  body: { fontWeight: "700", lineHeight: 24, textAlign: "center" },
-  sign: { fontWeight: "900", textAlign: "center" },
   cta: {
     alignSelf: "stretch",
     marginTop: 8,
     paddingVertical: 13,
-    borderRadius: 14,
     alignItems: "center",
     borderWidth: StyleSheet.hairlineWidth,
   },
-  ctaText: { fontWeight: "900", fontSize: 16 },
 });

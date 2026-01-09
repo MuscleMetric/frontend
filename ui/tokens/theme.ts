@@ -19,6 +19,9 @@ export type ThemeColors = {
 
   overlay: string;
   cardPressed: string;
+
+  trackBg: string;
+  trackBorder: string;
 };
 
 // Optional: keep palette as const if you want
@@ -57,6 +60,9 @@ export const colors = {
 
     overlay: "rgba(0,0,0,0.45)",
     cardPressed: "rgba(37,99,235,0.08)",
+
+    trackBg: "rgba(15,23,42,0.06)",
+    trackBorder: "rgba(15,23,42,0.10)",
   },
   dark: {
     bg: palette.darkBg,
@@ -72,6 +78,9 @@ export const colors = {
 
     overlay: "rgba(0,0,0,0.55)",
     cardPressed: "rgba(37,99,235,0.18)",
+
+    trackBg: "rgba(255,255,255,0.08)",
+    trackBorder: "rgba(255,255,255,0.14)",
   },
 } satisfies Record<ColorScheme, ThemeColors>;
 

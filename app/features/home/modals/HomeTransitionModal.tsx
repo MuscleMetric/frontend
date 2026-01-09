@@ -1,6 +1,7 @@
 import React, { useMemo } from "react";
 import { Modal, Pressable, View, Text, StyleSheet, Image } from "react-native";
-import { homeTokens } from "../ui/homeTheme";
+import { useAppTheme } from "../../../../lib/useAppTheme";
+import { Button } from "@/ui";
 
 type Transition =
   | {
@@ -16,14 +17,12 @@ export function HomeTransitionModal({
   visible,
   transition,
   onClose,
-  colors,
 }: {
   visible: boolean;
   transition: Transition;
   onClose: () => void;
-  colors: any;
 }) {
-  const t = useMemo(() => homeTokens(colors), [colors]);
+  const { colors, typography, layout } = useAppTheme();
 
   const content = useMemo(() => {
     const type = transition?.type;
@@ -50,7 +49,6 @@ export function HomeTransitionModal({
       };
     }
 
-    // fallback (shouldn't happen if backend is correct)
     return {
       kicker: "Update",
       title: "You’re all set",
@@ -60,64 +58,121 @@ export function HomeTransitionModal({
     };
   }, [transition?.type]);
 
-  const logo = require("../../../../assets/icon.png"); // adjust path if needed
+  const logo = require("../../../../assets/icon.png");
+
+  const ctaVariant =
+    content.tone === "green"
+      ? "secondary"
+      : content.tone === "blue"
+      ? "secondary"
+      : "secondary";
+
+  // subtle tinted container color for CTA
+  const ctaBg =
+    content.tone === "green"
+      ? "rgba(34,197,94,0.14)"
+      : content.tone === "blue"
+      ? "rgba(37,99,235,0.14)"
+      : colors.cardPressed;
+
+  const ctaBorder =
+    content.tone === "green"
+      ? "rgba(34,197,94,0.25)"
+      : content.tone === "blue"
+      ? "rgba(37,99,235,0.25)"
+      : colors.border;
+
+  const ctaText =
+    content.tone === "green"
+      ? colors.success
+      : content.tone === "blue"
+      ? colors.primary
+      : colors.text;
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={styles.backdrop} onPress={onClose}>
+      <Pressable style={[styles.backdrop, { backgroundColor: colors.overlay }]} onPress={onClose}>
         <Pressable
           onPress={() => {}}
           style={[
             styles.sheet,
             {
-              backgroundColor: colors.card ?? colors.surface ?? "#111827",
-              borderColor: colors.border ?? t.cardBorder,
+              backgroundColor: colors.surface,
+              borderColor: colors.border,
+              borderRadius: layout.radius.xl,
             },
           ]}
         >
           <View style={{ alignItems: "center", gap: 14 }}>
-            <Text style={[styles.kicker, { color: colors.subtle ?? t.subtle }]}>
+            <Text
+              style={{
+                fontFamily: typography.fontFamily.bold,
+                letterSpacing: 1.1,
+                textTransform: "uppercase",
+                fontSize: typography.size.meta,
+                color: colors.textMuted,
+              }}
+            >
               {content.kicker}
             </Text>
 
-            <Text style={[styles.title, { color: colors.text ?? t.text }]}>
+            <Text
+              style={{
+                fontFamily: typography.fontFamily.bold,
+                fontSize: typography.size.h1,
+                lineHeight: typography.lineHeight.h1,
+                color: colors.text,
+                textAlign: "center",
+                letterSpacing: -0.4,
+              }}
+            >
               {content.title}
             </Text>
 
-            <Text style={[styles.body, { color: colors.subtle ?? t.subtle }]}>
+            <Text
+              style={{
+                fontFamily: typography.fontFamily.medium,
+                fontSize: typography.size.sub,
+                lineHeight: typography.lineHeight.sub,
+                color: colors.textMuted,
+                textAlign: "center",
+              }}
+            >
               {content.body}
             </Text>
 
             <Image
               source={logo}
-              style={{ width: 46, height: 46, opacity: t.isDark ? 0.95 : 0.9, marginTop: 4 }}
+              style={{ width: 46, height: 46, opacity: 0.95, marginTop: 4 }}
               resizeMode="contain"
             />
 
-            <Pressable
-              onPress={onClose}
-              style={[
-                styles.ctaBtn,
-                content.tone === "green"
-                  ? { backgroundColor: "rgba(34,197,94,0.18)", borderColor: "rgba(34,197,94,0.28)" }
-                  : content.tone === "blue"
-                  ? { backgroundColor: "rgba(59,130,246,0.18)", borderColor: "rgba(59,130,246,0.28)" }
-                  : { backgroundColor: "rgba(255,255,255,0.08)", borderColor: "rgba(255,255,255,0.12)" },
-              ]}
-            >
-              <Text
-                style={[
-                  styles.ctaText,
-                  content.tone === "green"
-                    ? { color: t.pill.green.tx }
-                    : content.tone === "blue"
-                    ? { color: t.pill.blue.tx }
-                    : { color: colors.text ?? t.text },
+            {/* CTA */}
+            <View style={{ alignSelf: "stretch", marginTop: 8 }}>
+              <Pressable
+                onPress={onClose}
+                style={({ pressed }) => [
+                  styles.ctaBtn,
+                  {
+                    borderRadius: layout.radius.md,
+                    backgroundColor: pressed ? colors.cardPressed : ctaBg,
+                    borderColor: ctaBorder,
+                    opacity: pressed ? 0.92 : 1,
+                  },
                 ]}
               >
-                {content.cta}
-              </Text>
-            </Pressable>
+                <Text
+                  style={{
+                    fontFamily: typography.fontFamily.semibold,
+                    fontSize: typography.size.body,
+                    lineHeight: typography.lineHeight.body,
+                    color: ctaText,
+                  }}
+                >
+                  {content.cta}
+                </Text>
+              </Pressable>
+            </View>
           </View>
         </Pressable>
       </Pressable>
@@ -128,7 +183,6 @@ export function HomeTransitionModal({
 const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.40)",
     justifyContent: "center",
     alignItems: "center",
     padding: 18,
@@ -136,7 +190,6 @@ const styles = StyleSheet.create({
   sheet: {
     width: "100%",
     maxWidth: 460,
-    borderRadius: 24,
     borderWidth: StyleSheet.hairlineWidth,
     padding: 20,
 
@@ -146,35 +199,10 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 10 },
     elevation: 10,
   },
-  kicker: {
-    fontWeight: "900",
-    letterSpacing: 1.1,
-    textTransform: "uppercase",
-    fontSize: 12,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: "900",
-    letterSpacing: -0.4,
-    textAlign: "center",
-  },
-  body: {
-    fontSize: 14,
-    fontWeight: "700",
-    lineHeight: 20,
-    textAlign: "center",
-  },
   ctaBtn: {
     alignSelf: "stretch",
-    marginTop: 8,
     paddingVertical: 13,
-    borderRadius: 14,
     alignItems: "center",
     borderWidth: StyleSheet.hairlineWidth,
-  },
-  ctaText: {
-    fontWeight: "900",
-    fontSize: 16,
-    letterSpacing: 0.2,
   },
 });

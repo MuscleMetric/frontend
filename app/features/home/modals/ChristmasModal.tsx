@@ -1,5 +1,6 @@
 import React from "react";
 import { Modal, Pressable, View, Text, StyleSheet, Image } from "react-native";
+import { useAppTheme } from "../../../../lib/useAppTheme";
 import { ChristmasConfetti } from "../../../_components/Confetti/ChristmasConfetti";
 
 const logo = require("../../../../assets/icon.png");
@@ -7,17 +8,17 @@ const logo = require("../../../../assets/icon.png");
 export function ChristmasModal({
   visible,
   onClose,
-  colors,
   name,
 }: {
   visible: boolean;
   onClose: () => void;
-  colors: any;
   name: string | null;
 }) {
+  const { colors, typography, layout } = useAppTheme();
+
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable onPress={onClose} style={styles.backdrop}>
+      <Pressable onPress={onClose} style={[styles.backdrop, { backgroundColor: colors.overlay }]}>
         <ChristmasConfetti active={visible} />
 
         <Pressable
@@ -25,27 +26,69 @@ export function ChristmasModal({
           style={[
             styles.sheet,
             {
-              backgroundColor: colors.card,
+              backgroundColor: colors.surface,
               borderColor: colors.border,
+              borderRadius: layout.radius.xl,
             },
           ]}
         >
           <View style={{ alignItems: "center", gap: 16 }}>
-            <Text style={[styles.kicker, { color: colors.muted ?? colors.subtle }]}>
+            <Text
+              style={{
+                fontFamily: typography.fontFamily.medium,
+                fontSize: typography.size.sub,
+                color: colors.textMuted,
+                textAlign: "center",
+              }}
+            >
               To {name || "you"},
             </Text>
 
-            <Text style={[styles.title, { color: colors.text }]}>Merry Christmas 🎄</Text>
+            <Text
+              style={{
+                fontFamily: typography.fontFamily.bold,
+                fontSize: typography.size.h1,
+                lineHeight: typography.lineHeight.h1,
+                color: colors.text,
+                textAlign: "center",
+              }}
+            >
+              Merry Christmas 🎄
+            </Text>
 
-            <Text style={[styles.body, { color: colors.text }]}>
+            <Text
+              style={{
+                fontFamily: typography.fontFamily.medium,
+                fontSize: typography.size.body,
+                lineHeight: typography.lineHeight.body,
+                color: colors.textMuted,
+                textAlign: "center",
+              }}
+            >
               Wishing you a peaceful day, great food, and a strong finish to the year.
             </Text>
 
             <View style={{ alignItems: "center", gap: 6 }}>
-              <Text style={[styles.kicker, { color: colors.muted ?? colors.subtle }]}>
+              <Text
+                style={{
+                  fontFamily: typography.fontFamily.medium,
+                  fontSize: typography.size.sub,
+                  color: colors.textMuted,
+                  textAlign: "center",
+                }}
+              >
                 Best Wishes,
               </Text>
-              <Text style={[styles.sign, { color: colors.text }]}>The MuscleMetric Team</Text>
+              <Text
+                style={{
+                  fontFamily: typography.fontFamily.bold,
+                  fontSize: typography.size.body,
+                  color: colors.text,
+                  textAlign: "center",
+                }}
+              >
+                The MuscleMetric Team
+              </Text>
 
               <Image
                 source={logo}
@@ -56,15 +99,25 @@ export function ChristmasModal({
 
             <Pressable
               onPress={onClose}
-              style={[
+              style={({ pressed }) => [
                 styles.cta,
                 {
-                  backgroundColor: "rgba(34,197,94,0.14)",
+                  borderRadius: layout.radius.md,
+                  backgroundColor: pressed ? colors.cardPressed : "rgba(34,197,94,0.14)",
                   borderColor: "rgba(34,197,94,0.25)",
+                  opacity: pressed ? 0.92 : 1,
                 },
               ]}
             >
-              <Text style={[styles.ctaText, { color: "#16a34a" }]}>Let’s go</Text>
+              <Text
+                style={{
+                  fontFamily: typography.fontFamily.semibold,
+                  fontSize: typography.size.body,
+                  color: colors.success,
+                }}
+              >
+                Let’s go
+              </Text>
             </Pressable>
           </View>
         </Pressable>
@@ -76,7 +129,6 @@ export function ChristmasModal({
 const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.38)",
     justifyContent: "center",
     alignItems: "center",
     padding: 18,
@@ -84,7 +136,6 @@ const styles = StyleSheet.create({
   sheet: {
     width: "100%",
     maxWidth: 460,
-    borderRadius: 22,
     borderWidth: StyleSheet.hairlineWidth,
     padding: 20,
     shadowColor: "#000",
@@ -93,17 +144,11 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 10 },
     elevation: 10,
   },
-  kicker: { fontWeight: "800", textAlign: "center" },
-  title: { fontSize: 24, fontWeight: "900", textAlign: "center" },
-  body: { fontWeight: "700", lineHeight: 24, textAlign: "center" },
-  sign: { fontWeight: "900", textAlign: "center" },
   cta: {
     alignSelf: "stretch",
     marginTop: 8,
     paddingVertical: 13,
-    borderRadius: 14,
     alignItems: "center",
     borderWidth: StyleSheet.hairlineWidth,
   },
-  ctaText: { fontWeight: "900", fontSize: 16 },
 });

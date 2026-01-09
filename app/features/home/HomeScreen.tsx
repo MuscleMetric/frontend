@@ -1,6 +1,7 @@
 // app/features/home/HomeScreen.tsx
-import React, { useMemo } from "react";
-import { FlatList, View } from "react-native";
+import React, { useMemo, useCallback } from "react";
+import { FlatList, View, StyleSheet, ListRenderItem } from "react-native";
+import { useAppTheme } from "../../../lib/useAppTheme";
 import { QuoteHeader } from "./ui/QuoteHeader";
 import { HomeCardRenderer } from "./HomeCardRenderer";
 import { quoteOfTheDay } from "../../../lib/quotes";
@@ -17,6 +18,7 @@ function groupHomeCards(cards: any[]): RowItem[] {
     const cur = cards[i];
     const next = cards[i + 1];
 
+    // Pair rule(s): keep this area explicit + easy to extend
     if (cur?.type === "weekly_goal" && next?.type === "latest_pr") {
       out.push({ kind: "pair", left: cur, right: next });
       i++;
@@ -36,6 +38,8 @@ export function HomeScreen({
   summary: any;
   userId: string;
 }) {
+  const { layout } = useAppTheme();
+
   const cards = summary?.cards ?? [];
   const rows = useMemo(() => groupHomeCards(cards), [cards]);
 
@@ -43,6 +47,32 @@ export function HomeScreen({
     const todayKey = new Date().toISOString().slice(0, 10);
     return quoteOfTheDay(`${userId}|${todayKey}`);
   }, [userId]);
+
+  const styles = useMemo(() => makeStyles(layout), [layout]);
+
+  const renderItem = useCallback<ListRenderItem<RowItem>>(
+    ({ item }) => {
+      if (item.kind === "pair") {
+        return (
+          <View style={styles.rowPairWrap}>
+            <View style={styles.flex1}>
+              <HomeCardRenderer card={item.left} summary={summary} />
+            </View>
+            <View style={styles.flex1}>
+              <HomeCardRenderer card={item.right} summary={summary} />
+            </View>
+          </View>
+        );
+      }
+
+      return (
+        <View style={styles.rowSingleWrap}>
+          <HomeCardRenderer card={item.card} summary={summary} />
+        </View>
+      );
+    },
+    [styles, summary]
+  );
 
   return (
     <FlatList
@@ -53,45 +83,39 @@ export function HomeScreen({
           : `single:${row.card?.type}:${idx}`
       }
       showsVerticalScrollIndicator={false}
-      contentContainerStyle={{
-        paddingTop: 0,
-        paddingBottom: 22,
-      }}
+      contentContainerStyle={styles.listContent}
       ListHeaderComponent={
-        <View style={{ paddingHorizontal: 16, marginBottom: 6 }}>
+        <View style={styles.headerWrap}>
           <QuoteHeader quote={dailyQuote} />
         </View>
       }
-      renderItem={({ item }) => {
-        if (item.kind === "pair") {
-          return (
-            <View
-              style={{
-                flexDirection: "row",
-                gap: 14,
-                paddingHorizontal: 16,
-                marginBottom: 14,
-              }}
-            >
-              <View style={{ flex: 1 }}>
-                <HomeCardRenderer card={item.left} summary={summary} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <HomeCardRenderer card={item.right} summary={summary} />
-              </View>
-            </View>
-          );
-        }
-
-        return (
-          <View style={{ paddingHorizontal: 16, marginBottom: 14 }}>
-            <HomeCardRenderer card={item.card} summary={summary} />
-          </View>
-        );
-      }}
+      renderItem={renderItem}
       removeClippedSubviews
       initialNumToRender={6}
       windowSize={8}
     />
   );
 }
+
+const makeStyles = (layout: any) =>
+  StyleSheet.create({
+    listContent: {
+      paddingTop: 0,
+      paddingBottom: layout.space.xl,
+    },
+    headerWrap: {
+      paddingHorizontal: layout.space.lg,
+      marginBottom: layout.space.sm,
+    },
+    rowPairWrap: {
+      flexDirection: "row",
+      gap: layout.space.md,
+      paddingHorizontal: layout.space.lg,
+      marginBottom: layout.space.md,
+    },
+    rowSingleWrap: {
+      paddingHorizontal: layout.space.lg,
+      marginBottom: layout.space.md,
+    },
+    flex1: { flex: 1 },
+  });

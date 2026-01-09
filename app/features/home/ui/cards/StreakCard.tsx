@@ -7,16 +7,13 @@ import {
   Pressable,
   ActivityIndicator,
 } from "react-native";
-import { useAppTheme } from "../../../../lib/useAppTheme";
-import { BaseCard } from "../ui/BaseCard";
-import { Pill } from "../ui/Pill";
-import { homeTokens } from "../ui/homeTheme";
+import { useAppTheme } from "../../../../../lib/useAppTheme";
+import { Card, Pill } from "@/ui";
 
 type DayItem = { day: string; trained: boolean; workout_count?: number };
 
 function dayKeyFromAny(v: any): string {
   if (!v) return "";
-  // handles "YYYY-MM-DD" and "YYYY-MM-DDTHH:mm:ss..."
   return String(v).slice(0, 10);
 }
 
@@ -25,11 +22,8 @@ function normalizeDays(raw: any): DayItem[] {
   return raw
     .map((it) => ({
       day: dayKeyFromAny(it?.day),
-      trained: Boolean(
-        it?.trained === true || it?.trained === "true" || it?.trained === 1
-      ),
-      workout_count:
-        it?.workout_count == null ? undefined : Number(it.workout_count),
+      trained: Boolean(it?.trained === true || it?.trained === "true" || it?.trained === 1),
+      workout_count: it?.workout_count == null ? undefined : Number(it.workout_count),
     }))
     .filter((it) => !!it.day);
 }
@@ -44,7 +38,7 @@ type DayWorkout = {
   volume_kg?: number | null;
 };
 
-const WEEKDAYS = ["M", "T", "W", "T", "F", "S", "S"];
+const WEEKDAYS = ["M", "T", "W", "Th", "F", "Sa", "Su"];
 
 function ymd(d: Date) {
   const y = d.getFullYear();
@@ -76,10 +70,7 @@ function fmtDuration(seconds?: number | null) {
 function fmtTime(iso?: string | null) {
   if (!iso) return "";
   const d = new Date(iso);
-  return d.toLocaleTimeString(undefined, {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
 }
 
 function fmtVolume(v?: number | null) {
@@ -88,24 +79,17 @@ function fmtVolume(v?: number | null) {
   return `${n.toLocaleString()} kg`;
 }
 
-export function StreakCard({ card }: { card: any }) {
-  const { colors } = useAppTheme();
-  const t = useMemo(() => homeTokens(colors), [colors]);
+export function StreakCard({ card, summary }: { card: any; summary?: any }) {
+  const { colors, typography, layout } = useAppTheme();
+  const styles = useMemo(() => makeStyles(colors, typography, layout), [colors, typography, layout]);
 
   const weeklyStreak = Number(card?.weekly_streak ?? 0);
 
-  /**
-   * ✅ IMPORTANT CHANGE:
-   * We now use the home summary payload:
-   * card.months = [{ month_start: 'YYYY-MM-01', days: [{day,trained,workout_count}] }]
-   * This fixes "not showing markers on first load".
-   */
   const monthsPayload = useMemo(
     () => (Array.isArray(card?.months) ? card.months : []),
     [card?.months]
   );
 
-  // Card-local month state (0=this month, 1=last month, 2=two months ago)
   const [monthOffset, setMonthOffset] = useState<number>(0);
 
   const [monthStartStr, setMonthStartStr] = useState<string>(() => {
@@ -118,20 +102,14 @@ export function StreakCard({ card }: { card: any }) {
     return normalizeDays(m0?.days);
   });
 
-  // selection + workouts list for selected day
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [dayWorkouts, setDayWorkouts] = useState<DayWorkout[]>([]);
   const [dayLoading, setDayLoading] = useState(false);
   const [dayError, setDayError] = useState<string | null>(null);
 
-  /**
-   * ✅ When home payload arrives/changes OR monthOffset changes,
-   * hydrate monthStartStr + days from monthsPayload.
-   */
   useEffect(() => {
     const m = monthsPayload[monthOffset];
     if (!m) {
-      // fallback if payload not present
       setMonthStartStr("");
       setDays([]);
       return;
@@ -140,7 +118,6 @@ export function StreakCard({ card }: { card: any }) {
     setDays(normalizeDays(m.days));
   }, [monthsPayload, monthOffset]);
 
-  // When month changes, clear selection/workouts (prevents bleed)
   useEffect(() => {
     setSelectedKey(null);
     setDayWorkouts([]);
@@ -149,7 +126,6 @@ export function StreakCard({ card }: { card: any }) {
   }, [monthOffset, monthStartStr]);
 
   const monthStart = useMemo(() => {
-    // if month_start is empty, fall back to actual current month start
     if (!monthStartStr) {
       const now = new Date();
       return new Date(now.getFullYear(), now.getMonth(), 1);
@@ -175,26 +151,17 @@ export function StreakCard({ card }: { card: any }) {
   }, [monthStart]);
 
   const leadingEmpty = useMemo(() => {
-    // Monday-first: 0..6 where 0 = Monday
     const jsDay = monthStart.getDay(); // 0 Sun..6 Sat
-    return (jsDay + 6) % 7;
+    return (jsDay + 6) % 7; // Monday-first
   }, [monthStart]);
 
   const todayKey = useMemo(() => ymd(new Date()), []);
 
   const weeks = useMemo(() => {
-    const cells: Array<{
-      key: string;
-      dayNum: number | null;
-      trained: boolean;
-    }> = [];
+    const cells: Array<{ key: string; dayNum: number | null; trained: boolean }> = [];
 
     for (let i = 0; i < leadingEmpty; i++) {
-      cells.push({
-        key: `empty-${monthStartStr || "fallback"}-${i}`,
-        dayNum: null,
-        trained: false,
-      });
+      cells.push({ key: `empty-${monthStartStr || "fallback"}-${i}`, dayNum: null, trained: false });
     }
 
     for (let d = 1; d <= daysInMonth; d++) {
@@ -204,53 +171,41 @@ export function StreakCard({ card }: { card: any }) {
     }
 
     while (cells.length % 7 !== 0) {
-      cells.push({
-        key: `tail-${monthStartStr || "fallback"}-${cells.length}`,
-        dayNum: null,
-        trained: false,
-      });
+      cells.push({ key: `tail-${monthStartStr || "fallback"}-${cells.length}`, dayNum: null, trained: false });
     }
 
     return chunk(cells, 7);
   }, [leadingEmpty, daysInMonth, monthStart, monthStartStr, trainedSet]);
 
-  const ringOnBg = t.primarySoft;
-  const ringOnBorder = "rgba(14,165,233,0.35)";
-  const ringOffBorder = t.trackBorder;
+  // Selection styling: semantic + mode-safe
+  const ringOnBg = "rgba(37,99,235,0.14)";
+  const ringOnBorder = "rgba(37,99,235,0.35)";
+  const ringOffBorder = colors.trackBorder;
 
-  const selectedBorder = "rgba(15, 23, 42, 0.95)"; // slate/navy
-  const selectedBg = "rgba(15, 23, 42, 0.10)";
+  const selectedBorder = colors.text; // strong contrast in both modes
+  const selectedBg = colors.cardPressed;
 
-  const fetchWorkoutsForDay = useCallback(
-    async (dayKey: string) => {
-      setDayLoading(true);
-      setDayError(null);
-      try {
-        // We keep the same RPC you already use.
-        // If you renamed it, update here.
-        const { data, error } = await (
-          await import("../../../../lib/supabase")
-        ).supabase.rpc("get_workouts_on_day", {
-          p_day: dayKey,
-        });
+  const fetchWorkoutsForDay = useCallback(async (dayKey: string) => {
+    setDayLoading(true);
+    setDayError(null);
+    try {
+      const { data, error } = await (
+        await import("../../../../../lib/supabase")
+      ).supabase.rpc("get_workouts_on_day", { p_day: dayKey });
 
-        if (error) throw error;
-        setDayWorkouts(Array.isArray(data) ? data : []);
-      } catch (e: any) {
-        setDayWorkouts([]);
-        setDayError(e?.message ?? "Failed to load workouts");
-      } finally {
-        setDayLoading(false);
-      }
-    },
-    []
-  );
+      if (error) throw error;
+      setDayWorkouts(Array.isArray(data) ? data : []);
+    } catch (e: any) {
+      setDayWorkouts([]);
+      setDayError(e?.message ?? "Failed to load workouts");
+    } finally {
+      setDayLoading(false);
+    }
+  }, []);
 
   const onSelectDay = useCallback(
     (dayKey: string) => {
-      // ✅ Disable future days selection (safety net)
-      if (dayKey > todayKey) return;
-
+      if (dayKey > todayKey) return; // future days disabled
       setSelectedKey(dayKey);
       fetchWorkoutsForDay(dayKey);
     },
@@ -267,43 +222,40 @@ export function StreakCard({ card }: { card: any }) {
     });
   }, [selectedKey]);
 
-  // ✅ Month nav now uses monthsPayload length (no RPC month fetching)
-  const canGoPrev = monthOffset < monthsPayload.length - 1; // older
-  const canGoNext = monthOffset > 0; // newer
+  const canGoPrev = monthOffset < monthsPayload.length - 1;
+  const canGoNext = monthOffset > 0;
 
   return (
-    <BaseCard>
-      <View style={{ gap: 12 }}>
+    <Card style={styles.card}>
+      <View style={{ gap: layout.space.md }}>
+        {/* Header */}
         <View style={styles.topRow}>
-          <Text style={[styles.sectionTitle, { color: t.text }]}>
-            Consistency
-          </Text>
+          <Text style={styles.sectionTitle}>Consistency</Text>
           <Pill
             label={`${weeklyStreak} week streak`}
-            tone={weeklyStreak > 0 ? "green" : "neutral"}
+            tone={weeklyStreak > 0 ? "success" : "neutral"}
           />
         </View>
 
+        {/* Month header */}
         <View style={styles.monthHeaderRow}>
-          <Text style={[styles.monthTitle, { color: t.text }]}>
-            {monthTitle}
-          </Text>
+          <Text style={styles.monthTitle}>{monthTitle}</Text>
 
-          <View style={{ flexDirection: "row", gap: 10 }}>
+          <View style={{ flexDirection: "row", gap: layout.space.sm }}>
             <Pressable
               onPress={() => setMonthOffset((x) => x + 1)}
               disabled={!canGoPrev}
               style={({ pressed }) => [
                 styles.navPill,
                 {
-                  backgroundColor: t.pill.neutral.bg,
-                  borderColor: t.pill.neutral.bd,
+                  backgroundColor: colors.trackBg,
+                  borderColor: colors.trackBorder,
                   opacity: canGoPrev ? 1 : 0.4,
                 },
                 pressed && canGoPrev ? { opacity: 0.75 } : null,
               ]}
             >
-              <Text style={[styles.navText, { color: t.text }]}>Prev</Text>
+              <Text style={styles.navText}>Prev</Text>
             </Pressable>
 
             <Pressable
@@ -312,25 +264,26 @@ export function StreakCard({ card }: { card: any }) {
               style={({ pressed }) => [
                 styles.navPill,
                 {
-                  backgroundColor: t.pill.neutral.bg,
-                  borderColor: t.pill.neutral.bd,
+                  backgroundColor: colors.trackBg,
+                  borderColor: colors.trackBorder,
                   opacity: canGoNext ? 1 : 0.4,
                 },
                 pressed && canGoNext ? { opacity: 0.75 } : null,
               ]}
             >
-              <Text style={[styles.navText, { color: t.text }]}>Next</Text>
+              <Text style={styles.navText}>Next</Text>
             </Pressable>
           </View>
         </View>
 
+        {/* Week labels */}
         <View style={styles.weekRow}>
           {WEEKDAYS.map((d, idx) => (
             <Text
               key={`${d}-${idx}`}
               style={[
                 styles.weekLabel,
-                { color: t.subtle },
+                { color: colors.textMuted },
                 idx >= 5 ? { opacity: 0.65 } : null,
               ]}
             >
@@ -339,24 +292,22 @@ export function StreakCard({ card }: { card: any }) {
           ))}
         </View>
 
-        <View style={[styles.divider, { backgroundColor: t.trackBorder }]} />
+        <View style={[styles.divider, { backgroundColor: colors.trackBorder }]} />
 
-        <View style={{ gap: 8 }}>
+        {/* Calendar */}
+        <View style={{ gap: layout.space.sm }}>
           {weeks.map((week, wIdx) => (
             <View key={`week-${wIdx}`} style={styles.weekGridRow}>
               {week.map((c) => {
-                if (c.dayNum == null)
-                  return <View key={c.key} style={styles.cell} />;
+                if (c.dayNum == null) return <View key={c.key} style={styles.cell} />;
 
                 const isToday = c.key === todayKey;
                 const isSelected = selectedKey === c.key;
                 const trained = c.trained;
-
-                // ✅ Future day logic (YYYY-MM-DD string compare is safe)
                 const isFuture = c.key > todayKey;
 
                 const borderColor = isFuture
-                  ? t.trackBorder
+                  ? colors.trackBorder
                   : isSelected
                   ? selectedBorder
                   : trained
@@ -371,11 +322,7 @@ export function StreakCard({ card }: { card: any }) {
                   ? ringOnBg
                   : "transparent";
 
-                const textColor = isFuture
-                  ? t.subtle
-                  : isSelected
-                  ? selectedBorder
-                  : t.text;
+                const textColor = isFuture ? colors.textMuted : isSelected ? selectedBorder : colors.text;
 
                 return (
                   <Pressable
@@ -399,9 +346,7 @@ export function StreakCard({ card }: { card: any }) {
                         },
                       ]}
                     >
-                      <Text style={[styles.dayText, { color: textColor }]}>
-                        {c.dayNum}
-                      </Text>
+                      <Text style={[styles.dayText, { color: textColor }]}>{c.dayNum}</Text>
                     </View>
                   </Pressable>
                 );
@@ -410,59 +355,49 @@ export function StreakCard({ card }: { card: any }) {
           ))}
         </View>
 
+        {/* Selected day panel */}
         {selectedKey ? (
-          <View style={[styles.dayPanel, { borderColor: t.trackBorder }]}>
+          <View style={[styles.dayPanel, { borderColor: colors.trackBorder }]}>
             <View style={styles.dayPanelHeader}>
-              <Text style={[styles.dayPanelTitle, { color: t.text }]}>
-                {selectedTitle}
-              </Text>
+              <Text style={styles.dayPanelTitle}>{selectedTitle}</Text>
 
               {dayLoading ? (
                 <ActivityIndicator />
               ) : (
-                <Text style={[styles.dayPanelMeta, { color: t.subtle }]}>
-                  {dayWorkouts.length} workout
-                  {dayWorkouts.length === 1 ? "" : "s"}
+                <Text style={styles.dayPanelMeta}>
+                  {dayWorkouts.length} workout{dayWorkouts.length === 1 ? "" : "s"}
                 </Text>
               )}
             </View>
 
             {dayError ? (
-              <Text style={[styles.errorText, { color: selectedBorder }]}>
-                {dayError}
-              </Text>
+              <Text style={[styles.errorText, { color: colors.danger }]}>{dayError}</Text>
             ) : null}
 
             {!dayLoading && !dayError && dayWorkouts.length === 0 ? (
-              <Text style={[styles.emptyText, { color: t.subtle }]}>
-                No workouts logged on this day.
-              </Text>
+              <Text style={styles.emptyText}>No workouts logged on this day.</Text>
             ) : null}
 
             {!dayLoading && !dayError && dayWorkouts.length > 0 ? (
-              <View style={{ gap: 10 }}>
+              <View style={{ gap: layout.space.sm }}>
                 {dayWorkouts.map((w) => (
                   <View
                     key={w.workout_history_id}
                     style={[
                       styles.workoutRow,
                       {
-                        backgroundColor: t.pill.neutral.bg,
-                        borderColor: t.pill.neutral.bd,
+                        backgroundColor: colors.trackBg,
+                        borderColor: colors.trackBorder,
                       },
                     ]}
                   >
                     <View style={{ flex: 1, gap: 4 }}>
-                      <Text
-                        style={[styles.workoutTitle, { color: t.text }]}
-                        numberOfLines={1}
-                      >
+                      <Text style={styles.workoutTitle} numberOfLines={1}>
                         {w.title ?? "Workout"}
                       </Text>
 
-                      <Text style={[styles.workoutSub, { color: t.subtle }]}>
-                        {fmtTime(w.completed_at)} •{" "}
-                        {fmtDuration(w.duration_seconds)} •{" "}
+                      <Text style={styles.workoutSub}>
+                        {fmtTime(w.completed_at)} • {fmtDuration(w.duration_seconds)} •{" "}
                         {w.sets_completed ?? 0} sets • {fmtVolume(w.volume_kg)}
                       </Text>
                     </View>
@@ -472,112 +407,171 @@ export function StreakCard({ card }: { card: any }) {
             ) : null}
           </View>
         ) : (
-          <Text style={[styles.hintText, { color: t.subtle }]}>
-            Tap a day to see workouts.
-          </Text>
+          <Text style={styles.hintText}>Tap a day to see workouts.</Text>
         )}
       </View>
-    </BaseCard>
+    </Card>
   );
 }
 
 const CELL = 38;
 
-const styles = StyleSheet.create({
-  topRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  sectionTitle: { fontSize: 16, fontWeight: "900", letterSpacing: -0.2 },
+const makeStyles = (colors: any, typography: any, layout: any) =>
+  StyleSheet.create({
+    card: {
+      padding: layout.space.lg,
+      borderRadius: layout.radius.xl,
+    },
 
-  monthHeaderRow: {
-    flexDirection: "row",
-    alignItems: "flex-end",
-    justifyContent: "space-between",
-    gap: 12,
-  },
-  monthTitle: {
-    fontSize: 34,
-    fontWeight: "900",
-    letterSpacing: -1.2,
-    lineHeight: 38,
-  },
+    topRow: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+    },
 
-  navPill: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 999,
-    borderWidth: StyleSheet.hairlineWidth,
-  },
-  navText: { fontSize: 12, fontWeight: "900" },
+    sectionTitle: {
+      fontFamily: typography.fontFamily.bold,
+      fontSize: typography.size.body,
+      color: colors.text,
+      letterSpacing: -0.2,
+    },
 
-  weekRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    paddingHorizontal: 2,
-    marginTop: 2,
-  },
-  weekLabel: {
-    width: CELL,
-    textAlign: "center",
-    fontSize: 14,
-    fontWeight: "900",
-  },
+    monthHeaderRow: {
+      flexDirection: "row",
+      alignItems: "flex-end",
+      justifyContent: "space-between",
+      gap: layout.space.md,
+    },
 
-  divider: {
-    height: StyleSheet.hairlineWidth,
-    width: "100%",
-    marginTop: 6,
-    marginBottom: 6,
-    opacity: 0.9,
-  },
+    monthTitle: {
+      fontFamily: typography.fontFamily.bold,
+      fontSize: typography.size.hero,
+      lineHeight: typography.lineHeight.hero,
+      color: colors.text,
+      letterSpacing: -1.2,
+    },
 
-  weekGridRow: { flexDirection: "row", justifyContent: "space-between" },
-  cell: { width: CELL, alignItems: "center" },
+    navPill: {
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      borderRadius: layout.radius.pill,
+      borderWidth: StyleSheet.hairlineWidth,
+    },
 
-  ring: {
-    width: CELL,
-    height: CELL,
-    borderRadius: 999,
-    borderWidth: 2,
-    alignItems: "center",
-    justifyContent: "center",
-  },
+    navText: {
+      fontFamily: typography.fontFamily.semibold,
+      fontSize: typography.size.meta,
+      color: colors.text,
+    },
 
-  dayText: {
-    fontSize: 15,
-    fontWeight: "900",
-    letterSpacing: -0.3,
-    lineHeight: 16,
-  },
+    weekRow: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      paddingHorizontal: 2,
+      marginTop: 2,
+    },
 
-  hintText: { marginTop: 2, fontSize: 12, fontWeight: "700" },
+    weekLabel: {
+      width: CELL,
+      textAlign: "center",
+      fontFamily: typography.fontFamily.bold,
+      fontSize: typography.size.sub,
+    },
 
-  dayPanel: {
-    marginTop: 6,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    paddingTop: 12,
-    gap: 10,
-  },
-  dayPanelHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 10,
-  },
-  dayPanelTitle: { fontSize: 14, fontWeight: "900", flex: 1 },
-  dayPanelMeta: { fontSize: 12, fontWeight: "800" },
+    divider: {
+      height: StyleSheet.hairlineWidth,
+      width: "100%",
+      marginTop: 6,
+      marginBottom: 6,
+      opacity: 0.9,
+    },
 
-  errorText: { fontSize: 12, fontWeight: "800" },
-  emptyText: { fontSize: 12, fontWeight: "700", paddingVertical: 6 },
+    weekGridRow: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+    },
 
-  workoutRow: {
-    borderRadius: 14,
-    borderWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  workoutTitle: { fontSize: 13, fontWeight: "900", letterSpacing: -0.2 },
-  workoutSub: { fontSize: 12, fontWeight: "700" },
-});
+    cell: { width: CELL, alignItems: "center" },
+
+    ring: {
+      width: CELL,
+      height: CELL,
+      borderRadius: layout.radius.pill,
+      borderWidth: 2,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+
+    dayText: {
+      fontFamily: typography.fontFamily.bold,
+      fontSize: 15,
+      letterSpacing: -0.3,
+      lineHeight: 16,
+    },
+
+    hintText: {
+      marginTop: 2,
+      fontFamily: typography.fontFamily.medium,
+      fontSize: typography.size.sub,
+      color: colors.textMuted,
+    },
+
+    dayPanel: {
+      marginTop: 6,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      paddingTop: 12,
+      gap: 10,
+    },
+
+    dayPanelHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: 10,
+    },
+
+    dayPanelTitle: {
+      fontFamily: typography.fontFamily.bold,
+      fontSize: typography.size.body,
+      color: colors.text,
+      flex: 1,
+    },
+
+    dayPanelMeta: {
+      fontFamily: typography.fontFamily.semibold,
+      fontSize: typography.size.meta,
+      color: colors.textMuted,
+    },
+
+    errorText: {
+      fontFamily: typography.fontFamily.semibold,
+      fontSize: typography.size.meta,
+    },
+
+    emptyText: {
+      fontFamily: typography.fontFamily.medium,
+      fontSize: typography.size.meta,
+      color: colors.textMuted,
+      paddingVertical: 6,
+    },
+
+    workoutRow: {
+      borderRadius: layout.radius.md,
+      borderWidth: StyleSheet.hairlineWidth,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+    },
+
+    workoutTitle: {
+      fontFamily: typography.fontFamily.bold,
+      fontSize: typography.size.sub,
+      color: colors.text,
+      letterSpacing: -0.2,
+    },
+
+    workoutSub: {
+      fontFamily: typography.fontFamily.medium,
+      fontSize: typography.size.meta,
+      color: colors.textMuted,
+    },
+  });

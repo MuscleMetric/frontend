@@ -1,13 +1,6 @@
 // app/(tabs)/index.tsx
 import React, { useMemo, useState, useEffect } from "react";
-import { SafeAreaView } from "react-native-safe-area-context";
-import {
-  ActivityIndicator,
-  View,
-  Text,
-  Pressable,
-  AppState,
-} from "react-native";
+import { AppState, View } from "react-native";
 import { useAuth } from "../../lib/authContext";
 import { useAppTheme } from "../../lib/useAppTheme";
 import { useHomeSummary } from "../features/home/useHomeSummary";
@@ -19,13 +12,15 @@ import { supabase } from "../../lib/supabase";
 import { BirthdayModal } from "../features/home/modals/BirthdayModal";
 import { ChristmasModal } from "../features/home/modals/ChristmasModal";
 
+import { Screen, AuthRequiredState, LoadingScreen, ErrorState } from "@/ui";
+
 type Celebration = "birthday" | "christmas";
 
 export default function HomeTabIndex() {
   const { session, profile } = useAuth();
   const userId = session?.user?.id ?? null;
-  const { colors } = useAppTheme();
 
+  const { colors } = useAppTheme();
   const { summary, loading, error, refetch } = useHomeSummary(userId);
 
   // ✅ local guard so once they finish, they’re not forced again on this session
@@ -46,6 +41,7 @@ export default function HomeTabIndex() {
   // Transition modal (server-owned)
   // =========================
   const [transitionOpen, setTransitionOpen] = useState(false);
+
   useEffect(() => {
     if (summary?.transition) setTransitionOpen(true);
   }, [summary?.transition?.id]);
@@ -151,55 +147,42 @@ export default function HomeTabIndex() {
   }, [celebrationQueue, activeCelebration, transitionOpen]);
 
   // =========================
-  // Guards
+  // Guards (now consistent)
   // =========================
   if (!userId) {
     return (
-      <SafeAreaView
-        edges={["top"]}
-        style={{ flex: 1, backgroundColor: colors.background }}
-      >
-        <View style={{ padding: 16 }}>
-          <Text style={{ color: colors.text, fontWeight: "800" }}>
-            Please log in.
-          </Text>
-        </View>
-      </SafeAreaView>
+      <Screen edges={["top"]}>
+        <AuthRequiredState />
+      </Screen>
     );
   }
 
   if (loading || !summary) {
+    // If we have an error, show error state with retry.
+    if (error) {
+      return (
+        <Screen edges={["top"]}>
+          <View style={{ flex: 1, justifyContent: "center" }}>
+            <ErrorState
+              title="Couldn’t load Home"
+              message={error}
+              onRetry={refetch}
+            />
+          </View>
+        </Screen>
+      );
+    }
+
     return (
-      <SafeAreaView
-        edges={["top"]}
-        style={{ flex: 1, backgroundColor: colors.background }}
-      >
-        <View
-          style={{ flex: 1, justifyContent: "center", alignItems: "center" }}
-        >
-          <ActivityIndicator />
-          {!!error && (
-            <View style={{ marginTop: 12, alignItems: "center" }}>
-              <Text style={{ color: colors.subtle, fontWeight: "700" }}>
-                {error}
-              </Text>
-              <Pressable onPress={refetch} style={{ marginTop: 10 }}>
-                <Text style={{ color: colors.primary, fontWeight: "900" }}>
-                  Retry
-                </Text>
-              </Pressable>
-            </View>
-          )}
-        </View>
-      </SafeAreaView>
+      <Screen edges={["top"]}>
+        <LoadingScreen message="Loading your dashboard…" />
+      </Screen>
     );
   }
 
   return (
-    <SafeAreaView
-      edges={["left", "right"]}
-      style={{ flex: 1, backgroundColor: colors.background }}
-    >
+    <Screen edges={["left", "right"]}>
+
       <HomeTransitionModal
         visible={transitionOpen}
         transition={summary.transition}
@@ -208,7 +191,6 @@ export default function HomeTabIndex() {
           setTransitionOpen(false);
           refetch();
         }}
-        colors={colors}
       />
 
       <BirthdayModal
@@ -216,14 +198,12 @@ export default function HomeTabIndex() {
         name={birthdayName}
         age={birthdayAge}
         onClose={closeCelebration}
-        colors={colors}
       />
 
       <ChristmasModal
         visible={activeCelebration === "christmas"}
         name={christmasName}
         onClose={closeCelebration}
-        colors={colors}
       />
 
       <HomeScreen summary={summary} userId={userId} />
@@ -231,13 +211,10 @@ export default function HomeTabIndex() {
       <OnboardingWizard
         visible={shouldShowOnboarding}
         onFinished={() => {
-          // ✅ stop showing immediately
           setOnboardingDoneLocal(true);
-
-          // optional: refresh home cards/variant after onboarding
           refetch();
         }}
       />
-    </SafeAreaView>
+    </Screen>
   );
 }
