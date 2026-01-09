@@ -17,10 +17,10 @@ import {
 } from "react-native-safe-area-context";
 import { useLocalSearchParams, router } from "expo-router";
 import DraggableFlatList from "react-native-draggable-flatlist";
-import { supabase } from "../../../lib/supabase";
-import { useAuth } from "../../../lib/authContext";
-import { useAppTheme } from "../../../lib/useAppTheme";
-import { ExercisePickerModal } from "../../_components/ExercisePickerModal";
+import { supabase } from "../../../../lib/supabase";
+import { useAuth } from "../../../../lib/authContext";
+import { useAppTheme } from "../../../../lib/useAppTheme";
+import { ExercisePickerModal } from "../../../_components/ExercisePickerModal";
 
 /* ---------- types ---------- */
 

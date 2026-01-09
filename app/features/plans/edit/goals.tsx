@@ -11,7 +11,7 @@ import {
 } from "react-native";
 import { router } from "expo-router";
 import { useEditPlan, type ExerciseRow, type GoalDraft } from "./store";
-import { useAppTheme } from "../../../../lib/useAppTheme";
+import { useAppTheme } from "../../../../../lib/useAppTheme";
 
 /** Helpers for mode <-> unit */
 const MODE_UNIT: Record<GoalDraft["mode"], string> = {

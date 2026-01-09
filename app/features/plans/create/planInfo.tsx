@@ -13,10 +13,10 @@ import {
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { router, useFocusEffect } from "expo-router";
 import { useEffect, useMemo, useState, useCallback } from "react";
-import { supabase } from "../../../../lib/supabase";
+import { supabase } from "../../../../../lib/supabase";
 import { useExercisesCache, CachedExercise } from "./exercisesStore";
 import { usePlanDraft } from "./store";
-import { useAppTheme } from "../../../../lib/useAppTheme";
+import { useAppTheme } from "../../../../../lib/useAppTheme";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 async function fetchAllExercises(): Promise<CachedExercise[]> {

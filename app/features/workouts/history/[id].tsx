@@ -11,8 +11,8 @@ import {
   Alert,
 } from "react-native";
 import { useLocalSearchParams, router } from "expo-router";
-import { useAppTheme } from "../../../../lib/useAppTheme";
-import { supabase } from "../../../../lib/supabase";
+import { useAppTheme } from "../../../../../lib/useAppTheme";
+import { supabase } from "../../../../../lib/supabase";
 
 /* ---------- utils ---------- */
 const n = (x: any): number => (Number.isFinite(Number(x)) ? Number(x) : 0);

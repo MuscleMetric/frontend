@@ -15,17 +15,17 @@ import {
 } from "react-native";
 import { usePlanDraft, type ExerciseRow, type WorkoutExercise } from "./store";
 import { nanoid } from "nanoid/non-secure";
-import { useAppTheme } from "../../../../lib/useAppTheme";
+import { useAppTheme } from "../../../../../lib/useAppTheme";
 import DraggableFlatList, {
   RenderItemParams,
 } from "react-native-draggable-flatlist";
-import { supabase } from "../../../../lib/supabase";
+import { supabase } from "../../../../../lib/supabase";
 import {
   SafeAreaView,
   useSafeAreaInsets,
 } from "react-native-safe-area-context";
-import { ExercisePickerModal } from "../../../_components/ExercisePickerModal";
-import { useAuth } from "../../../../lib/authContext";
+import { ExercisePickerModal } from "../../../../_components/ExercisePickerModal";
+import { useAuth } from "../../../../../lib/authContext";
 
 /* ---------- types ---------- */
 

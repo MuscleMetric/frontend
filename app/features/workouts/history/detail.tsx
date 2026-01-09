@@ -19,8 +19,8 @@ import { useAppTheme } from "../../../../lib/useAppTheme";
 import { ShareWorkoutCard } from "./shareWorkoutCard";
 import { captureRef } from "react-native-view-shot";
 import * as Sharing from "expo-sharing";
-import { getVolumeComparison } from "../../../../utils/animalVolumeComparison";
-import { getDistanceComparison } from "../../../../utils/cardioDistanceComparison";
+import { getVolumeComparison } from "../../../utils/animalVolumeComparison";
+import { getDistanceComparison } from "../../../utils/cardioDistanceComparison";
 
 type WorkoutHistoryRow = {
   id: string;

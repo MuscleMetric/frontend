@@ -14,8 +14,8 @@ import {
 import { useEditPlan, type ExerciseRow } from "./store";
 import { CachedExercise, useExercisesCache } from "../create/exercisesStore";
 import { nanoid } from "nanoid/non-secure";
-import { useAppTheme } from "../../../../lib/useAppTheme";
-import { supabase } from "../../../../lib/supabase";
+import { useAppTheme } from "../../../../../lib/useAppTheme";
+import { supabase } from "../../../../../lib/supabase";
 import DraggableFlatList, {
   RenderItemParams,
 } from "react-native-draggable-flatlist";
@@ -23,8 +23,8 @@ import {
   SafeAreaView,
   useSafeAreaInsets,
 } from "react-native-safe-area-context";
-import { ExercisePickerModal } from "../../../_components/ExercisePickerModal";
-import { useAuth } from "../../../../lib/authContext";
+import { ExercisePickerModal } from "../../../../_components/ExercisePickerModal";
+import { useAuth } from "../../../../../lib/authContext";
 
 /* ---------- muscle + equipment filters (shared) ---------- */
 

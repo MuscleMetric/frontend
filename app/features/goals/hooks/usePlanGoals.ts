@@ -1,6 +1,6 @@
 // app/(features)/goals/hooks/usePlanGoals.ts
 import { useEffect, useMemo, useState } from "react";
-import { supabase } from "../../../../lib/supabase";
+import { supabase } from "../../../../../lib/supabase";
 
 export type Plan = {
   id: string;

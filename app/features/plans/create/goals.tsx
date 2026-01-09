@@ -11,7 +11,7 @@ import {
 } from "react-native";
 import { router } from "expo-router";
 import { usePlanDraft, type ExerciseRow, type GoalDraft } from "./store";
-import { useAppTheme } from "../../../../lib/useAppTheme";
+import { useAppTheme } from "../../../../../lib/useAppTheme";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 /** Helpers for mode <-> unit */

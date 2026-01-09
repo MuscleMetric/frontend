@@ -9,9 +9,9 @@ import {
   Pressable,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useAuth } from "../../../lib/authContext";
-import { supabase } from "../../../lib/supabase";
-import { useAppTheme } from "../../../lib/useAppTheme";
+import { useAuth } from "../../../../lib/authContext";
+import { supabase } from "../../../../lib/supabase";
+import { useAppTheme } from "../../../../lib/useAppTheme";
 // at top with other imports
 import { Share, Platform } from "react-native";
 import * as SMS from "expo-sms";

@@ -1,10 +1,10 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { View, Text, Pressable, StyleSheet, ActivityIndicator, ScrollView } from "react-native";
 import { useRouter } from "expo-router";
-import { supabase } from "../../../../lib/supabase";
-import { useAuth } from "../../../../lib/authContext";
-import { useAppTheme } from "../../../../lib/useAppTheme";
-import { SectionCard } from "../../../_components";
+import { supabase } from "../../../../../lib/supabase";
+import { useAuth } from "../../../../../lib/authContext";
+import { useAppTheme } from "../../../../../lib/useAppTheme";
+import { SectionCard } from "../../../../_components";
 
 type PlanListRow = {
   id: string;

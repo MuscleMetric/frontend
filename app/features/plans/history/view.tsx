@@ -9,10 +9,10 @@ import {
   Animated,
 } from "react-native";
 import { useLocalSearchParams, router } from "expo-router";
-import { supabase } from "../../../../lib/supabase";
-import { useAuth } from "../../../../lib/authContext";
-import { useAppTheme } from "../../../../lib/useAppTheme";
-import { SectionCard } from "../../../_components";
+import { supabase } from "../../../../../lib/supabase";
+import { useAuth } from "../../../../../lib/authContext";
+import { useAppTheme } from "../../../../../lib/useAppTheme";
+import { SectionCard } from "../../../../_components";
 import Svg, { Rect } from "react-native-svg";
 import { SafeAreaView } from "react-native-safe-area-context";
 

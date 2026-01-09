@@ -14,9 +14,9 @@ import {
 } from "react-native";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { supabase } from "../../../../lib/supabase";
-import { useAuth } from "../../../../lib/authContext";
-import { useAppTheme } from "../../../../lib/useAppTheme";
+import { supabase } from "../../../../../lib/supabase";
+import { useAuth } from "../../../../../lib/authContext";
+import { useAppTheme } from "../../../../../lib/useAppTheme";
 import {
   useEditPlan,
   type WorkoutDraft,

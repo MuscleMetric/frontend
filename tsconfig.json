@@ -16,5 +16,5 @@
     "**/*.ts",
     "**/*.tsx",
     "**/*.d.ts"
-, "app/features", "features"  ]
+, "app/utils/features", "features"  ]
 }
