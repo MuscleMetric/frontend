@@ -5,7 +5,11 @@
     "jsx": "react-jsx",
     "noEmit": true,
     "skipLibCheck": true,
-    "typeRoots": ["./types", "./node_modules/@types"]
+    "typeRoots": ["./types", "./node_modules/@types"],
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./*"]
+    }
   },
   "include": [
     "app",
@@ -15,6 +19,8 @@
     "global.d.ts",
     "**/*.ts",
     "**/*.tsx",
-    "**/*.d.ts"
-, "app/utils/features", "features"  ]
+    "**/*.d.ts",
+    "app/utils/features",
+    "features"
+  ]
 }

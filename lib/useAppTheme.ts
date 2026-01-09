@@ -1,25 +1,8 @@
 // lib/useAppTheme.ts
-import { useTheme } from "@react-navigation/native";
+import { useColorScheme } from "react-native";
+import { getTheme, type AppTheme, type ColorScheme } from "@/ui/tokens/theme";
 
-type AppThemeColors = {
-  primary: string;
-  background: string;
-  card: string;
-  text: string;
-  border: string;
-  notification: string;
-  muted: string;
-  subtle: string;
-  primaryBg: string;
-  primaryText: string;
-  successBg: string;
-  successText: string;
-  warnBg: string;
-  warnText: string;
-  danger: string;
-  surface: string;
-  primarySoft?: string;
-};
-type AppTheme = { colors: AppThemeColors; dark: boolean };
-
-export const useAppTheme = () => useTheme() as unknown as AppTheme;
+export function useAppTheme(): AppTheme {
+  const scheme = (useColorScheme() ?? "dark") as ColorScheme;
+  return getTheme(scheme);
+}
