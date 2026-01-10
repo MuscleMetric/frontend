@@ -39,3 +39,6 @@ export { ProgressBar } from "./feedback/ProgressBar";
 // layout
 export { Screen } from "./layout/Screen";
 export type { ScreenProps } from "./layout/Screen";
+
+// media
+export * from "./media/WorkoutCover";
