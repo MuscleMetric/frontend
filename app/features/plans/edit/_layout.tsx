@@ -1,6 +1,6 @@
 import { Stack } from "expo-router";
 import React from "react";
-import { useAppTheme } from "../../../../../lib/useAppTheme";
+import { useAppTheme } from "../../../../lib/useAppTheme";
 
 export default function EditPlanLayout() {
   const { colors } = useAppTheme();

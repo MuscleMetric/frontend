@@ -12,9 +12,9 @@ import {
 } from "react-native";
 import { useLocalSearchParams, router, useFocusEffect } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { supabase } from "../../../../lib/supabase";
-import { useAuth } from "../../../../lib/authContext";
-import { useAppTheme } from "../../../../lib/useAppTheme";
+import { supabase } from "../../../lib/supabase";
+import { useAuth } from "../../../lib/authContext";
+import { useAppTheme } from "../../../lib/useAppTheme";
 
 /* ---------- Types ---------- */
 type Muscle = { name: string | null };

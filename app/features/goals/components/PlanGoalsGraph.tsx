@@ -9,7 +9,7 @@ import {
   VictoryTheme,
   VictoryLabel,
 } from "victory-native";
-import { supabase } from "../../../../../lib/supabase";
+import { supabase } from "../../../../lib/supabase";
 
 export type Plan = {
   id: string;

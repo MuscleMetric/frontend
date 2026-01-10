@@ -11,7 +11,11 @@ export type ScreenHeaderProps = {
   right?: React.ReactNode;
 };
 
-export function ScreenHeader({ title, showBack = true, right }: ScreenHeaderProps) {
+export function ScreenHeader({
+  title,
+  showBack = true,
+  right,
+}: ScreenHeaderProps) {
   const insets = useSafeAreaInsets();
   const { colors, typography, layout } = useAppTheme();
 
@@ -27,22 +31,28 @@ export function ScreenHeader({ title, showBack = true, right }: ScreenHeaderProp
       ]}
     >
       <View style={styles.row}>
-        <View style={{ width: 44 }}>{showBack ? <BackButton /> : null}</View>
+        {showBack ? (
+          <View style={styles.back}>
+            <BackButton />
+          </View>
+        ) : null}
 
         <Text
           numberOfLines={1}
-          style={{
-            flex: 1,
-            fontFamily: typography.fontFamily.semibold,
-            fontSize: typography.size.h2,
-            lineHeight: typography.lineHeight.h2,
-            color: colors.text,
-          }}
+          style={[
+            styles.title,
+            {
+              fontFamily: typography.fontFamily.semibold,
+              fontSize: typography.size.h2,
+              lineHeight: typography.lineHeight.h2,
+              color: colors.text,
+            },
+          ]}
         >
           {title}
         </Text>
 
-        <View style={{ width: 44, alignItems: "flex-end" }}>{right ?? null}</View>
+        {right ? <View style={styles.right}>{right}</View> : null}
       </View>
     </View>
   );
@@ -53,9 +63,21 @@ const styles = StyleSheet.create({
     paddingBottom: 10,
   },
   row: {
-    height: 44,
+    minHeight: 44,
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
+  },
+  back: {
+    width: 36,
+    justifyContent: "center",
+  },
+  title: {
+    flexShrink: 1,
+  },
+  right: {
+    marginLeft: "auto",
+    minWidth: 36,
+    alignItems: "flex-end",
   },
 });

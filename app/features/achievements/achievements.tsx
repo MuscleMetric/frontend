@@ -11,10 +11,10 @@ import {
   Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { supabase } from "../../../../lib/supabase";
-import { useAuth } from "../../../../lib/authContext";
+import { supabase } from "../../../lib/supabase";
+import { useAuth } from "../../../lib/authContext";
 import { router } from "expo-router";
-import { useAppTheme } from "../../../../lib/useAppTheme";
+import { useAppTheme } from "../../../lib/useAppTheme";
 
 type Achievement = {
   id: string;

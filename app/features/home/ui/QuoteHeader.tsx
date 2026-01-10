@@ -16,7 +16,10 @@ export function QuoteHeader({ quote }: { quote: Quote }) {
       : `“${q}”`
     : "“Ready to train?”";
 
-  const styles = useMemo(() => makeStyles(colors, typography, layout), [colors, typography, layout]);
+  const styles = useMemo(
+    () => makeStyles(colors, typography, layout),
+    [colors, typography, layout]
+  );
 
   return (
     <View style={styles.wrap}>
@@ -36,23 +39,25 @@ export function QuoteHeader({ quote }: { quote: Quote }) {
 const makeStyles = (colors: any, typography: any, layout: any) =>
   StyleSheet.create({
     wrap: {
-      paddingTop: layout.space.sm,
-      paddingBottom: layout.space.sm,
+      paddingVertical: layout.space.md,
+      alignItems: "center",
     },
 
-    // Big, but not ridiculous. Premium and readable.
     quote: {
       color: colors.text,
-      fontSize: typography.size.hero, // 36 by your tokens
-      lineHeight: typography.lineHeight.hero, // 44
+      textAlign: "center",
+      fontSize: typography.size.xl,          // ↓ slightly smaller than hero
+      lineHeight: typography.lineHeight.xl,  // tighter than hero
       fontFamily: typography.fontFamily.bold,
-      letterSpacing: -0.6,
+      letterSpacing: -0.4,
     },
 
     author: {
       marginTop: layout.space.sm,
       color: colors.textMuted,
-      fontFamily: typography.fontFamily.semibold,
+      fontFamily: typography.fontFamily.medium,
       fontSize: typography.size.sub,
+      fontStyle: "italic",   // ✅ tasteful here
+      textAlign: "center",
     },
   });

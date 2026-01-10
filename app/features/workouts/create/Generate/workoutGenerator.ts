@@ -21,7 +21,7 @@
 // - More advanced strength logic: balance push/pull/legs, barbell vs machines, etc.
 // - Better fallback UX when filters are too strict (surface a message in the UI).
 
-import { supabase } from "../../../../../../lib/supabase";
+import { supabase } from "../../../../../lib/supabase";
 
 /* ---------- Types shared with the UI ---------- */
 

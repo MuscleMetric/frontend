@@ -11,8 +11,8 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from "react-native";
-import { supabase } from "../../../../lib/supabase";
-import { useAppTheme } from "../../../../lib/useAppTheme";
+import { supabase } from "../../../lib/supabase";
+import { useAppTheme } from "../../../lib/useAppTheme";
 
 export default function QuickUpdateModal({
   visible,

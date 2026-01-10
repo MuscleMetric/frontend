@@ -1,7 +1,7 @@
 import React, { useMemo } from "react";
 import { View, Text, StyleSheet } from "react-native";
 import { useAppTheme } from "../../../../../lib/useAppTheme";
-import { performCTA } from "../../cta";
+import { performCTA } from "../cta";
 import { Card, Button, Pill } from "@/ui";
 
 function fmtDuration(seconds?: number | null) {
@@ -13,9 +13,22 @@ function fmtDuration(seconds?: number | null) {
   return mm === 0 ? `${h}h` : `${h}h ${mm}m`;
 }
 
+/**
+ * Detect weekly completion from the server-provided weekly_goal card.
+ * This keeps the logic consistent with the server’s weekly status calculation.
+ */
+function isWeeklyTargetComplete(summary?: any) {
+  const cards = summary?.cards ?? [];
+  const wg = cards.find((c: any) => c?.type === "weekly_goal");
+  return wg?.status === "complete";
+}
+
 export function HeroCard({ card, summary }: { card: any; summary?: any }) {
   const { colors, typography, layout } = useAppTheme();
-  const styles = useMemo(() => makeStyles(colors, typography, layout), [colors, typography, layout]);
+  const styles = useMemo(
+    () => makeStyles(colors, typography, layout),
+    [colors, typography, layout]
+  );
 
   const badge = card?.badge ? String(card.badge) : null;
   const title = String(card?.title ?? "");
@@ -29,8 +42,10 @@ export function HeroCard({ card, summary }: { card: any; summary?: any }) {
   const planWeek = meta?.plan_week_number ?? meta?.week_number ?? null;
   const weekWorkout = meta?.week_workout_number ?? meta?.workout_number ?? null;
 
-  const exerciseCount = meta?.exercise_count != null ? Number(meta.exercise_count) : null;
-  const avgDuration = meta?.avg_duration_seconds != null ? Number(meta.avg_duration_seconds) : null;
+  const exerciseCount =
+    meta?.exercise_count != null ? Number(meta.exercise_count) : null;
+  const avgDuration =
+    meta?.avg_duration_seconds != null ? Number(meta.avg_duration_seconds) : null;
 
   const statsLine = useMemo(() => {
     const parts: string[] = [];
@@ -40,8 +55,39 @@ export function HeroCard({ card, summary }: { card: any; summary?: any }) {
     return parts.length ? parts.join(" · ") : null;
   }, [avgDuration, exerciseCount]);
 
-  const onPrimary = () => primary?.cta && performCTA(primary.cta);
-  const onSecondary = () => secondary?.cta && performCTA(secondary.cta);
+  /**
+   * ✅ Week complete hero override:
+   * If experienced_plan + weekly_goal.status === "complete",
+   * show a congratulatory hero state with CTA to open Workouts tab
+   * (plans + loose workouts live there).
+   */
+  const weekComplete =
+    summary?.home_variant === "experienced_plan" && isWeeklyTargetComplete(summary);
+
+  const effectiveBadge = weekComplete ? "WEEK COMPLETE" : badge;
+  const effectiveTitle = weekComplete ? "You nailed this week ✅" : title;
+
+  const effectiveSubtitle = weekComplete
+    ? "Weekly target complete. Fancy a bonus session? Your loose workouts are ready."
+    : subtitle;
+
+  const effectivePrimary = weekComplete
+    ? {
+        label: "Log a Bonus Workout",
+        cta: { action: "open_workouts_tab" },
+      }
+    : primary;
+
+  const effectiveSecondary = weekComplete
+    ? {
+        label: "View Workouts",
+        cta: { action: "open_workouts_tab" },
+      }
+    : secondary;
+
+  const onPrimary = () => effectivePrimary?.cta && performCTA(effectivePrimary.cta);
+  const onSecondary = () =>
+    effectiveSecondary?.cta && performCTA(effectiveSecondary.cta);
 
   return (
     <Card variant="pressable" onPress={onPrimary} style={styles.card}>
@@ -50,9 +96,14 @@ export function HeroCard({ card, summary }: { card: any; summary?: any }) {
 
       <View style={{ gap: layout.space.md }}>
         <View style={styles.topRow}>
-          {badge ? <Pill label={badge} tone="primary" /> : <View />}
+          {effectiveBadge ? (
+            <Pill label={effectiveBadge} tone="primary" />
+          ) : (
+            <View />
+          )}
 
-          {(planWeek != null || weekWorkout != null) ? (
+          {/* Hide plan week/workout box when week is complete */}
+          {!weekComplete && (planWeek != null || weekWorkout != null) ? (
             <View style={styles.weekBox}>
               {planWeek != null ? (
                 <Text style={styles.weekText} numberOfLines={1}>
@@ -69,16 +120,17 @@ export function HeroCard({ card, summary }: { card: any; summary?: any }) {
         </View>
 
         <Text style={styles.title} numberOfLines={2}>
-          {title}
+          {effectiveTitle}
         </Text>
 
-        {subtitle ? (
+        {effectiveSubtitle ? (
           <View style={{ gap: layout.space.xs }}>
             <Text style={styles.subtitle} numberOfLines={3}>
-              {subtitle}
+              {effectiveSubtitle}
             </Text>
 
-            {statsLine ? (
+            {/* Hide stats line on week-complete (no “next workout” meta) */}
+            {!weekComplete && statsLine ? (
               <Text style={styles.statsLine} numberOfLines={1}>
                 {statsLine}
               </Text>
@@ -89,17 +141,17 @@ export function HeroCard({ card, summary }: { card: any; summary?: any }) {
         <View style={styles.ctaRow}>
           <View style={{ flex: 1 }}>
             <Button
-              title={String(primary?.label ?? "Continue")}
+              title={String(effectivePrimary?.label ?? "Continue")}
               onPress={onPrimary}
               variant="primary"
               leftIcon={null}
             />
           </View>
 
-          {secondary?.cta ? (
+          {effectiveSecondary?.cta ? (
             <View style={{ width: 130 }}>
               <Button
-                title={String(secondary?.label ?? "Details")}
+                title={String(effectiveSecondary?.label ?? "Details")}
                 onPress={onSecondary}
                 variant="secondary"
                 fullWidth

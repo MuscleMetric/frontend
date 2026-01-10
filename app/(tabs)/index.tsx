@@ -1,10 +1,33 @@
+/**
+ * HomeTabIndex (app/(tabs)/index.tsx)
+ *
+ * Purpose:
+ * - Orchestrator only. No UI decisions for Home variants live here.
+ *
+ * What happens in this file:
+ * 1) Auth + loading/error guards.
+ * 2) Fetch HomeSummary (server-owned state, includes home_variant + transition).
+ * 3) Show transition modal (server-owned, consumed via user_events).
+ * 4) Queue seasonal modals (birthday -> christmas) and ensure they don’t overlap transition.
+ * 5) Render HomeScreen (which selects the correct Home UI variant).
+ * 6) Render OnboardingWizard overlay when onboarding is not completed.
+ *
+ * Where Home variant UI lives:
+ * - app/features/home/HomeScreen.tsx picks a variant using summary.home_variant
+ * - app/features/home/variants/* contains the 3 locked designs:
+ *   - HomeNewUser
+ *   - HomeExperiencedNoPlan
+ *   - HomeExperiencedPlan
+ */
+
+
 // app/(tabs)/index.tsx
 import React, { useMemo, useState, useEffect } from "react";
 import { AppState, View } from "react-native";
 import { useAuth } from "../../lib/authContext";
 import { useAppTheme } from "../../lib/useAppTheme";
 import { useHomeSummary } from "../features/home/useHomeSummary";
-import { HomeScreen } from "../features/home/HomeScreen";
+import { HomeRoot } from "../features/home/HomeRoot";
 import { HomeTransitionModal } from "../features/home/modals/HomeTransitionModal";
 import { OnboardingWizard } from "../features/onboarding/OnboardingWizard";
 import { supabase } from "../../lib/supabase";
@@ -206,15 +229,15 @@ export default function HomeTabIndex() {
         onClose={closeCelebration}
       />
 
-      <HomeScreen summary={summary} userId={userId} />
+      <HomeRoot summary={summary} userId={userId} />
 
-      <OnboardingWizard
+      {/* <OnboardingWizard
         visible={shouldShowOnboarding}
         onFinished={() => {
           setOnboardingDoneLocal(true);
           refetch();
         }}
-      />
+      /> */}
     </Screen>
   );
 }

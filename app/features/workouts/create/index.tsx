@@ -15,10 +15,10 @@ import { useRouter } from "expo-router";
 import DraggableFlatList, {
   RenderItemParams,
 } from "react-native-draggable-flatlist";
-import { supabase } from "../../../../../lib/supabase";
-import { useAuth } from "../../../../../lib/authContext";
-import { useAppTheme } from "../../../../../lib/useAppTheme";
-import { ExercisePickerModal } from "../../../../_components/ExercisePickerModal";
+import { supabase } from "../../../../lib/supabase";
+import { useAuth } from "../../../../lib/authContext";
+import { useAppTheme } from "../../../../lib/useAppTheme";
+import { ExercisePickerModal } from "../../../_components/ExercisePickerModal";
 
 type ExerciseOption = {
   id: string;

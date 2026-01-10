@@ -14,10 +14,10 @@ import {
 } from "react-native";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { supabase } from "../../../../lib/supabase";
-import { useAuth } from "../../../../lib/authContext";
+import { supabase } from "../../../lib/supabase";
+import { useAuth } from "../../../lib/authContext";
 import { router } from "expo-router";
-import { useAppTheme } from "../../../../lib/useAppTheme";
+import { useAppTheme } from "../../../lib/useAppTheme";
 
 /* ---------- helpers ---------- */
 function toISODate(d: Date) {

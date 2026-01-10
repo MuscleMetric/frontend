@@ -1,12 +1,12 @@
 import React from "react";
 import { View } from "react-native";
-import { HomeScreen } from "../../home/HomeScreen";
+import { HomeRoot } from "../../home/HomeRoot";
 import { mockHomeSummary } from "./mockHomeSummary";
 
 export function HomePreview() {
   return (
     <View style={{ paddingTop: 6 }}>
-      <HomeScreen summary={mockHomeSummary} userId={"demo-user"} />
+      <HomeRoot summary={mockHomeSummary} userId={"demo-user"} />
     </View>
   );
 }

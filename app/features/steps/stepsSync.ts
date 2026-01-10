@@ -2,7 +2,7 @@ import { Platform } from "react-native";
 import { Pedometer } from "expo-sensors";
 import * as BackgroundFetch from "expo-background-fetch";
 import * as TaskManager from "expo-task-manager";
-import { supabase } from "../../../../lib/supabase";
+import { supabase } from "../../../lib/supabase";
 
 const TASK_NAME = "steps-background-sync";
 

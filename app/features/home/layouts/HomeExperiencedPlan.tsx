@@ -1,37 +1,33 @@
-// app/features/home/HomeScreen.tsx
 import React, { useMemo, useCallback } from "react";
 import { FlatList, View, StyleSheet, ListRenderItem } from "react-native";
-import { useAppTheme } from "../../../lib/useAppTheme";
-import { QuoteHeader } from "./ui/QuoteHeader";
-import { HomeCardRenderer } from "./HomeCardRenderer";
-import { quoteOfTheDay } from "../../../lib/quotes";
-import type { Quote } from "../../../lib/quotes";
+import { useAppTheme } from "../../../../lib/useAppTheme";
+import { QuoteHeader } from "../ui/QuoteHeader";
+import { HomeCardRenderer } from "../ui/HomeCardRenderer";
+import { quoteOfTheDay } from "../../../../lib/quotes";
+import type { Quote } from "../../../../lib/quotes";
+import { pickCard, excludeTypes } from "./homeLayoutHelpers";
 
 type RowItem =
-  | { kind: "single"; card: any }
-  | { kind: "pair"; left: any; right: any };
+  | { kind: "pair"; left: any; right: any }
+  | { kind: "single"; card: any };
 
-function groupHomeCards(cards: any[]): RowItem[] {
+function toRows(cards: any[]): RowItem[] {
   const out: RowItem[] = [];
-
   for (let i = 0; i < cards.length; i++) {
     const cur = cards[i];
     const next = cards[i + 1];
 
-    // Pair rule(s): keep this area explicit + easy to extend
     if (cur?.type === "weekly_goal" && next?.type === "latest_pr") {
       out.push({ kind: "pair", left: cur, right: next });
       i++;
       continue;
     }
-
     out.push({ kind: "single", card: cur });
   }
-
   return out;
 }
 
-export function HomeScreen({
+export function HomeExperiencedPlan({
   summary,
   userId,
 }: {
@@ -39,16 +35,43 @@ export function HomeScreen({
   userId: string;
 }) {
   const { layout } = useAppTheme();
+  const styles = useMemo(() => makeStyles(layout), [layout]);
 
   const cards = summary?.cards ?? [];
-  const rows = useMemo(() => groupHomeCards(cards), [cards]);
+  const hero = useMemo(() => pickCard(cards, "hero"), [cards]);
 
   const dailyQuote: Quote = useMemo(() => {
     const todayKey = new Date().toISOString().slice(0, 10);
     return quoteOfTheDay(`${userId}|${todayKey}`);
   }, [userId]);
 
-  const styles = useMemo(() => makeStyles(layout), [layout]);
+  const ordered = useMemo(() => {
+    const weekly = pickCard(cards, "weekly_goal");
+    const pr = pickCard(cards, "latest_pr");
+    const volume = pickCard(cards, "volume_trend");
+    const streak = pickCard(cards, "streak");
+    const goals = pickCard(cards, "plan_goals");
+
+    const core: any[] = [];
+    if (weekly) core.push(weekly);
+    if (pr) core.push(pr);
+    if (volume) core.push(volume);
+    if (streak) core.push(streak);
+    if (goals) core.push(goals);
+
+    const leftovers = excludeTypes(cards, [
+      "hero",
+      "weekly_goal",
+      "latest_pr",
+      "volume_trend",
+      "streak",
+      "plan_goals",
+    ]);
+
+    return [...core, ...leftovers];
+  }, [cards]);
+
+  const rows = useMemo(() => toRows(ordered), [ordered]);
 
   const renderItem = useCallback<ListRenderItem<RowItem>>(
     ({ item }) => {
@@ -64,7 +87,6 @@ export function HomeScreen({
           </View>
         );
       }
-
       return (
         <View style={styles.rowSingleWrap}>
           <HomeCardRenderer card={item.card} summary={summary} />
@@ -85,8 +107,16 @@ export function HomeScreen({
       showsVerticalScrollIndicator={false}
       contentContainerStyle={styles.listContent}
       ListHeaderComponent={
-        <View style={styles.headerWrap}>
-          <QuoteHeader quote={dailyQuote} />
+        <View>
+          {/* Primary action first */}
+          <View style={styles.rowSingleWrap}>
+            <HomeCardRenderer card={hero} summary={summary} />
+          </View>
+
+          {/* Quote always below primary */}
+          <View style={styles.quoteWrap}>
+            <QuoteHeader quote={dailyQuote} />
+          </View>
         </View>
       }
       renderItem={renderItem}
@@ -99,13 +129,11 @@ export function HomeScreen({
 
 const makeStyles = (layout: any) =>
   StyleSheet.create({
-    listContent: {
-      paddingTop: 0,
-      paddingBottom: layout.space.xl,
-    },
-    headerWrap: {
+    listContent: { paddingBottom: layout.space.xl },
+    quoteWrap: {
       paddingHorizontal: layout.space.lg,
-      marginBottom: layout.space.sm,
+      marginTop: layout.space.sm,
+      marginBottom: layout.space.lg,
     },
     rowPairWrap: {
       flexDirection: "row",
