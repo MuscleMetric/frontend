@@ -22,11 +22,6 @@ export function HomeRoot({ summary, userId }: Props) {
     case "experienced_no_plan":
       return <HomeExperiencedNoPlan summary={summary} userId={userId} />;
 
-    // You said we’re locking 3 designs for:
-    // new_user, experienced_no_plan, experienced_plan
-    // returning uses its own design rules, but if you want it later:
-    // case "returning": return <HomeReturning summary={summary} userId={userId} />
-
     case "new_user":
     default:
       return <HomeNewUser summary={summary} userId={userId} />;

@@ -5,7 +5,7 @@ import { useAppTheme } from "@/lib/useAppTheme";
 export function ProgressBar({
   valuePct,
   tone = "primary",
-  height = 10,
+  height = 5,
   style,
 }: {
   valuePct: number; // 0..100

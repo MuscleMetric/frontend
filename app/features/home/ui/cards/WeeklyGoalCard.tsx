@@ -88,9 +88,8 @@ export function WeeklyGoalCard({
         <View style={styles.bigRow}>
           <Text style={styles.big}>{value}</Text>
           <Text style={styles.of}>/ {target > 0 ? target : "—"}</Text>
+          <Text style={styles.caption}>Workouts done</Text>
         </View>
-
-        <Text style={styles.caption}>Workouts done</Text>
 
         {/* Progress bar */}
         <View style={styles.track}>
@@ -174,14 +173,14 @@ const makeStyles = (colors: any, typography: any, layout: any) =>
     },
 
     caption: {
-      marginTop: -6,
       fontFamily: typography.fontFamily.semibold,
       fontSize: typography.size.meta,
       color: colors.textMuted,
+      paddingBottom: 8,
     },
 
     track: {
-      height: 10,
+      height: 5,
       borderRadius: layout.radius.pill,
       overflow: "hidden",
       borderWidth: StyleSheet.hairlineWidth,

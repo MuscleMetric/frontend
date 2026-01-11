@@ -17,16 +17,26 @@ function buildPath(points: { x: number; y: number }[]) {
   return `M ${p0.x} ${p0.y} ` + rest.map((p) => `L ${p.x} ${p.y}`).join(" ");
 }
 
-export function VolumeTrendCard({ card, summary }: { card: any; summary?: any }) {
+export function VolumeTrendCard({
+  card,
+  summary,
+}: {
+  card: any;
+  summary?: any;
+}) {
   const { colors, typography, layout } = useAppTheme();
-  const styles = useMemo(() => makeStyles(colors, typography, layout), [colors, typography, layout]);
+  const styles = useMemo(
+    () => makeStyles(colors, typography, layout),
+    [colors, typography, layout]
+  );
 
   const label = String(card?.label ?? "Volume");
   const value = Number(card?.value ?? 0);
   const unit = String(card?.unit ?? "kg");
   const delta = card?.delta_pct == null ? null : Number(card.delta_pct);
 
-  const deltaLabel = delta == null ? "—" : delta >= 0 ? `+${delta}%` : `${delta}%`;
+  const deltaLabel =
+    delta == null ? "—" : delta >= 0 ? `+${delta}%` : `${delta}%`;
 
   // Trend card: avoid "danger" red (feels harsh). Use warning for drops.
   const pillTone = useMemo(() => {
@@ -35,7 +45,9 @@ export function VolumeTrendCard({ card, summary }: { card: any; summary?: any })
     return "warning";
   }, [delta]);
 
-  const spark: SparkPoint[] = Array.isArray(card?.sparkline) ? card.sparkline : [];
+  const spark: SparkPoint[] = Array.isArray(card?.sparkline)
+    ? card.sparkline
+    : [];
 
   const chart = useMemo(() => {
     const W = 164;
@@ -89,9 +101,21 @@ export function VolumeTrendCard({ card, summary }: { card: any; summary?: any })
           {spark.length >= 2 ? (
             <View style={styles.sparkWrap}>
               <Svg width={chart.W} height={chart.H}>
-                <Path d={chart.d} stroke={stroke} strokeWidth={4} fill="none" />
+                <Path
+                  d={chart.d}
+                  stroke={stroke}
+                  strokeWidth={2}
+                  fill="none"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
                 {chart.last ? (
-                  <Circle cx={chart.last.x} cy={chart.last.y} r={6} fill={stroke} />
+                  <Circle
+                    cx={chart.last.x}
+                    cy={chart.last.y}
+                    r={3}
+                    fill={stroke}
+                  />
                 ) : null}
               </Svg>
 

@@ -1,8 +1,9 @@
+// app/features/home/cards/HeroCard.tsx
 import React, { useMemo } from "react";
 import { View, Text, StyleSheet } from "react-native";
 import { useAppTheme } from "../../../../../lib/useAppTheme";
 import { performCTA } from "../cta";
-import { Card, Button, Pill } from "@/ui";
+import { Card, Button, Pill, WorkoutCover } from "@/ui";
 
 function fmtDuration(seconds?: number | null) {
   if (!seconds || seconds <= 0) return null;
@@ -15,7 +16,6 @@ function fmtDuration(seconds?: number | null) {
 
 /**
  * Detect weekly completion from the server-provided weekly_goal card.
- * This keeps the logic consistent with the server’s weekly status calculation.
  */
 function isWeeklyTargetComplete(summary?: any) {
   const cards = summary?.cards ?? [];
@@ -30,22 +30,34 @@ export function HeroCard({ card, summary }: { card: any; summary?: any }) {
     [colors, typography, layout]
   );
 
-  const badge = card?.badge ? String(card.badge) : null;
-  const title = String(card?.title ?? "");
-  const subtitle = card?.subtitle ? String(card.subtitle) : null;
+  /* ---------------------------------------------
+   * Core state detection
+   * ------------------------------------------- */
 
-  const primary = card?.primary_cta;
-  const secondary = card?.secondary_cta;
+  const weekComplete =
+    summary?.home_variant === "experienced_plan" &&
+    isWeeklyTargetComplete(summary);
+
+  const workoutsCount = summary?.workouts_count ?? 0;
+  const hasAnyWorkouts =
+    workoutsCount > 0 || summary?.has_saved_workouts === true;
+
+  const isNewUser = summary?.home_variant === "new_user";
+
+  /* ---------------------------------------------
+   * Workout metadata (for experienced users)
+   * ------------------------------------------- */
 
   const meta = card?.meta ?? {};
-
-  const planWeek = meta?.plan_week_number ?? meta?.week_number ?? null;
-  const weekWorkout = meta?.week_workout_number ?? meta?.workout_number ?? null;
+  const workoutImageKey = meta?.workout_image_key ?? null;
 
   const exerciseCount =
     meta?.exercise_count != null ? Number(meta.exercise_count) : null;
+
   const avgDuration =
-    meta?.avg_duration_seconds != null ? Number(meta.avg_duration_seconds) : null;
+    meta?.avg_duration_seconds != null
+      ? Number(meta.avg_duration_seconds)
+      : null;
 
   const statsLine = useMemo(() => {
     const parts: string[] = [];
@@ -55,106 +67,140 @@ export function HeroCard({ card, summary }: { card: any; summary?: any }) {
     return parts.length ? parts.join(" · ") : null;
   }, [avgDuration, exerciseCount]);
 
-  /**
-   * ✅ Week complete hero override:
-   * If experienced_plan + weekly_goal.status === "complete",
-   * show a congratulatory hero state with CTA to open Workouts tab
-   * (plans + loose workouts live there).
-   */
-  const weekComplete =
-    summary?.home_variant === "experienced_plan" && isWeeklyTargetComplete(summary);
+  /* ---------------------------------------------
+   * HERO COPY + CTA DECISION TREE
+   * ------------------------------------------- */
 
-  const effectiveBadge = weekComplete ? "WEEK COMPLETE" : badge;
-  const effectiveTitle = weekComplete ? "You nailed this week ✅" : title;
+  let heroTitle: string;
+  let heroSubtitle: string | null;
+  let heroPrimary: { label: string; cta: any };
+  let heroSecondary: { label: string; cta: any } | null = null;
+  let heroBadge: string | null = null;
+  let showCover = true;
+  let coverHeight = 170;
 
-  const effectiveSubtitle = weekComplete
-    ? "Weekly target complete. Fancy a bonus session? Your loose workouts are ready."
-    : subtitle;
+  // 🟩 Week complete (celebratory, calm)
+  if (weekComplete) {
+    heroTitle = "You nailed this week";
+    heroSubtitle = "Weekly target complete. Fancy a bonus session?";
+    heroPrimary = {
+      label: "Log a Bonus Workout",
+      cta: { action: "open_workouts_tab" },
+    };
+    heroSecondary = {
+      label: "View Workouts",
+      cta: { action: "open_workouts_tab" },
+    };
+    heroBadge = "COMPLETED";
+    showCover = false;
+  }
 
-  const effectivePrimary = weekComplete
-    ? {
-        label: "Log a Bonus Workout",
-        cta: { action: "open_workouts_tab" },
-      }
-    : primary;
+  // 🟦 New user with NO workouts
+  else if (isNewUser && !hasAnyWorkouts) {
+    heroTitle = "Let’s get your first workout in";
+    heroSubtitle =
+      "Choose a starter workout below — no pressure, we’ll guide you through it.";
+    heroPrimary = {
+      label: "Choose a starter workout ↓",
+      cta: { action: "scroll_to_starters" }, // or open_workouts_tab
+    };
+    heroBadge = null;
+    showCover = true;
+    coverHeight = 190; // extra room so text is never truncated
+  }
 
-  const effectiveSecondary = weekComplete
-    ? {
-        label: "View Workouts",
-        cta: { action: "open_workouts_tab" },
-      }
-    : secondary;
+  // 🟨 User has 1+ workouts (suggested workout)
+  else {
+    heroTitle = String(card?.title ?? "Your workout");
+    heroSubtitle = statsLine ?? card?.subtitle ?? null;
+    heroPrimary = {
+      label: "Start workout",
+      cta: { action: "start_workout" },
+    };
 
-  const onPrimary = () => effectivePrimary?.cta && performCTA(effectivePrimary.cta);
-  const onSecondary = () =>
-    effectiveSecondary?.cta && performCTA(effectiveSecondary.cta);
+    // Only show secondary if multiple workouts exist
+    heroSecondary =
+      workoutsCount > 1
+        ? {
+            label: "Choose another",
+            cta: { action: "open_workouts_tab" },
+          }
+        : null;
+
+    heroBadge = workoutsCount > 1 ? "SUGGESTED" : null;
+    showCover = true;
+  }
+
+  const onPrimary = () => heroPrimary?.cta && performCTA(heroPrimary.cta);
+  const onSecondary = () => heroSecondary?.cta && performCTA(heroSecondary.cta);
+
+  /* ---------------------------------------------
+   * RENDER
+   * ------------------------------------------- */
 
   return (
     <Card variant="pressable" onPress={onPrimary} style={styles.card}>
-      {/* Accent blob (brand energy) */}
-      <View pointerEvents="none" style={styles.accentBlob} />
-
-      <View style={{ gap: layout.space.md }}>
-        <View style={styles.topRow}>
-          {effectiveBadge ? (
-            <Pill label={effectiveBadge} tone="primary" />
-          ) : (
-            <View />
-          )}
-
-          {/* Hide plan week/workout box when week is complete */}
-          {!weekComplete && (planWeek != null || weekWorkout != null) ? (
-            <View style={styles.weekBox}>
-              {planWeek != null ? (
-                <Text style={styles.weekText} numberOfLines={1}>
-                  Week {Number(planWeek)}
-                </Text>
-              ) : null}
-              {weekWorkout != null ? (
-                <Text style={styles.workoutText} numberOfLines={1}>
-                  Workout {Number(weekWorkout)}
-                </Text>
+      <View style={{ gap: layout.space.sm }}>
+        {/* ---------------------------------
+         * COVER (most states)
+         * --------------------------------- */}
+        {showCover ? (
+          <WorkoutCover
+            imageKey={workoutImageKey ?? "full_body"}
+            title={heroTitle}
+            subtitle={heroSubtitle}
+            height={coverHeight}
+            radius={layout.radius.lg}
+            badge={heroBadge ? <Pill label={heroBadge} tone="neutral" /> : null}
+            badgePosition="topLeft"
+          />
+        ) : (
+          <>
+            {/* Week complete text-only premium layout */}
+            <View style={styles.titleRow}>
+              <Text style={styles.title} numberOfLines={2}>
+                {heroTitle}
+              </Text>
+              {heroBadge ? (
+                <View style={styles.badgeInTitleRow}>
+                  <Pill label={heroBadge} tone="neutral" />
+                </View>
               ) : null}
             </View>
-          ) : null}
-        </View>
 
-        <Text style={styles.title} numberOfLines={2}>
-          {effectiveTitle}
-        </Text>
-
-        {effectiveSubtitle ? (
-          <View style={{ gap: layout.space.xs }}>
-            <Text style={styles.subtitle} numberOfLines={3}>
-              {effectiveSubtitle}
-            </Text>
-
-            {/* Hide stats line on week-complete (no “next workout” meta) */}
-            {!weekComplete && statsLine ? (
-              <Text style={styles.statsLine} numberOfLines={1}>
-                {statsLine}
+            {heroSubtitle ? (
+              <Text style={styles.subtitle} numberOfLines={3}>
+                {heroSubtitle}
               </Text>
             ) : null}
-          </View>
-        ) : null}
+          </>
+        )}
 
-        <View style={styles.ctaRow}>
+        {/* ---------------------------------
+         * CTA ROW
+         * --------------------------------- */}
+        <View style={styles.ctaWrap}>
           <View style={{ flex: 1 }}>
             <Button
-              title={String(effectivePrimary?.label ?? "Continue")}
+              title={heroPrimary.label}
               onPress={onPrimary}
-              variant="primary"
-              leftIcon={null}
+              variant={
+                isNewUser && !hasAnyWorkouts
+                  ? "outline" // ✅ calm onboarding CTA
+                  : "primary"
+              }
+              tone="primary"
             />
           </View>
 
-          {effectiveSecondary?.cta ? (
-            <View style={{ width: 130 }}>
+          {heroSecondary ? (
+            <View style={styles.secondaryTextBtn}>
               <Button
-                title={String(effectiveSecondary?.label ?? "Details")}
+                title={heroSecondary.label}
                 onPress={onSecondary}
-                variant="secondary"
-                fullWidth
+                variant="text"
+                tone="primary"
+                fullWidth={false}
               />
             </View>
           ) : null}
@@ -169,46 +215,21 @@ const makeStyles = (colors: any, typography: any, layout: any) =>
     card: {
       overflow: "hidden",
       borderRadius: layout.radius.xl,
-      padding: layout.space.lg,
+      padding: layout.space.xs,
+      marginTop: layout.space.md,
     },
 
-    accentBlob: {
-      position: "absolute",
-      right: -40,
-      top: -30,
-      width: 140,
-      height: 140,
-      borderRadius: 999,
-      backgroundColor: "rgba(37,99,235,0.16)",
-    },
-
-    topRow: {
+    titleRow: {
       flexDirection: "row",
-      alignItems: "flex-start",
+      alignItems: "center",
       justifyContent: "space-between",
-      gap: layout.space.md,
-    },
-
-    weekBox: {
-      alignItems: "flex-end",
-      gap: 2,
-    },
-
-    weekText: {
-      fontFamily: typography.fontFamily.semibold,
-      fontSize: typography.size.meta,
-      color: colors.textMuted,
-      letterSpacing: 0.2,
-    },
-
-    workoutText: {
-      fontFamily: typography.fontFamily.semibold,
-      fontSize: typography.size.meta,
-      color: colors.text,
-      letterSpacing: 0.2,
+      gap: layout.space.sm,
+      paddingHorizontal: layout.space.sm,
+      paddingTop: layout.space.sm,
     },
 
     title: {
+      flex: 1,
       fontFamily: typography.fontFamily.bold,
       fontSize: typography.size.h1,
       lineHeight: typography.lineHeight.h1,
@@ -216,24 +237,30 @@ const makeStyles = (colors: any, typography: any, layout: any) =>
       color: colors.text,
     },
 
+    badgeInTitleRow: {
+      marginLeft: layout.space.sm,
+    },
+
     subtitle: {
+      paddingHorizontal: layout.space.sm,
       fontFamily: typography.fontFamily.medium,
       fontSize: typography.size.body,
       lineHeight: typography.lineHeight.body,
       color: colors.textMuted,
+      textAlign: "left",
+      marginTop: layout.space.xs,
     },
 
-    statsLine: {
-      fontFamily: typography.fontFamily.semibold,
-      fontSize: typography.size.meta,
-      color: colors.textMuted,
-      letterSpacing: 0.1,
-    },
-
-    ctaRow: {
-      marginTop: layout.space.sm,
+    ctaWrap: {
+      marginTop: layout.space.md,
       flexDirection: "row",
-      gap: layout.space.sm,
       alignItems: "center",
+      gap: layout.space.sm,
+      paddingHorizontal: layout.space.sm,
+      paddingBottom: layout.space.sm,
+    },
+
+    secondaryTextBtn: {
+      alignSelf: "center",
     },
   });
