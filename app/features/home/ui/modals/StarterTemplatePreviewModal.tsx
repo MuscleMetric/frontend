@@ -8,13 +8,12 @@ import {
   Pressable,
   ActivityIndicator,
   FlatList,
-  ImageBackground,
+  Dimensions,
 } from "react-native";
 import { router } from "expo-router";
 import { useAppTheme } from "../../../../../lib/useAppTheme";
 import { supabase } from "../../../../../lib/supabase";
-import { Button, Card, Pill } from "@/ui";
-import { resolveFullWorkoutImage } from "@/ui/media/fullWorkoutImages";
+import { Button, Card, Pill, WorkoutCover } from "@/ui";
 
 type Row = {
   order_index: number;
@@ -54,14 +53,14 @@ export function StarterTemplatePreviewModal({
   templateWorkoutId,
   title,
   onClose,
-  imageKey, // ✅ pass template_key or workoutImageKey from the tile
+  imageKey,
   badgeLabel = "STARTER",
 }: {
   visible: boolean;
   templateWorkoutId: string | null;
   title?: string;
   onClose: () => void;
-  imageKey?: string | null;
+  imageKey?: string | null; // expects keys like "cardio" | "push" | ...
   badgeLabel?: string;
 }) {
   const { colors, typography, layout } = useAppTheme();
@@ -75,10 +74,16 @@ export function StarterTemplatePreviewModal({
   const [error, setError] = useState<string | null>(null);
   const [rows, setRows] = useState<Row[]>([]);
 
-  // ✅ derive a nice image key fallback
-  const headerImage = useMemo(() => {
-    return resolveFullWorkoutImage(imageKey ?? "full_body");
-  }, [imageKey]);
+  // --- Bottom sheet sizing ---
+  const { height: screenH } = Dimensions.get("window");
+
+  // ✅ change this to make the modal taller/shorter (0.60 = 60% screen height)
+  const SHEET_RATIO = 0.85;
+
+  const sheetHeight = Math.round(screenH * SHEET_RATIO);
+
+  // show ~4 exercises before scroll (adjust if your row visuals change)
+  const LIST_MAX_HEIGHT = 280;
 
   useEffect(() => {
     if (!visible) return;
@@ -90,10 +95,10 @@ export function StarterTemplatePreviewModal({
       setLoading(true);
       setError(null);
       try {
-        // ✅ Use RPC so RLS doesn't hide template exercises
-        const { data, error } = await supabase.rpc("get_starter_template_preview", {
-          p_template_workout_id: templateWorkoutId,
-        });
+        const { data, error } = await supabase.rpc(
+          "get_starter_template_preview",
+          { p_template_workout_id: templateWorkoutId }
+        );
 
         if (cancelled) return;
         if (error) throw error;
@@ -104,15 +109,21 @@ export function StarterTemplatePreviewModal({
           target_sets: x.target_sets != null ? Number(x.target_sets) : null,
           target_reps: x.target_reps != null ? Number(x.target_reps) : null,
           target_time_seconds:
-            x.target_time_seconds != null ? Number(x.target_time_seconds) : null,
+            x.target_time_seconds != null
+              ? Number(x.target_time_seconds)
+              : null,
           notes: x.notes != null ? String(x.notes) : null,
-          superset_group: x.superset_group != null ? String(x.superset_group) : null,
-          superset_index: x.superset_index != null ? Number(x.superset_index) : null,
+          superset_group:
+            x.superset_group != null ? String(x.superset_group) : null,
+          superset_index:
+            x.superset_index != null ? Number(x.superset_index) : null,
         }));
 
         setRows(mapped);
       } catch (e: any) {
-        setError(e?.message ? String(e.message) : "Failed to load template");
+        setError(
+          e?.message ? String(e.message) : "Failed to load workout preview"
+        );
         setRows([]);
       } finally {
         setLoading(false);
@@ -126,13 +137,27 @@ export function StarterTemplatePreviewModal({
 
   const summary = useMemo(() => {
     const exerciseCount = rows.length;
-
-    // Optional: total sets estimate if target_sets exist
     const totalSets = rows.reduce((acc, r) => acc + (r.target_sets ?? 0), 0);
     const setsLabel = totalSets > 0 ? `${totalSets} sets` : null;
 
-    return { exerciseCount, setsLabel };
+    const hasAnyTargets = rows.some(
+      (r) =>
+        (r.target_sets ?? 0) > 0 ||
+        (r.target_reps ?? 0) > 0 ||
+        (r.target_time_seconds ?? 0) > 0
+    );
+
+    return { exerciseCount, setsLabel, hasAnyTargets };
   }, [rows]);
+
+  const coverSubtitle = useMemo(() => {
+    if (loading) return "Loading preview…";
+    if (error) return "Couldn’t load preview";
+    if (summary.exerciseCount > 0 && summary.setsLabel)
+      return `${summary.exerciseCount} exercises · ${summary.setsLabel}`;
+    if (summary.exerciseCount > 0) return `${summary.exerciseCount} exercises`;
+    return "Preview the session";
+  }, [loading, error, summary.exerciseCount, summary.setsLabel]);
 
   async function onStartNow() {
     if (!templateWorkoutId) return;
@@ -141,7 +166,6 @@ export function StarterTemplatePreviewModal({
     setStarting(true);
     setError(null);
     try {
-      // ✅ clones template into user's workouts, returns new workout id
       const { data, error } = await supabase.rpc("clone_starter_template", {
         p_template_workout_id: templateWorkoutId,
       });
@@ -163,35 +187,42 @@ export function StarterTemplatePreviewModal({
     }
   }
 
-  const renderRow = ({ item }: { item: Row }) => {
+  // ✅ Fix numbering:
+  // - Some queries return order_index starting at 0, some at 1.
+  // - We normalize so the UI always starts at 1.
+  const indexBase = useMemo(() => {
+    if (!rows.length) return 0;
+    const min = Math.min(...rows.map((r) => r.order_index ?? 0));
+    return min; // if min=0 => base 0, if min=1 => base 1
+  }, [rows]);
+
+  const renderRow = ({ item, index }: { item: Row; index: number }) => {
     const targets = fmtTargets(item);
     const superset = groupKey(item);
     const isSuperset = !!superset;
+
+    const displayIndex = item.order_index - indexBase + 1;
 
     return (
       <View style={styles.row}>
         <View style={styles.rowTop}>
           <Text style={styles.exerciseName} numberOfLines={1}>
-            {item.order_index + 1}. {item.exercise_name}
+            {displayIndex}. {item.exercise_name}
           </Text>
 
           {isSuperset ? (
             <Pill
-              label={`SUPERSET ${item.superset_index != null ? item.superset_index + 1 : ""}`.trim()}
+              label={`SUPERSET ${
+                item.superset_index != null ? item.superset_index + 1 : ""
+              }`.trim()}
               tone="neutral"
             />
           ) : null}
         </View>
 
-        {!!targets ? (
-          <Text style={styles.targets} numberOfLines={1}>
-            {targets}
-          </Text>
-        ) : (
-          <Text style={styles.targets} numberOfLines={1}>
-            Suggested effort · log what you can
-          </Text>
-        )}
+        <Text style={styles.targets} numberOfLines={1}>
+          {targets || "Suggested effort · log what you can"}
+        </Text>
 
         {!!item.notes ? (
           <Text style={styles.note} numberOfLines={3}>
@@ -205,64 +236,66 @@ export function StarterTemplatePreviewModal({
   return (
     <Modal
       visible={visible}
-      animationType="slide"
+      animationType="fade"
+      transparent
       onRequestClose={onClose}
-      presentationStyle="pageSheet"
     >
-      <View style={styles.screen}>
-        {/* Top bar */}
-        <View style={styles.topBar}>
-          <Pressable
-            onPress={onClose}
-            hitSlop={10}
-            style={({ pressed }) => [pressed ? { opacity: 0.7 } : null]}
-          >
-            <Text style={styles.close}>Close</Text>
-          </Pressable>
+      {/* Overlay (tap to close) */}
+      <Pressable style={styles.overlay} onPress={onClose} />
 
-          <View style={{ flex: 1 }} />
+      {/* Bottom sheet */}
+      <View style={[styles.sheet, { height: sheetHeight }]}>
+        {/* Handle + top row */}
+        <View style={styles.sheetTop}>
+          <View style={styles.handle} />
 
-          <Pill label={badgeLabel} tone="primary" />
-        </View>
+          <View style={styles.topBar}>
+            <Pressable
+              onPress={onClose}
+              hitSlop={10}
+              style={({ pressed }) => [pressed ? { opacity: 0.7 } : null]}
+            >
+              <Text style={styles.close}>Close</Text>
+            </Pressable>
 
-        {/* Big header image */}
-        <View style={styles.heroMediaWrap}>
-          <ImageBackground
-            source={headerImage}
-            style={StyleSheet.absoluteFill}
-            imageStyle={styles.heroMediaImg}
-          >
-            <View style={styles.heroMediaOverlay} />
-          </ImageBackground>
+            <View style={{ flex: 1 }} />
 
-          <View style={styles.heroTextWrap}>
-            <Text style={styles.title} numberOfLines={2}>
-              {title || "Starter workout"}
-            </Text>
-
-            <Text style={styles.sub} numberOfLines={2}>
-              Preview the session. Start once to save it to your workouts and begin.
-            </Text>
-
-            {/* Mini stats */}
-            <View style={styles.statsRow}>
-              <View style={styles.statChip}>
-                <Text style={styles.statText}>
-                  {loading ? "…" : `${summary.exerciseCount} exercises`}
-                </Text>
-              </View>
-
-              {summary.setsLabel ? (
-                <View style={styles.statChip}>
-                  <Text style={styles.statText}>{summary.setsLabel}</Text>
-                </View>
-              ) : null}
-            </View>
+            {/* ✅ No more empty pill (circle). Always render text. */}
+            <Pill label={String(badgeLabel || "STARTER")} tone="neutral" />
           </View>
         </View>
 
-        {/* Exercises list */}
-        <Card style={styles.bodyCard}>
+        {/* Header image */}
+        <View style={styles.heroWrap}>
+          <WorkoutCover
+            imageKey={imageKey ?? "full_body"}
+            height={210}
+            radius={layout.radius.xl}
+            title={title || "Starter workout"}
+            subtitle={coverSubtitle}
+            badge={null}
+            badgePosition="topLeft"
+            focusY={0.55}
+          />
+        </View>
+
+        {/* Supporting copy */}
+        <View style={styles.headerCopy}>
+          <Text style={styles.sub} numberOfLines={2}>
+            Preview the session. Start once to save it to your workouts and
+            begin.
+          </Text>
+
+          {!summary.hasAnyTargets ? (
+            <Text style={styles.hint} numberOfLines={2}>
+              Tip: These are starter sessions — adjust weights and reps to match
+              your level.
+            </Text>
+          ) : null}
+        </View>
+
+        {/* Exercises list (intentionally not full height) */}
+        <Card style={{ ...styles.bodyCard, maxHeight: LIST_MAX_HEIGHT }}>
           {loading ? (
             <View style={styles.center}>
               <ActivityIndicator />
@@ -272,7 +305,8 @@ export function StarterTemplatePreviewModal({
             <View style={styles.center}>
               <Text style={styles.error}>{error}</Text>
               <Text style={styles.muted} numberOfLines={2}>
-                If this is a starter template, the preview RPC needs to be enabled.
+                If this is a template workout, ensure the preview RPC is
+                returning rows.
               </Text>
             </View>
           ) : (
@@ -281,8 +315,8 @@ export function StarterTemplatePreviewModal({
               keyExtractor={(r, idx) => `${r.order_index}:${idx}`}
               ItemSeparatorComponent={() => <View style={styles.sep} />}
               renderItem={renderRow}
-              contentContainerStyle={{ paddingVertical: 2 }}
               showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ paddingVertical: 2 }}
             />
           )}
         </Card>
@@ -304,10 +338,37 @@ export function StarterTemplatePreviewModal({
 
 const makeStyles = (colors: any, typography: any, layout: any) =>
   StyleSheet.create({
-    screen: {
-      flex: 1,
+    overlay: {
+      ...StyleSheet.absoluteFillObject,
+      backgroundColor: "rgba(0,0,0,0.40)",
+    },
+
+    sheet: {
+      position: "absolute",
+      left: 0,
+      right: 0,
+      bottom: 0,
       backgroundColor: colors.bg,
-      paddingTop: layout.space.lg,
+      borderTopLeftRadius: layout.radius.xl,
+      borderTopRightRadius: layout.radius.xl,
+      overflow: "hidden",
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+    },
+
+    sheetTop: {
+      paddingTop: 10,
+      paddingBottom: 6,
+    },
+
+    handle: {
+      alignSelf: "center",
+      width: 44,
+      height: 5,
+      borderRadius: 999,
+      backgroundColor: colors.border,
+      opacity: 0.9,
+      marginBottom: 10,
     },
 
     topBar: {
@@ -323,40 +384,15 @@ const makeStyles = (colors: any, typography: any, layout: any) =>
       fontSize: typography.size.sub,
     },
 
-    // Big image header
-    heroMediaWrap: {
-      marginTop: layout.space.md,
+    heroWrap: {
+      marginTop: 8,
       marginHorizontal: layout.space.lg,
-      borderRadius: layout.radius.xl,
-      overflow: "hidden",
-      minHeight: 200,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: colors.border,
-      backgroundColor: colors.card,
     },
 
-    heroMediaImg: {
-      resizeMode: "cover",
-    },
-
-    heroMediaOverlay: {
-      ...StyleSheet.absoluteFillObject,
-      backgroundColor: "rgba(0,0,0,0.18)",
-    },
-
-    heroTextWrap: {
-      padding: layout.space.lg,
-      gap: 8,
-      justifyContent: "flex-end",
-      minHeight: 200,
-    },
-
-    title: {
-      fontFamily: typography.fontFamily.bold,
-      fontSize: typography.size.h1,
-      lineHeight: typography.lineHeight.h1,
-      color: colors.text,
-      letterSpacing: -0.6,
+    headerCopy: {
+      paddingHorizontal: layout.space.lg,
+      paddingTop: layout.space.md,
+      gap: 6,
     },
 
     sub: {
@@ -366,31 +402,15 @@ const makeStyles = (colors: any, typography: any, layout: any) =>
       lineHeight: typography.lineHeight.body,
     },
 
-    statsRow: {
-      marginTop: 4,
-      flexDirection: "row",
-      gap: 10,
-      alignItems: "center",
-      flexWrap: "wrap",
-    },
-
-    statChip: {
-      paddingHorizontal: 12,
-      paddingVertical: 8,
-      borderRadius: 999,
-      backgroundColor: colors.trackBg,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: colors.trackBorder,
-    },
-
-    statText: {
-      fontFamily: typography.fontFamily.semibold,
-      fontSize: typography.size.meta,
+    hint: {
+      fontFamily: typography.fontFamily.medium,
+      fontSize: typography.size.sub,
       color: colors.textMuted,
+      lineHeight: typography.lineHeight.body,
+      opacity: 0.9,
     },
 
     bodyCard: {
-      flex: 1,
       marginHorizontal: layout.space.lg,
       marginTop: layout.space.md,
       borderRadius: layout.radius.xl,
@@ -398,10 +418,10 @@ const makeStyles = (colors: any, typography: any, layout: any) =>
     },
 
     center: {
-      flex: 1,
       justifyContent: "center",
       alignItems: "center",
       gap: 10,
+      paddingVertical: 18,
       paddingHorizontal: 16,
     },
 

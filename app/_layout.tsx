@@ -29,10 +29,10 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <AuthProvider>
-        <ThemeProvider value={theme}>
-          <StatusBar style={scheme === "dark" ? "light" : "dark"} />
-          <RootNavigator />
-        </ThemeProvider>
+          <ThemeProvider value={theme}>
+            <StatusBar style={scheme === "dark" ? "light" : "dark"} />
+            <RootNavigator />
+          </ThemeProvider>
       </AuthProvider>
     </GestureHandlerRootView>
   );

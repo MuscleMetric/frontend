@@ -37,7 +37,8 @@ function normalizeItems(card: any): StarterTemplateItem[] {
         badge: it?.badge != null ? String(it.badge) : null,
 
         // ✅ IMPORTANT: your backend must return workout_image_key
-        workoutImageKey: it?.workout_image_key != null ? String(it.workout_image_key) : null,
+        workoutImageKey:
+          it?.workout_image_key != null ? String(it.workout_image_key) : null,
 
         duration_min:
           it?.duration_min != null
@@ -46,7 +47,8 @@ function normalizeItems(card: any): StarterTemplateItem[] {
             ? Number(it.duration_minutes)
             : null,
 
-        exercise_count: it?.exercise_count != null ? Number(it.exercise_count) : null,
+        exercise_count:
+          it?.exercise_count != null ? Number(it.exercise_count) : null,
       } as StarterTemplateItem;
     })
     .filter(Boolean) as StarterTemplateItem[];
@@ -59,7 +61,10 @@ function fmtMin(m?: number | null) {
 
 export function StarterTemplatesCard({ card }: { card: any; summary?: any }) {
   const { colors, typography, layout } = useAppTheme();
-  const styles = useMemo(() => makeStyles(colors, typography, layout), [colors, typography, layout]);
+  const styles = useMemo(
+    () => makeStyles(colors, typography, layout),
+    [colors, typography, layout]
+  );
 
   const items = useMemo(() => normalizeItems(card), [card]);
   if (!items.length) return null;
@@ -67,15 +72,13 @@ export function StarterTemplatesCard({ card }: { card: any; summary?: any }) {
   const [open, setOpen] = useState(false);
   const [activeTemplateId, setActiveTemplateId] = useState<string | null>(null);
   const [activeTitle, setActiveTitle] = useState<string>("");
-  const [activeTemplateKey, setActiveTemplateKey] = useState<string | null>(null); // ✅ for modal header image
+
+  const [activeImageKey, setActiveImageKey] = useState<string | null>(null);
 
   function openTemplate(it: StarterTemplateItem) {
     setActiveTemplateId(it.template_workout_id);
     setActiveTitle(it.title);
-
-    // ✅ Use returned workout_image_key if present; otherwise fallback
-    setActiveTemplateKey(it.workoutImageKey ?? "full_body");
-
+    setActiveImageKey(it.workoutImageKey ?? it.badge ?? null); // pick what you store
     setOpen(true);
   }
 
@@ -88,7 +91,8 @@ export function StarterTemplatesCard({ card }: { card: any; summary?: any }) {
             <View style={{ flex: 1 }}>
               <Text style={styles.headerTitle}>Starter workouts</Text>
               <Text style={styles.headerSub} numberOfLines={2}>
-                Pick one to preview. Start it once and we’ll add it to your library.
+                Pick one to preview. Start it once and we’ll add it to your
+                library.
               </Text>
             </View>
 
@@ -103,12 +107,18 @@ export function StarterTemplatesCard({ card }: { card: any; summary?: any }) {
             contentContainerStyle={styles.listContent}
             renderItem={({ item }) => {
               const duration = fmtMin(item.duration_min);
-              const exCount = item.exercise_count != null ? `${item.exercise_count} exercises` : null;
+              const exCount =
+                item.exercise_count != null
+                  ? `${item.exercise_count} exercises`
+                  : null;
 
               return (
                 <Pressable
                   onPress={() => openTemplate(item)}
-                  style={({ pressed }) => [styles.tile, pressed ? { opacity: 0.92 } : null]}
+                  style={({ pressed }) => [
+                    styles.tile,
+                    pressed ? { opacity: 0.92 } : null,
+                  ]}
                 >
                   <WorkoutCover
                     imageKey={item.workoutImageKey ?? "full_body"}
@@ -116,7 +126,11 @@ export function StarterTemplatesCard({ card }: { card: any; summary?: any }) {
                     radius={layout.radius.xl}
                     title={null}
                     subtitle={null}
-                    badge={item.badge ? <Pill label={item.badge} tone="neutral" /> : null}
+                    badge={
+                      item.badge ? (
+                        <Pill label={item.badge} tone="neutral" />
+                      ) : null
+                    }
                     badgePosition="topLeft"
                   />
 
@@ -131,7 +145,8 @@ export function StarterTemplatesCard({ card }: { card: any; summary?: any }) {
                       </Text>
                     ) : (
                       <Text style={styles.tileSub} numberOfLines={2}>
-                        Perfect for getting started. Focus on form and build momentum.
+                        Perfect for getting started. Focus on form and build
+                        momentum.
                       </Text>
                     )}
 
@@ -155,7 +170,8 @@ export function StarterTemplatesCard({ card }: { card: any; summary?: any }) {
           />
 
           <Text style={styles.noteText}>
-            Tip: don’t overthink it — log your first 1–2 workouts and build momentum.
+            Tip: don’t overthink it — log your first 1–2 workouts and build
+            momentum.
           </Text>
         </View>
       </Card>
@@ -164,7 +180,7 @@ export function StarterTemplatesCard({ card }: { card: any; summary?: any }) {
         visible={open}
         templateWorkoutId={activeTemplateId}
         title={activeTitle}
-        imageKey={activeTemplateKey} // ✅ now defined + set
+        imageKey={activeImageKey}
         onClose={() => setOpen(false)}
       />
     </>
