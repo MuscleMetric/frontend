@@ -22,6 +22,11 @@ export type ThemeColors = {
 
   trackBg: string;
   trackBorder: string;
+
+  onPrimary: string;
+  onPrimaryMuted: string;
+  onPrimaryBorder: string;
+  onPrimaryTrackBg: string;
 };
 
 // Optional: keep palette as const if you want
@@ -63,6 +68,11 @@ export const colors = {
 
     trackBg: "rgba(15,23,42,0.06)",
     trackBorder: "rgba(15,23,42,0.10)",
+
+    onPrimary: palette.darkText,
+    onPrimaryMuted: palette.darkTextMuted,
+    onPrimaryBorder: palette.lightBorder,
+    onPrimaryTrackBg: "rgba(255,255,255,0.18)",
   },
   dark: {
     bg: palette.darkBg,
@@ -81,6 +91,11 @@ export const colors = {
 
     trackBg: "rgba(255,255,255,0.08)",
     trackBorder: "rgba(255,255,255,0.14)",
+
+    onPrimary: palette.darkText,
+    onPrimaryMuted: palette.darkTextMuted,
+    onPrimaryBorder: palette.lightBorder,
+    onPrimaryTrackBg: "rgba(255,255,255,0.18)",
   },
 } satisfies Record<ColorScheme, ThemeColors>;
 

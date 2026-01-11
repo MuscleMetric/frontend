@@ -1,5 +1,5 @@
 import React, { useMemo } from "react";
-import { View, Text, StyleSheet } from "react-native";
+import { View, Text, StyleSheet, Pressable } from "react-native";
 import { router } from "expo-router";
 
 import { useAppTheme } from "@/lib/useAppTheme";
@@ -57,6 +57,12 @@ export default function RecentHistoryCard({ data }: { data: ProfileOverview }) {
           lineHeight: typography.lineHeight.h3,
           color: colors.text,
         },
+        headerRight: {
+          flexDirection: "row",
+          alignItems: "center",
+          gap: layout.space.sm,
+        },
+
         emptyWrap: { gap: layout.space.md },
         emptyText: {
           fontFamily: typography.fontFamily.regular,
@@ -64,28 +70,37 @@ export default function RecentHistoryCard({ data }: { data: ProfileOverview }) {
           lineHeight: typography.lineHeight.sub,
           color: colors.textMuted,
         },
+
         listGap: { gap: layout.space.sm },
         footer: { marginTop: layout.space.md },
       }),
     [colors, typography, layout]
   );
 
+  const goAll = () => router.push("/features/workouts/history");
+
   return (
     <Card>
       <View style={styles.headerRow}>
         <Text style={styles.title}>Recent History</Text>
-        {rows.length > 0 ? <Pill tone="neutral" label="View all" /> : null}
+
+        {rows.length > 0 ? (
+          <View style={styles.headerRight}>
+            <Pill tone="neutral" label={`${Math.min(rows.length, 3)} shown`} />
+            <Pressable onPress={goAll}>
+              <Pill tone="primary" label="View all" />
+            </Pressable>
+          </View>
+        ) : null}
       </View>
 
       {rows.length === 0 ? (
         <View style={styles.emptyWrap}>
           <Text style={styles.emptyText}>
-            Your fitness journey starts here. Complete a workout to see it show up here.
+            Your fitness journey starts here. Complete a workout to see it show up
+            here.
           </Text>
-          <Button
-            title="Find a workout"
-            onPress={() => router.push("/(tabs)/workout")}
-          />
+          <Button title="Find a workout" onPress={() => router.push("/(tabs)/workout")} />
         </View>
       ) : (
         <>
@@ -117,11 +132,7 @@ export default function RecentHistoryCard({ data }: { data: ProfileOverview }) {
           </View>
 
           <View style={styles.footer}>
-            <Button
-              variant="secondary"
-              title="View all history"
-              onPress={() => router.push("/features/workouts/history")}
-            />
+            <Button variant="secondary" title="View all history" onPress={goAll} />
           </View>
         </>
       )}

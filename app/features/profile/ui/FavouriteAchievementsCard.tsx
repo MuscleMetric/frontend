@@ -3,21 +3,27 @@ import { View, Text, StyleSheet, Pressable } from "react-native";
 import { router } from "expo-router";
 
 import { useAppTheme } from "@/lib/useAppTheme";
-import { Card, Pill, Button } from "@/ui";
+import { Card, Pill, Icon } from "@/ui";
 import type { ProfileOverview } from "../data/profileTypes";
 
-function difficultyTone(diff?: string | null): "neutral" | "success" | "primary" | "warning" | "danger" {
+function iconForDifficulty(diff?: string | null) {
+  const d = (diff ?? "").toLowerCase();
+  if (d === "easy") return "trophy-outline";
+  if (d === "medium") return "medal-outline";
+  if (d === "hard") return "flame-outline";
+  if (d === "elite" || d === "legendary") return "trophy";
+  return "ribbon-outline";
+}
+
+function difficultyTone(
+  diff?: string | null
+): "neutral" | "success" | "primary" | "warning" | "danger" {
   const d = (diff ?? "").toLowerCase();
   if (d === "easy") return "success";
   if (d === "medium") return "primary";
   if (d === "hard") return "warning";
   if (d === "elite" || d === "legendary") return "danger";
   return "neutral";
-}
-
-function prettyCategory(cat?: string | null) {
-  if (!cat) return "";
-  return String(cat).replace(/_/g, " ");
 }
 
 export default function FavouriteAchievementsCard({
@@ -35,7 +41,7 @@ export default function FavouriteAchievementsCard({
           flexDirection: "row",
           alignItems: "center",
           justifyContent: "space-between",
-          marginBottom: layout.space.sm,
+          marginBottom: layout.space.md,
         },
         title: {
           fontFamily: typography.fontFamily.bold,
@@ -43,66 +49,53 @@ export default function FavouriteAchievementsCard({
           lineHeight: typography.lineHeight.h3,
           color: colors.text,
         },
-        subtitle: {
-          fontFamily: typography.fontFamily.regular,
-          fontSize: typography.size.sub,
-          lineHeight: typography.lineHeight.sub,
-          color: colors.textMuted,
-          marginBottom: layout.space.md,
-        },
 
-        chipsWrap: {
-          flexDirection: "row",
-          flexWrap: "wrap",
+        stack: {
           gap: layout.space.sm,
         },
 
-        grid: {
-          gap: layout.space.sm,
-        },
-
-        rowCard: {
-          borderWidth: StyleSheet.hairlineWidth,
-          borderColor: colors.border,
-          backgroundColor: colors.trackBg,
-          borderRadius: layout.radius.lg,
-          padding: layout.space.md,
-          gap: 6,
-        },
-        rowTop: {
+        row: {
           flexDirection: "row",
           alignItems: "center",
-          justifyContent: "space-between",
           gap: layout.space.md,
+          padding: layout.space.md,
+          borderRadius: layout.radius.lg,
+          backgroundColor: colors.trackBg,
+          borderWidth: StyleSheet.hairlineWidth,
+          borderColor: colors.border,
         },
-        rowTitle: {
+
+        rowTextWrap: {
           flex: 1,
+          gap: 2,
+        },
+
+        rowTitle: {
           fontFamily: typography.fontFamily.semibold,
           fontSize: typography.size.sub,
           lineHeight: typography.lineHeight.sub,
           color: colors.text,
         },
-        rowMeta: {
+
+        rowDesc: {
           fontFamily: typography.fontFamily.regular,
           fontSize: typography.size.meta,
           lineHeight: typography.lineHeight.meta,
           color: colors.textMuted,
         },
 
-        footerRow: {
-          marginTop: layout.space.md,
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: layout.space.md,
-        },
-
-        emptyWrap: { gap: layout.space.md },
         emptyText: {
           fontFamily: typography.fontFamily.regular,
           fontSize: typography.size.sub,
           lineHeight: typography.lineHeight.sub,
           color: colors.textMuted,
+          textAlign: "center",
+          marginVertical: layout.space.sm,
+        },
+
+        footer: {
+          marginTop: layout.space.md,
+          alignItems: "center",
         },
       }),
     [colors, typography, layout]
@@ -119,41 +112,51 @@ export default function FavouriteAchievementsCard({
       </View>
 
       {favs.length === 0 ? (
-        <View style={styles.emptyWrap}>
+        <>
           <Text style={styles.emptyText}>
             Pin up to 3 achievements to show what you’re proud of.
           </Text>
-          <Button title="Pick favourites" onPress={goPick} />
-        </View>
+          <View style={styles.footer}>
+            <Pressable onPress={goPick}>
+              <Pill tone="primary" label="Pick favourites" />
+            </Pressable>
+          </View>
+        </>
       ) : (
         <>
-          <Text style={styles.subtitle}>
-            These appear on your profile and help others understand your training style.
-          </Text>
+          <View style={styles.stack}>
+            {favs.map((a) => (
+              <Pressable key={a.id} onPress={goPick} style={styles.row}>
+                <Icon
+                  name={iconForDifficulty(a.difficulty)}
+                  size={18}
+                  color={colors.text}
+                />
 
-          {/* “pretty” list rows (more premium than just chips) */}
-          <View style={styles.grid}>
-            {favs.map((a) => {
-              const tone = difficultyTone(a.difficulty);
-              const cat = prettyCategory(a.category);
+                <View style={styles.rowTextWrap}>
+                  <Text numberOfLines={1} style={styles.rowTitle}>
+                    {a.title}
+                  </Text>
 
-              return (
-                <Pressable key={a.id} onPress={goPick} style={styles.rowCard}>
-                  <View style={styles.rowTop}>
-                    <Text style={styles.rowTitle} numberOfLines={1}>
-                      {a.title}
+                  {a.description ? (
+                    <Text numberOfLines={1} style={styles.rowDesc}>
+                      {a.description}
                     </Text>
-                    <Pill tone={tone} label={(a.difficulty ?? "—").toUpperCase()} />
-                  </View>
-                  {cat ? <Text style={styles.rowMeta}>{cat}</Text> : null}
-                </Pressable>
-              );
-            })}
+                  ) : null}
+                </View>
+
+                <Pill
+                  tone={difficultyTone(a.difficulty)}
+                  label={(a.difficulty ?? "—").toUpperCase()}
+                />
+              </Pressable>
+            ))}
           </View>
 
-          <View style={styles.footerRow}>
-            <Pill tone="neutral" label="Tap to edit" />
-            <Button variant="secondary" title="Edit favourites" onPress={goPick} />
+          <View style={styles.footer}>
+            <Pressable onPress={goPick}>
+              <Pill tone="neutral" label="Edit favourites" />
+            </Pressable>
           </View>
         </>
       )}

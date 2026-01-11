@@ -62,6 +62,7 @@ export type ProfileOverview = {
     title: string;
     category: string;
     difficulty: string;
+    description: string;
   }>;
 
   recent_plans: Array<{

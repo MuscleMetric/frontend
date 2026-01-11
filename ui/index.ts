@@ -35,6 +35,7 @@ export { LoadingScreen } from "./feedback/LoadingScreen";
 export { Pill } from "./feedback/Pill";
 export type { PillTone } from "./feedback/Pill";
 export { ProgressBar } from "./feedback/ProgressBar";
+export { MiniRing } from "./feedback/MiniRing";
 
 // layout
 export { Screen } from "./layout/Screen";

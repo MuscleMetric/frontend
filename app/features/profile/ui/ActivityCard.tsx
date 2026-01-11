@@ -1,12 +1,74 @@
 import React, { useMemo } from "react";
 import { View, Text, StyleSheet } from "react-native";
+import Svg, { Circle } from "react-native-svg";
 
 import { useAppTheme } from "@/lib/useAppTheme";
-import { Card, ProgressBar, Pill } from "@/ui";
+import { Card, Pill } from "@/ui";
 import type { ProfileOverview } from "../data/profileTypes";
 
 function plural(n: number, s: string) {
   return n === 1 ? `${n} ${s}` : `${n} ${s}s`;
+}
+
+function clamp(n: number, min = 0, max = 100) {
+  return Math.max(min, Math.min(max, n));
+}
+
+function DonutRing({
+  valuePct,
+  size,
+  stroke,
+  fg,
+  bg,
+  children,
+}: {
+  valuePct: number; // 0..100
+  size: number;
+  stroke: number;
+  fg: string;
+  bg: string;
+  children?: React.ReactNode;
+}) {
+  const r = (size - stroke) / 2;
+  const c = 2 * Math.PI * r;
+  const pct = clamp(valuePct, 0, 100);
+  const dash = (pct / 100) * c;
+
+  return (
+    <View style={{ width: size, height: size, alignItems: "center", justifyContent: "center" }}>
+      <Svg width={size} height={size}>
+        {/* background */}
+        <Circle
+          cx={size / 2}
+          cy={size / 2}
+          r={r}
+          stroke={bg}
+          strokeWidth={stroke}
+          fill="none"
+          strokeLinecap="round"
+        />
+        {/* foreground */}
+        <Circle
+          cx={size / 2}
+          cy={size / 2}
+          r={r}
+          stroke={fg}
+          strokeWidth={stroke}
+          fill="none"
+          strokeLinecap="round"
+          strokeDasharray={`${dash} ${c - dash}`}
+          // start at top
+          rotation={-90}
+          originX={size / 2}
+          originY={size / 2}
+        />
+      </Svg>
+
+      <View style={{ position: "absolute", alignItems: "center", justifyContent: "center" }}>
+        {children}
+      </View>
+    </View>
+  );
 }
 
 export default function ActivityCard({
@@ -18,9 +80,8 @@ export default function ActivityCard({
 }) {
   const { colors, typography, layout } = useAppTheme();
 
-  const workoutsTotal = data.counts.workouts_total ?? 0;
+  const workoutsTotal = Math.max(0, data.counts.workouts_total ?? 0);
 
-  // planned workouts remaining (only meaningful with active plan)
   const plannedLeft =
     showPlanned && data.active_plan?.planned_workouts_left != null
       ? Math.max(0, Number(data.active_plan.planned_workouts_left))
@@ -31,11 +92,11 @@ export default function ActivityCard({
 
   const achUnlocked = Math.max(0, data.activity.achievements_unlocked ?? 0);
   const achTotal = Math.max(0, data.activity.achievements_total ?? 0);
-  const achPct = Math.max(0, Math.min(100, data.activity.achievements_pct ?? 0));
+  const achPct = clamp(data.activity.achievements_pct ?? 0, 0, 100);
 
-  // progress: completed vs planned (like your old gauge), but as a clean bar
-  const totalForBar = Math.max(workoutsTotal + plannedLeft, 1);
-  const barPct = Math.round((workoutsTotal / totalForBar) * 100);
+  // ring meaning: completed vs (completed + planned left)
+  const ringDenom = Math.max(workoutsTotal + plannedLeft, 1);
+  const ringPct = Math.round((workoutsTotal / ringDenom) * 100);
 
   const styles = useMemo(
     () =>
@@ -57,35 +118,55 @@ export default function ActivityCard({
           color: colors.text,
         },
 
-        // total
-        totalWrap: {
-          gap: layout.space.sm,
+        // ring block
+        ringBlock: {
+          alignItems: "center",
+          gap: layout.space.md,
         },
-        totalLabel: {
+        ringCenterLabel: {
           fontFamily: typography.fontFamily.medium,
           fontSize: typography.size.meta,
           lineHeight: typography.lineHeight.meta,
           color: colors.textMuted,
         },
-        totalValue: {
+        ringCenterValue: {
           fontFamily: typography.fontFamily.bold,
-          fontSize: typography.size.h1,
-          lineHeight: typography.lineHeight.h1,
+          fontSize: typography.size.h2,
+          lineHeight: typography.lineHeight.h2,
           color: colors.text,
+          marginTop: 2,
         },
 
         legendRow: {
           flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: layout.space.lg,
           flexWrap: "wrap",
+        },
+        legendItem: {
+          flexDirection: "row",
+          alignItems: "center",
           gap: layout.space.sm,
         },
+        dot: {
+          width: 8,
+          height: 8,
+          borderRadius: 999,
+        },
+        legendText: {
+          fontFamily: typography.fontFamily.medium,
+          fontSize: typography.size.meta,
+          lineHeight: typography.lineHeight.meta,
+          color: colors.textMuted,
+        },
 
-        // streak grid
-        grid: {
+        // tiles
+        tilesRow: {
           flexDirection: "row",
           gap: layout.space.md,
         },
-        miniCard: {
+        tile: {
           flex: 1,
           borderWidth: StyleSheet.hairlineWidth,
           borderColor: colors.border,
@@ -94,19 +175,19 @@ export default function ActivityCard({
           padding: layout.space.md,
           gap: 6,
         },
-        miniTitle: {
+        tileTitle: {
           fontFamily: typography.fontFamily.medium,
           fontSize: typography.size.meta,
           lineHeight: typography.lineHeight.meta,
           color: colors.textMuted,
         },
-        miniValue: {
+        tileValue: {
           fontFamily: typography.fontFamily.bold,
           fontSize: typography.size.h3,
           lineHeight: typography.lineHeight.h3,
           color: colors.text,
         },
-        miniHint: {
+        tileHint: {
           fontFamily: typography.fontFamily.regular,
           fontSize: typography.size.meta,
           lineHeight: typography.lineHeight.meta,
@@ -116,7 +197,6 @@ export default function ActivityCard({
         divider: {
           height: StyleSheet.hairlineWidth,
           backgroundColor: colors.border,
-          opacity: 0.9,
         },
 
         achRow: {
@@ -147,32 +227,46 @@ export default function ActivityCard({
       <View style={styles.inner}>
         <View style={styles.headerRow}>
           <Text style={styles.title}>My Activity</Text>
-          <Pill tone="neutral" label={`${barPct}%`} />
         </View>
 
-        <View style={styles.totalWrap}>
-          <Text style={styles.totalLabel}>Total workouts</Text>
-          <Text style={styles.totalValue}>{workoutsTotal}</Text>
-
-          <ProgressBar valuePct={barPct} />
+        <View style={styles.ringBlock}>
+          <DonutRing
+            valuePct={ringPct}
+            size={150}
+            stroke={14}
+            fg={colors.success}
+            bg={colors.trackBorder}
+          >
+            <Text style={styles.ringCenterLabel}>Total workouts</Text>
+            <Text style={styles.ringCenterValue}>{workoutsTotal}</Text>
+          </DonutRing>
 
           <View style={styles.legendRow}>
-            <Pill tone="success" label={`Completed (${workoutsTotal})`} />
-            {showPlanned ? <Pill tone="neutral" label={`Planned (${plannedLeft})`} /> : null}
+            <View style={styles.legendItem}>
+              <View style={[styles.dot, { backgroundColor: colors.success }]} />
+              <Text style={styles.legendText}>Completed ({workoutsTotal})</Text>
+            </View>
+
+            {showPlanned ? (
+              <View style={styles.legendItem}>
+                <View style={[styles.dot, { backgroundColor: colors.trackBorder }]} />
+                <Text style={styles.legendText}>Planned ({plannedLeft})</Text>
+              </View>
+            ) : null}
           </View>
         </View>
 
-        <View style={styles.grid}>
-          <View style={styles.miniCard}>
-            <Text style={styles.miniTitle}>Weekly workout streak</Text>
-            <Text style={styles.miniValue}>{plural(weeklyStreak, "week")}</Text>
-            <Text style={styles.miniHint}>Hit your weekly goal to keep it going.</Text>
+        <View style={styles.tilesRow}>
+          <View style={styles.tile}>
+            <Text style={styles.tileTitle}>Weekly Streak</Text>
+            <Text style={styles.tileValue}>{plural(weeklyStreak, "week")}</Text>
+            <Text style={styles.tileHint}>You’re on fire! Keep it up.</Text>
           </View>
 
-          <View style={styles.miniCard}>
-            <Text style={styles.miniTitle}>Step streak</Text>
-            <Text style={styles.miniValue}>{plural(stepsStreak, "day")}</Text>
-            <Text style={styles.miniHint}>Consistency builds momentum.</Text>
+          <View style={styles.tile}>
+            <Text style={styles.tileTitle}>Step streak</Text>
+            <Text style={styles.tileValue}>{plural(stepsStreak, "day")}</Text>
+            <Text style={styles.tileHint}>Consistency builds momentum.</Text>
           </View>
         </View>
 
