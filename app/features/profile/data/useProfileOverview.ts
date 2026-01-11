@@ -34,6 +34,8 @@ export function useProfileOverview() {
       return;
     }
 
+    console.log("profile overview rpc raw:", JSON.stringify(data, null, 2));
+
     setState({ data: (data as any) ?? null, loading: false, error: null });
   }, [userId]);
 
