@@ -1,29 +1,46 @@
-// app/.../EditProfile.tsx
+// app/features/profile/settings/EditProfile.tsx
 import React, { useEffect, useMemo, useState } from "react";
 import {
   View,
   Text,
   TextInput,
-  Pressable,
   StyleSheet,
-  Alert,
   ScrollView,
-  Platform,
   Modal,
+  Platform,
   ActivityIndicator,
+  Pressable,
 } from "react-native";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { supabase } from "../../../../lib/supabase";
-import { useAuth } from "../../../../lib/authContext";
 import { router } from "expo-router";
-import { useAppTheme } from "../../../../lib/useAppTheme";
+
+import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/lib/authContext";
+import { useAppTheme } from "@/lib/useAppTheme";
+import { Card, Button, Pill, ScreenHeader, Icon } from "@/ui";
+
+type LevelKey = "beginner" | "intermediate" | "advanced";
+type GoalKey = "build_muscle" | "lose_fat" | "get_stronger" | "improve_fitness";
+
+const LEVEL_OPTIONS: Array<{ key: LevelKey; label: string }> = [
+  { key: "beginner", label: "Beginner" },
+  { key: "intermediate", label: "Intermediate" },
+  { key: "advanced", label: "Advanced" },
+];
+
+const GOAL_OPTIONS: Array<{ key: GoalKey; label: string }> = [
+  { key: "build_muscle", label: "Build muscle" },
+  { key: "lose_fat", label: "Lose fat" },
+  { key: "get_stronger", label: "Get stronger" },
+  { key: "improve_fitness", label: "Improve fitness" },
+];
 
 /* ---------- helpers ---------- */
 function toISODate(d: Date) {
   return new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()))
     .toISOString()
-    .slice(0, 10); // YYYY-MM-DD
+    .slice(0, 10);
 }
 function parseISODate(s?: string | null) {
   if (!s) return null;
@@ -31,55 +48,72 @@ function parseISODate(s?: string | null) {
   if (!y || !m || !d) return null;
   return new Date(y, m - 1, d);
 }
+function safeNumberOrNull(v: string) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return null;
+  return n;
+}
+function onlyNumeric(v: string) {
+  return v.replace(/[^\d.]/g, "");
+}
+function fmtGoalLabel(key: GoalKey) {
+  return GOAL_OPTIONS.find((g) => g.key === key)?.label ?? "—";
+}
+function fmtLevelLabel(key: LevelKey) {
+  return LEVEL_OPTIONS.find((l) => l.key === key)?.label ?? "—";
+}
 
-const LEVEL_OPTIONS = [
-  { key: "beginner", label: "Beginner" },
-  { key: "intermediate", label: "Intermediate" },
-  { key: "advanced", label: "Advanced" },
-];
-
-const GOAL_OPTIONS = [
-  { key: "build_muscle", label: "Build muscle" },
-  { key: "lose_fat", label: "Lose fat" },
-  { key: "get_stronger", label: "Get stronger" },
-  { key: "improve_fitness", label: "Improve fitness" },
-];
+function initialsFromName(name?: string | null) {
+  const n = (name ?? "").trim();
+  if (!n) return "U";
+  const parts = n.split(/\s+/);
+  if (parts.length === 1) return parts[0].slice(0, 1).toUpperCase();
+  return (
+    parts[0].slice(0, 1).toUpperCase() +
+    parts[parts.length - 1].slice(0, 1).toUpperCase()
+  );
+}
 
 export default function EditProfile() {
   const { session } = useAuth();
-  const userId = session?.user?.id;
+  const userId = session?.user?.id ?? null;
 
-  const { colors } = useAppTheme();
-  const styles = useMemo(() => makeStyles(colors), [colors]);
+  const { colors, typography, layout } = useAppTheme();
+  const styles = useMemo(
+    () => makeStyles({ colors, typography, layout }),
+    [colors, typography, layout]
+  );
 
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+
   const [height, setHeight] = useState("");
   const [weight, setWeight] = useState("");
 
-  // settings JSON from profiles.settings (we keep a copy so we don't lose other keys)
   const [settings, setSettings] = useState<any>({});
-  const [level, setLevel] = useState<string>("intermediate");
-  const [primaryGoal, setPrimaryGoal] = useState<string>("build_muscle");
+  const [level, setLevel] = useState<LevelKey>("intermediate");
+  const [primaryGoal, setPrimaryGoal] = useState<GoalKey>("build_muscle");
 
-  // DOB state
   const [dobIso, setDobIso] = useState<string>("");
   const [showDobPicker, setShowDobPicker] = useState(false);
   const [tempDobDate, setTempDobDate] = useState<Date>(new Date(2000, 0, 1));
 
   useEffect(() => {
     if (!userId) return;
+
     (async () => {
+      setLoading(true);
+
       const { data, error } = await supabase
         .from("profiles")
         .select("name, email, height, weight, date_of_birth, settings")
         .eq("id", userId)
         .single();
 
-      if (error) {
-        console.warn("EditProfile load error", error);
-      }
+      if (error) console.warn("EditProfile load error", error);
 
       if (data) {
         setName(data.name ?? "");
@@ -98,17 +132,21 @@ export default function EditProfile() {
 
         const s = data.settings ?? {};
         setSettings(s);
-        setLevel(s.level ?? "intermediate");
-        setPrimaryGoal(s.primaryGoal ?? "build_muscle");
+        setLevel((s.level ?? "intermediate") as LevelKey);
+        setPrimaryGoal((s.primaryGoal ?? "build_muscle") as GoalKey);
       }
+
       setLoading(false);
     })();
   }, [userId]);
 
+  const canSave = !!userId && !saving;
+
   async function handleSave() {
     if (!userId) return;
+
     try {
-      setLoading(true);
+      setSaving(true);
 
       const newSettings = {
         ...(settings ?? {}),
@@ -119,26 +157,27 @@ export default function EditProfile() {
       const { error } = await supabase
         .from("profiles")
         .update({
-          name,
-          email,
-          height: height ? Number(height) : null,
-          weight: weight ? Number(weight) : null,
+          name: name.trim(),
+          // NOTE: you probably want this read-only long term (auth email)
+          email: email.trim(),
+          height: height ? safeNumberOrNull(height) : null,
+          weight: weight ? safeNumberOrNull(weight) : null,
           date_of_birth: dobIso || null,
           settings: newSettings,
         })
         .eq("id", userId);
 
       if (error) throw error;
-      Alert.alert("Success", "Profile updated successfully!");
+
       router.back();
-    } catch (error: any) {
-      Alert.alert("Error", error.message ?? "Could not update profile.");
+    } catch (e: any) {
+      console.warn("EditProfile save error", e?.message ?? e);
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
   }
 
-  if (loading)
+  if (loading) {
     return (
       <SafeAreaView edges={["top", "left", "right"]} style={styles.safe}>
         <View style={styles.centered}>
@@ -146,187 +185,222 @@ export default function EditProfile() {
         </View>
       </SafeAreaView>
     );
+  }
+
+  const initials = initialsFromName(name);
 
   return (
-    <SafeAreaView edges={["top", "left", "right"]} style={styles.safe}>
+    <SafeAreaView edges={["left", "right"]} style={styles.safe}>
+      <ScreenHeader
+        title="Edit profile"
+        right={
+          <Pressable
+            onPress={handleSave}
+            disabled={!canSave}
+            hitSlop={10}
+            style={({ pressed }) => [
+              styles.saveTextBtn,
+              {
+                opacity: !canSave ? 0.45 : pressed ? 0.65 : 1,
+              },
+            ]}
+          >
+            <Text
+              style={[
+                styles.saveText,
+                { color: canSave ? colors.text : colors.textMuted },
+              ]}
+            >
+              {saving ? "Saving" : "Save"}
+            </Text>
+          </Pressable>
+        }
+      />
+
       <ScrollView
         contentContainerStyle={styles.container}
         keyboardShouldPersistTaps="handled"
       >
-        {/* Header with back button */}
-        <View style={styles.headerRow}>
-          <Pressable
-            style={styles.backBtn}
-            hitSlop={8}
-            onPress={() => router.back()}
-          >
-            <Text style={styles.backIcon}>‹</Text>
-          </Pressable>
-          <Text style={styles.title}>Edit Profile</Text>
-          {/* spacer to balance layout */}
-          <View style={{ width: 32 }} />
-        </View>
+        {/* Basics */}
+        <Card>
+          <Text style={styles.sectionTitle}>Basics</Text>
 
-        {/* Name / Email */}
-        <View style={styles.card}>
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Full Name</Text>
+          <View style={styles.avatarRow}>
+            <View style={styles.avatar}>
+              <Text style={styles.avatarText}>{initials}</Text>
+            </View>
+          </View>
+
+          <View style={styles.field}>
+            <Text style={styles.label}>Full name</Text>
             <TextInput
               value={name}
               onChangeText={setName}
               style={styles.input}
               placeholder="Your name"
-              placeholderTextColor={colors.subtle}
+              placeholderTextColor={colors.textMuted}
             />
           </View>
 
-          <View style={styles.inputGroup}>
+          <View style={styles.field}>
             <Text style={styles.label}>Email</Text>
-            <TextInput
-              value={email}
-              onChangeText={setEmail}
-              style={styles.input}
-              placeholder="you@example.com"
-              autoCapitalize="none"
-              keyboardType="email-address"
-              placeholderTextColor={colors.subtle}
-            />
+            <View style={styles.lockedWrap}>
+              <TextInput
+                value={email}
+                editable={false}
+                style={[styles.input, styles.lockedInput]}
+                placeholder="you@example.com"
+                placeholderTextColor={colors.textMuted}
+              />
+              <View style={styles.lockIcon}>
+                <Icon name="lock-closed" size={16} color={colors.textMuted} />
+              </View>
+            </View>
           </View>
-        </View>
+        </Card>
 
-        {/* Physical stats */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Body stats</Text>
+        {/* Body */}
+        <Card>
+          <Text style={styles.sectionTitle}>Body stats</Text>
+
           <View style={styles.row2}>
-            <View style={[styles.inputGroup, styles.flexItem]}>
+            <View style={styles.flex1}>
               <Text style={styles.label}>Height (cm)</Text>
               <TextInput
                 value={height}
-                onChangeText={setHeight}
+                onChangeText={(v) => setHeight(onlyNumeric(v))}
                 style={styles.input}
                 keyboardType="numeric"
-                placeholder="e.g. 175"
-                placeholderTextColor={colors.subtle}
+                placeholder="175"
+                placeholderTextColor={colors.textMuted}
               />
             </View>
 
-            <View style={[styles.inputGroup, styles.flexItem]}>
+            <View style={styles.flex1}>
               <Text style={styles.label}>Weight (kg)</Text>
               <TextInput
                 value={weight}
-                onChangeText={setWeight}
+                onChangeText={(v) => setWeight(onlyNumeric(v))}
                 style={styles.input}
                 keyboardType="numeric"
-                placeholder="e.g. 70"
-                placeholderTextColor={colors.subtle}
+                placeholder="70"
+                placeholderTextColor={colors.textMuted}
               />
             </View>
           </View>
 
-          {/* DOB */}
-          <View style={styles.inputGroup}>
+          <View style={styles.field}>
             <Text style={styles.label}>Date of birth</Text>
+
             <Pressable
-              style={[styles.input, { justifyContent: "center" }]}
               onPress={() => setShowDobPicker(true)}
+              style={({ pressed }) => [
+                styles.dobButton,
+                { opacity: pressed ? 0.75 : 1 },
+              ]}
             >
-              <Text style={{ color: dobIso ? colors.text : colors.subtle }}>
-                {dobIso || "Select date"}
+              <Text style={styles.dobButtonText}>
+                {dobIso ? dobIso : "Change"}
               </Text>
             </Pressable>
           </View>
-        </View>
+        </Card>
 
-        {/* Training preferences */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Training profile</Text>
-
-          {/* Fitness level pills */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Fitness level</Text>
-            <View style={styles.chipRow}>
-              {LEVEL_OPTIONS.map((opt) => {
-                const active = level === opt.key;
-                return (
-                  <Pressable
-                    key={opt.key}
-                    onPress={() => setLevel(opt.key)}
-                    style={[
-                      styles.chip,
-                      active && {
-                        backgroundColor: colors.primaryBg ?? colors.primary,
-                        borderColor: colors.primary,
-                      },
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.chipLabel,
-                        active && {
-                          color: colors.primaryText ?? "#fff",
-                          fontWeight: "700",
-                        },
-                      ]}
-                    >
-                      {opt.label}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
+        {/* Training profile */}
+        <Card>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionTitle}>Training profile</Text>
+            <Pill
+              tone="neutral"
+              label={`${fmtLevelLabel(level)} · ${fmtGoalLabel(primaryGoal)}`}
+            />
           </View>
 
-          {/* Primary goal pills */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Primary goal</Text>
-            <View style={styles.chipWrap}>
-              {GOAL_OPTIONS.map((opt) => {
-                const active = primaryGoal === opt.key;
-                return (
-                  <Pressable
-                    key={opt.key}
-                    onPress={() => setPrimaryGoal(opt.key)}
+          <Text style={styles.label}>Fitness level</Text>
+          <View style={styles.segmentRow}>
+            {LEVEL_OPTIONS.map((opt) => {
+              const active = level === opt.key;
+              return (
+                <Pressable
+                  key={opt.key}
+                  onPress={() => setLevel(opt.key)}
+                  style={({ pressed }) => [
+                    styles.segmentPill,
+                    active ? styles.segmentActive : styles.segmentIdle,
+                    pressed && { opacity: 0.7 },
+                  ]}
+                >
+                  <Text
                     style={[
-                      styles.chip,
-                      active && {
-                        backgroundColor: colors.primaryBg ?? colors.primary,
-                        borderColor: colors.primary,
-                      },
+                      styles.segmentText,
+                      { color: active ? colors.text : colors.textMuted },
                     ]}
                   >
-                    <Text
-                      style={[
-                        styles.chipLabel,
-                        active && {
-                          color: colors.primaryText ?? "#fff",
-                          fontWeight: "700",
-                        },
-                      ]}
-                    >
-                      {opt.label}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
+                    {opt.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
           </View>
-        </View>
 
-        <Pressable style={styles.saveBtn} onPress={handleSave}>
-          <Text style={styles.saveText}>Save changes</Text>
-        </Pressable>
+          <View style={{ height: layout.space.md }} />
+
+          <Text style={styles.label}>Primary goal</Text>
+          <View style={styles.segmentWrap}>
+            {GOAL_OPTIONS.map((opt) => {
+              const active = primaryGoal === opt.key;
+              return (
+                <Pressable
+                  key={opt.key}
+                  onPress={() => setPrimaryGoal(opt.key)}
+                  style={({ pressed }) => [
+                    styles.segmentPill,
+                    active ? styles.segmentActive : styles.segmentIdle,
+                    pressed && { opacity: 0.7 },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.segmentText,
+                      { color: active ? colors.text : colors.textMuted },
+                    ]}
+                  >
+                    {opt.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </Card>
+
+        {/* Sticky-ish CTA mimic: still keep in content for Android scroll */}
+        <View style={styles.bottomSpacer} />
       </ScrollView>
 
-      {/* Date picker modal */}
+      {/* Bottom CTA bar */}
+      <View style={styles.bottomBar}>
+        <Button
+          title={saving ? "Saving…" : "Save changes"}
+          onPress={handleSave}
+          disabled={!canSave}
+        />
+        <Text style={styles.footerHint}>You can update this anytime</Text>
+      </View>
+
+      {/* DOB picker */}
       <Modal
         visible={showDobPicker}
         transparent
-        animationType="slide"
+        animationType="fade"
         onRequestClose={() => setShowDobPicker(false)}
       >
         <View style={styles.modalScrim}>
           <View style={styles.modalCard}>
-            <Text style={styles.h3}>Select date of birth</Text>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Date of birth</Text>
+              <Pill tone="neutral" label="Optional" />
+            </View>
+
             <DateTimePicker
               value={tempDobDate}
               mode="date"
@@ -334,22 +408,25 @@ export default function EditProfile() {
               maximumDate={new Date()}
               onChange={(_, d) => d && setTempDobDate(d)}
             />
-            <View style={{ flexDirection: "row", gap: 8, marginTop: 12 }}>
-              <Pressable
-                style={[styles.btn, { flex: 1 }]}
-                onPress={() => setShowDobPicker(false)}
-              >
-                <Text style={styles.btnText}>Cancel</Text>
-              </Pressable>
-              <Pressable
-                style={[styles.btn, styles.primary, { flex: 1 }]}
-                onPress={() => {
-                  setDobIso(toISODate(tempDobDate));
-                  setShowDobPicker(false);
-                }}
-              >
-                <Text style={styles.primaryText}>Done</Text>
-              </Pressable>
+
+            <View style={styles.modalActions}>
+              <View style={{ flex: 1 }}>
+                <Button
+                  variant="secondary"
+                  title="Cancel"
+                  onPress={() => setShowDobPicker(false)}
+                />
+              </View>
+
+              <View style={{ flex: 1 }}>
+                <Button
+                  title="Done"
+                  onPress={() => {
+                    setDobIso(toISODate(tempDobDate));
+                    setShowDobPicker(false);
+                  }}
+                />
+              </View>
             </View>
           </View>
         </View>
@@ -358,151 +435,222 @@ export default function EditProfile() {
   );
 }
 
-/* ---------- themed styles ---------- */
-const makeStyles = (colors: any) =>
-  StyleSheet.create({
-    safe: {
-      flex: 1,
-      backgroundColor: colors.background,
-    },
+function makeStyles({
+  colors,
+  typography,
+  layout,
+}: {
+  colors: any;
+  typography: any;
+  layout: any;
+}) {
+  return StyleSheet.create({
+    safe: { flex: 1, backgroundColor: colors.bg },
+
     container: {
-      padding: 20,
-      paddingBottom: 32,
-      gap: 16,
+      padding: layout.space.lg,
+      paddingBottom: layout.space.xxl,
+      gap: layout.space.md,
     },
+
     centered: { flex: 1, alignItems: "center", justifyContent: "center" },
 
-    headerRow: {
+    saveTextBtn: {
+      paddingHorizontal: 6,
+      paddingVertical: 6,
+      borderRadius: 10,
+    },
+    saveText: {
+      fontFamily: typography.fontFamily.semibold,
+      fontSize: typography.size.sub,
+      lineHeight: typography.lineHeight.sub,
+    },
+
+    sectionHeaderRow: {
       flexDirection: "row",
       alignItems: "center",
       justifyContent: "space-between",
-      marginBottom: 8,
+      marginBottom: layout.space.sm,
+      gap: layout.space.md,
     },
-    backBtn: {
-      width: 32,
-      height: 32,
-      borderRadius: 16,
+
+    sectionTitle: {
+      fontFamily: typography.fontFamily.bold,
+      fontSize: typography.size.sub,
+      lineHeight: typography.lineHeight.sub,
+      color: colors.textMuted,
+      marginBottom: layout.space.sm,
+    },
+
+    avatarRow: {
+      flexDirection: "row",
       alignItems: "center",
       justifyContent: "center",
+      gap: layout.space.md,
+      marginBottom: layout.space.md,
+    },
+    avatar: {
+      width: 56,
+      height: 56,
+      borderRadius: 28,
+      backgroundColor: colors.card,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.border,
-      backgroundColor: colors.card,
+      alignItems: "center",
+      justifyContent: "center",
     },
-    backIcon: {
-      fontSize: 20,
-      fontWeight: "800",
+    avatarText: {
+      fontFamily: typography.fontFamily.regular,
+      fontSize: typography.size.hero,
       color: colors.text,
     },
-    title: {
-      fontSize: 20,
-      fontWeight: "800",
-      textAlign: "center",
-      color: colors.text,
+    linkText: {
+      fontFamily: typography.fontFamily.semibold,
+      fontSize: typography.size.sub,
+      lineHeight: typography.lineHeight.sub,
+      color: colors.primary,
     },
 
-    card: {
-      backgroundColor: colors.card,
-      borderRadius: 16,
-      padding: 16,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: colors.border,
-    },
-    cardTitle: {
-      fontSize: 14,
-      fontWeight: "700",
-      marginBottom: 8,
-      color: colors.subtle,
-    },
-
-    inputGroup: { marginBottom: 12 },
-    row2: {
-      flexDirection: "row",
-      gap: 12,
-    },
-    flexItem: { flex: 1 },
+    field: { gap: 6, marginBottom: layout.space.md },
 
     label: {
-      fontWeight: "700",
-      marginBottom: 6,
+      fontFamily: typography.fontFamily.medium,
+      fontSize: typography.size.meta,
+      lineHeight: typography.lineHeight.meta,
       color: colors.text,
-      fontSize: 13,
     },
 
     input: {
-      backgroundColor: colors.surface ?? colors.card,
-      borderRadius: 12,
-      paddingVertical: 10,
-      paddingHorizontal: 12,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.border,
+      backgroundColor: colors.surface,
+      borderRadius: layout.radius.lg,
+      paddingHorizontal: layout.space.md,
+      paddingVertical: 12,
       color: colors.text,
+      fontFamily: typography.fontFamily.regular,
+      fontSize: typography.size.body,
+      lineHeight: typography.lineHeight.body,
     },
 
-    chipRow: {
-      flexDirection: "row",
-      gap: 8,
+    lockedWrap: {
+      position: "relative",
+      justifyContent: "center",
     },
-    chipWrap: {
-      flexDirection: "row",
-      flexWrap: "wrap",
-      gap: 8,
+    lockedInput: {
+      color: colors.textMuted,
+      paddingRight: 40,
     },
-    chip: {
-      paddingHorizontal: 12,
-      paddingVertical: 8,
-      borderRadius: 999,
+    lockIcon: {
+      position: "absolute",
+      right: 12,
+      top: "50%",
+      transform: [{ translateY: -8 }],
+    },
+
+    row2: { flexDirection: "row", gap: layout.space.md },
+    flex1: { flex: 1 },
+
+    dobButton: {
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.border,
-      backgroundColor: colors.surface ?? colors.card,
-    },
-    chipLabel: {
-      fontSize: 13,
-      color: colors.text,
-    },
-
-    saveBtn: {
-      backgroundColor: colors.primary,
-      paddingVertical: 14,
-      borderRadius: 14,
+      backgroundColor: colors.surface,
+      borderRadius: layout.radius.lg,
+      paddingHorizontal: layout.space.md,
+      paddingVertical: 12,
       alignItems: "center",
-      marginTop: 4,
-      shadowColor: "#000",
-      shadowOpacity: 0.12,
-      shadowRadius: 6,
-      shadowOffset: { width: 0, height: 2 },
-      elevation: 2,
+      justifyContent: "center",
     },
-    saveText: {
-      color: colors.onPrimary ?? "#fff",
-      fontWeight: "700",
-      fontSize: 16,
+    dobButtonText: {
+      fontFamily: typography.fontFamily.semibold,
+      fontSize: typography.size.body,
+      lineHeight: typography.lineHeight.body,
+      color: colors.text,
     },
 
-    // modal
+    segmentRow: {
+      flexDirection: "row",
+      gap: layout.space.sm,
+      flexWrap: "wrap",
+    },
+    segmentWrap: {
+      flexDirection: "row",
+      gap: layout.space.sm,
+      flexWrap: "wrap",
+    },
+
+    segmentPill: {
+      paddingHorizontal: layout.space.md,
+      paddingVertical: 10,
+      borderRadius: layout.radius.pill,
+      borderWidth: StyleSheet.hairlineWidth,
+    },
+    segmentIdle: {
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+    },
+    segmentActive: {
+      borderColor: colors.trackBorder,
+      backgroundColor: colors.trackBg,
+    },
+    segmentText: {
+      fontFamily: typography.fontFamily.semibold,
+      fontSize: typography.size.meta,
+      lineHeight: typography.lineHeight.meta,
+    },
+
+    bottomSpacer: { height: 90 },
+
+    bottomBar: {
+      position: "absolute",
+      left: 0,
+      right: 0,
+      bottom: 0,
+      paddingHorizontal: layout.space.lg,
+      paddingTop: layout.space.md,
+      paddingBottom: layout.space.lg,
+      backgroundColor: colors.bg,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: colors.border,
+    },
+    footerHint: {
+      marginTop: layout.space.sm,
+      textAlign: "center",
+      fontFamily: typography.fontFamily.regular,
+      fontSize: typography.size.meta,
+      lineHeight: typography.lineHeight.meta,
+      color: colors.textMuted,
+    },
+
     modalScrim: {
       flex: 1,
-      backgroundColor: "rgba(0,0,0,0.35)",
+      backgroundColor: colors.overlay,
       justifyContent: "flex-end",
+      padding: layout.space.md,
     },
     modalCard: {
-      backgroundColor: colors.card,
-      padding: 16,
-      borderTopLeftRadius: 16,
-      borderTopRightRadius: 16,
-      borderTopWidth: StyleSheet.hairlineWidth,
-      borderColor: colors.border,
-    },
-    h3: { fontSize: 16, fontWeight: "800", marginBottom: 8, color: colors.text },
-
-    btn: {
       backgroundColor: colors.surface,
-      paddingVertical: 10,
-      borderRadius: 10,
-      alignItems: "center",
+      borderRadius: layout.radius.xl,
+      padding: layout.space.lg,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.border,
+      gap: layout.space.md,
     },
-    btnText: { fontWeight: "700", color: colors.text },
-    primary: { backgroundColor: colors.primary, borderColor: colors.primary },
-    primaryText: { color: colors.onPrimary ?? "#fff", fontWeight: "800" },
+    modalHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: layout.space.md,
+    },
+    modalTitle: {
+      fontFamily: typography.fontFamily.bold,
+      fontSize: typography.size.h3,
+      lineHeight: typography.lineHeight.h3,
+      color: colors.text,
+    },
+    modalActions: {
+      flexDirection: "row",
+      gap: layout.space.sm,
+    },
   });
+}

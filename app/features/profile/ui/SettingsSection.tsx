@@ -114,14 +114,14 @@ export default function SettingsSection() {
             <ListRow
               title="Personal Information"
               subtitle="Edit your details and preferences"
-              onPress={() => router.push("/features/profile/EditProfile")}
+              onPress={() => router.push("/features/profile/settings/EditProfile")}
             />
 
             <ListRow
               title="Notifications"
               subtitle="Workout reminders and updates"
               onPress={() =>
-                router.push("/features/profile/settings/QuickUpdateModal")
+                router.push("/features/profile/settings/notifications")
               }
             />
 

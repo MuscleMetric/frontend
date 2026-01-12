@@ -202,7 +202,7 @@ export default function ProfileHeaderCard({ data }: { data: ProfileOverview }) {
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Edit profile"
-            onPress={() => router.push("/features/profile/EditProfile")}
+            onPress={() => router.push("/features/profile/settings/EditProfile")}
             style={({ pressed }) => [
               styles.iconBtn,
               { backgroundColor: pressed ? colors.cardPressed : colors.surface },
