@@ -169,7 +169,6 @@ export default function ActivePlanCard({ data }: { data: ProfileOverview }) {
           </View>
 
           <View style={styles.rightTop}>
-            <Pill tone={tone} label={label} />
             <View style={styles.rightRow}>
               <MiniRing valuePct={weeksCompletedPct} inverted label={`${weeksCompletedPct}%`} />
             </View>

@@ -1,4 +1,4 @@
-// app/(tabs)/achievements.tsx
+// app/features/achievements/achievements.tsx
 import React, { useEffect, useMemo, useState } from "react";
 import {
   View,
@@ -11,10 +11,12 @@ import {
   Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { supabase } from "../../../lib/supabase";
-import { useAuth } from "../../../lib/authContext";
-import { router } from "expo-router";
-import { useAppTheme } from "../../../lib/useAppTheme";
+import { router, useLocalSearchParams } from "expo-router";
+
+import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/lib/authContext";
+import { useAppTheme } from "@/lib/useAppTheme";
+import { Card, Pill, ScreenHeader } from "@/ui";
 
 type Achievement = {
   id: string;
@@ -29,15 +31,20 @@ type FilterMode = "all" | "unlocked" | "locked";
 
 export default function AchievementsScreen() {
   const { session } = useAuth();
-  const userId = session?.user?.id;
+  const userId = session?.user?.id ?? null;
 
-  const { colors } = useAppTheme();
-  const s = useMemo(() => makeStyles(colors), [colors]);
+  const params = useLocalSearchParams();
+  const fromProfile = params?.fromProfile === "1"
+
+  const { colors, typography, layout } = useAppTheme();
+  const s = useMemo(() => makeStyles({ colors, typography, layout }), [colors, typography, layout]);
 
   const [loading, setLoading] = useState(true);
   const [list, setList] = useState<Achievement[]>([]);
   const [unlockedIds, setUnlockedIds] = useState<Set<string>>(new Set());
-  const [mode, setMode] = useState<FilterMode>("all");
+
+  // ✅ if arriving from profile, start on unlocked
+  const [mode, setMode] = useState<FilterMode>(fromProfile ? "unlocked" : "all");
   const [search, setSearch] = useState("");
 
   const [profileSettings, setProfileSettings] = useState<any>({});
@@ -57,7 +64,7 @@ export default function AchievementsScreen() {
       try {
         setLoading(true);
 
-        const [{ data: all }, { data: mine }, { data: profileRow }] =
+        const [{ data: all, error: e1 }, { data: mine, error: e2 }, { data: profileRow, error: e3 }] =
           await Promise.all([
             supabase
               .from("achievements")
@@ -75,6 +82,10 @@ export default function AchievementsScreen() {
               .maybeSingle(),
           ]);
 
+        if (e1) console.warn("Achievements load error (all)", e1);
+        if (e2) console.warn("Achievements load error (mine)", e2);
+        if (e3) console.warn("Achievements load error (profile)", e3);
+
         if (all) setList(all as Achievement[]);
 
         const unlockedSet = mine
@@ -85,18 +96,12 @@ export default function AchievementsScreen() {
         const settings = (profileRow?.settings ?? {}) as any;
         setProfileSettings(settings);
 
-        const favRaw: string[] = Array.isArray(
-          (settings as any)?.favourite_achievements
-        )
-          ? (settings as any).favourite_achievements.filter(
-              (id: any) => typeof id === "string"
-            )
+        const favRaw: string[] = Array.isArray(settings?.favourite_achievements)
+          ? settings.favourite_achievements.filter((id: any) => typeof id === "string")
           : [];
 
         // Only keep favourites that are still unlocked, cap at 3
-        const favUnlocked = favRaw
-          .filter((id) => unlockedSet.has(id))
-          .slice(0, 3);
+        const favUnlocked = favRaw.filter((id) => unlockedSet.has(id)).slice(0, 3);
 
         setFavouriteIds(favUnlocked);
         setInitialFavouriteIds(favUnlocked);
@@ -119,7 +124,6 @@ export default function AchievementsScreen() {
   }, [list, unlockedIds]);
 
   const filtered = useMemo(() => {
-    // 1) base on filter mode
     const base =
       mode === "unlocked"
         ? list.filter((a) => unlockedIds.has(a.id))
@@ -127,7 +131,6 @@ export default function AchievementsScreen() {
         ? list.filter((a) => !unlockedIds.has(a.id))
         : list.slice();
 
-    // 2) apply search filter (title + description + category)
     const q = search.trim().toLowerCase();
     const searched = q
       ? base.filter((a) => {
@@ -139,7 +142,6 @@ export default function AchievementsScreen() {
         })
       : base;
 
-    // 3) stable sort: difficulty → category → title
     const diffRank: Record<Achievement["difficulty"], number> = {
       easy: 1,
       medium: 2,
@@ -147,6 +149,7 @@ export default function AchievementsScreen() {
       elite: 4,
       legendary: 5,
     };
+
     return searched.sort((a, b) => {
       const d = diffRank[a.difficulty] - diffRank[b.difficulty];
       if (d !== 0) return d;
@@ -155,22 +158,6 @@ export default function AchievementsScreen() {
       return a.title.localeCompare(b.title);
     });
   }, [list, unlockedIds, mode, search]);
-
-  if (!userId) {
-    return (
-      <View style={[s.center, { backgroundColor: colors.background }]}>
-        <Text style={{ color: colors.text }}>Please sign in.</Text>
-      </View>
-    );
-  }
-
-  if (loading) {
-    return (
-      <View style={[s.center, { backgroundColor: colors.background }]}>
-        <ActivityIndicator />
-      </View>
-    );
-  }
 
   async function handleSaveFavourites() {
     if (!userId) return;
@@ -182,16 +169,13 @@ export default function AchievementsScreen() {
         favourite_achievements: favouriteIds,
       };
 
-      const { error } = await supabase
-        .from("profiles")
-        .update({ settings: nextSettings })
-        .eq("id", userId);
-
+      const { error } = await supabase.from("profiles").update({ settings: nextSettings }).eq("id", userId);
       if (error) throw error;
 
       setProfileSettings(nextSettings);
       setInitialFavouriteIds(favouriteIds);
-      // you could add a toast here if you have one
+
+      if (fromProfile) router.back();
     } catch (e) {
       console.error("handleSaveFavourites error", e);
       Alert.alert("Couldn’t save favourites", "Please try again in a moment.");
@@ -200,87 +184,93 @@ export default function AchievementsScreen() {
     }
   }
 
-  return (
-    <View style={{ flex: 1, backgroundColor: colors.background }}>
-      <SafeAreaView
-        edges={["top", "left", "right"]}
-        style={{
-          paddingHorizontal: 16,
-          paddingBottom: 8,
-          backgroundColor: colors.background,
-        }}
-      >
-        <View style={s.headerRow}>
-          <Pressable
-            onPress={() => router.back()}
-            style={({ pressed }) => [s.backButton, pressed && { opacity: 0.7 }]}
-          >
-            <Text style={s.backIcon}>‹</Text>
-            <Text style={s.backLabel}>Back</Text>
-          </Pressable>
-
-          <Text style={s.header}>Achievements</Text>
-
-          <Pressable
-            onPress={handleSaveFavourites}
-            disabled={!hasChanges || saving}
-            style={({ pressed }) => [
-              s.saveButton,
-              (!hasChanges || saving) && { opacity: 0.4 },
-              pressed && { opacity: 0.7 },
-            ]}
-          >
-            <Text style={s.saveLabel}>{saving ? "Saving" : "Save"}</Text>
-          </Pressable>
-        </View>
-
-        {/* Summary line */}
-        <Text style={s.subtle}>
-          Unlocked {counts.unlocked} of {counts.total} ({counts.pct}%)
-        </Text>
-
-        {/* Search + filter row */}
-        <View style={s.searchFilterRow}>
-          <View style={s.searchContainer}>
-            <TextInput
-              value={search}
-              onChangeText={setSearch}
-              placeholder="Search achievements…"
-              placeholderTextColor={colors.subtle}
-              style={s.searchInput}
-            />
-          </View>
-
-          <View style={s.filterRow}>
-            <FilterPill
-              label={`All`}
-              count={counts.total}
-              active={mode === "all"}
-              onPress={() => setMode("all")}
-              colors={colors}
-            />
-            <FilterPill
-              label={`Unlocked`}
-              count={counts.unlocked}
-              active={mode === "unlocked"}
-              onPress={() => setMode("unlocked")}
-              colors={colors}
-            />
-            <FilterPill
-              label={`Locked`}
-              count={counts.locked}
-              active={mode === "locked"}
-              onPress={() => setMode("locked")}
-              colors={colors}
-            />
-          </View>
+  if (!userId) {
+    return (
+      <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }}>
+        <View style={s.center}>
+          <Text style={s.emptyText}>Please sign in.</Text>
         </View>
       </SafeAreaView>
+    );
+  }
+
+  if (loading) {
+    return (
+      <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }}>
+        <View style={s.center}>
+          <ActivityIndicator />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  const headerRight = (
+    <Pressable
+      onPress={handleSaveFavourites}
+      disabled={!hasChanges || saving}
+      style={({ pressed }) => [
+        s.headerAction,
+        (!hasChanges || saving) && { opacity: 0.45 },
+        pressed && { opacity: 0.85 },
+      ]}
+    >
+      <Text style={s.headerActionText}>{saving ? "Saving…" : fromProfile ? "Done" : "Save"}</Text>
+    </Pressable>
+  );
+
+  return (
+    <SafeAreaView edges={["left", "right", "bottom"]} style={{ flex: 1, backgroundColor: colors.bg }}>
+      <ScreenHeader title="Achievements" right={headerRight} />
 
       <FlatList
-        contentContainerStyle={{ padding: 16, paddingBottom: 24 }}
         data={filtered}
         keyExtractor={(a) => a.id}
+        contentContainerStyle={{ padding: layout.space.lg, paddingBottom: layout.space.xxl }}
+        ItemSeparatorComponent={() => <View style={{ height: layout.space.md }} />}
+        ListHeaderComponent={
+          <View style={{ gap: layout.space.md, marginBottom: layout.space.md }}>
+            <Text style={s.subtle}>
+              Unlocked {counts.unlocked} of {counts.total} ({counts.pct}%)
+            </Text>
+
+            <View style={s.searchRow}>
+              <TextInput
+                value={search}
+                onChangeText={setSearch}
+                placeholder="Search achievements…"
+                placeholderTextColor={colors.textMuted}
+                style={s.searchInput}
+              />
+            </View>
+
+            <View style={s.filterRow}>
+              <FilterPill
+                label="All"
+                count={counts.total}
+                active={mode === "all"}
+                onPress={() => setMode("all")}
+              />
+              <FilterPill
+                label="Unlocked"
+                count={counts.unlocked}
+                active={mode === "unlocked"}
+                onPress={() => setMode("unlocked")}
+              />
+              <FilterPill
+                label="Locked"
+                count={counts.locked}
+                active={mode === "locked"}
+                onPress={() => setMode("locked")}
+              />
+            </View>
+
+            {fromProfile ? (
+              <Text style={s.helper}>
+                Pick up to 3 unlocked achievements. They’ll appear on your profile.
+              </Text>
+            ) : null}
+          </View>
+        }
         renderItem={({ item }) => {
           const unlocked = unlockedIds.has(item.id);
           const isFavourite = favouriteIds.includes(item.id);
@@ -295,10 +285,7 @@ export default function AchievementsScreen() {
 
                 setFavouriteIds((prev) => {
                   const already = prev.includes(item.id);
-                  if (already) {
-                    // Unselect
-                    return prev.filter((id) => id !== item.id);
-                  }
+                  if (already) return prev.filter((id) => id !== item.id);
 
                   if (prev.length >= 3) {
                     Alert.alert(
@@ -314,281 +301,235 @@ export default function AchievementsScreen() {
             />
           );
         }}
-        ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
         ListEmptyComponent={
-          <View style={s.empty}>
+          <View style={s.center}>
             <Text style={s.emptyTitle}>No achievements found</Text>
-            <Text style={s.emptyText}>
-              Try changing your filters or search term.
-            </Text>
+            <Text style={s.emptyText}>Try changing your filters or search term.</Text>
           </View>
         }
       />
-    </View>
+    </SafeAreaView>
   );
-}
 
-function FilterPill({
-  label,
-  count,
-  active,
-  onPress,
-  colors,
-}: {
-  label: string;
-  count: number;
-  active: boolean;
-  onPress: () => void;
-  colors: any;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => [
-        {
-          paddingVertical: 5,
-          paddingHorizontal: 10,
-          borderRadius: 999,
-          borderWidth: StyleSheet.hairlineWidth,
-          marginRight: 8,
-          backgroundColor: active ? colors.primaryBg : "transparent",
-          borderColor: active ? colors.primary : colors.border,
-          opacity: pressed ? 0.85 : 1,
-          flexDirection: "row",
-          alignItems: "center",
-          gap: 4,
-        },
-      ]}
-    >
-      <Text
-        style={{
-          color: active ? colors.primaryText ?? "#fff" : colors.text,
-          fontWeight: "700",
-          fontSize: 12,
-        }}
+  function FilterPill({
+    label,
+    count,
+    active,
+    onPress,
+  }: {
+    label: string;
+    count: number;
+    active: boolean;
+    onPress: () => void;
+  }) {
+    return (
+      <Pressable
+        onPress={onPress}
+        style={({ pressed }) => [
+          s.filterPill,
+          active ? s.filterPillActive : s.filterPillIdle,
+          pressed && { opacity: 0.85 },
+        ]}
       >
-        {label}
-      </Text>
-      <Text
-        style={{
-          color: active ? colors.primaryText ?? "#fff" : colors.subtle,
-          fontSize: 11,
-          fontWeight: "600",
-        }}
-      >
-        {count}
-      </Text>
-    </Pressable>
-  );
-}
-
-function AchievementCard({
-  a,
-  unlocked,
-  favourite,
-  onToggleFavourite,
-}: {
-  a: Achievement;
-  unlocked: boolean;
-  favourite: boolean;
-  onToggleFavourite: () => void;
-}) {
-  const { colors } = useAppTheme();
-  const s = useMemo(() => makeStyles(colors), [colors]);
-  const badge = diffBadge(a.difficulty, colors);
-
-  return (
-    <View style={[s.card, !unlocked && { opacity: 0.55 }]}>
-      <View style={s.badgeRow}>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-          <Text
-            style={[s.badge, { backgroundColor: badge.bg, color: badge.fg }]}
-          >
-            {badge.label}
-          </Text>
-          <Text style={s.cat}>{capitalize(a.category)}</Text>
-        </View>
-
-        <Pressable
-          disabled={!unlocked}
-          onPress={onToggleFavourite}
-          hitSlop={8}
-          style={[
-            s.favButton,
-            favourite && {
-              backgroundColor: colors.primaryBg ?? colors.card,
-              borderColor: colors.primary ?? colors.border,
-            },
-            !unlocked && { opacity: 0.3 },
-          ]}
-        >
-          <Text
-            style={[
-              s.favIcon,
-              favourite && { color: colors.primaryText ?? colors.primary },
-            ]}
-          >
-            {favourite ? "★" : "☆"}
-          </Text>
-        </Pressable>
-      </View>
-
-      <Text style={s.title}>{a.title}</Text>
-      <Text style={s.desc}>{a.description}</Text>
-
-      <View style={s.lockRow}>
-        <Text
-          style={[
-            s.lock,
-            {
-              color: unlocked
-                ? colors.successText ?? "#16a34a"
-                : colors.subtle ?? "#9ca3af",
-            },
-          ]}
-        >
-          {unlocked ? "Unlocked ✓" : "Locked"}
+        <Text style={[s.filterPillText, active ? { color: colors.text } : { color: colors.textMuted }]}>
+          {label}
         </Text>
-      </View>
-    </View>
-  );
+        <Text style={[s.filterPillCount, active ? { color: colors.text } : { color: colors.textMuted }]}>
+          {count}
+        </Text>
+      </Pressable>
+    );
+  }
+
+  function AchievementCard({
+    a,
+    unlocked,
+    favourite,
+    onToggleFavourite,
+  }: {
+    a: Achievement;
+    unlocked: boolean;
+    favourite: boolean;
+    onToggleFavourite: () => void;
+  }) {
+    const badge = diffBadge(a.difficulty, colors);
+
+    return (
+      <Card>
+        <View style={[s.achWrap, !unlocked && { opacity: 0.55 }]}>
+          <View style={s.badgeRow}>
+            <View style={s.badgeLeft}>
+              <View style={[s.badge, { backgroundColor: badge.bg }]}>
+                <Text style={[s.badgeText, { color: badge.fg }]}>{badge.label}</Text>
+              </View>
+              <Text style={s.cat}>{capitalize(a.category)}</Text>
+            </View>
+
+            <Pressable
+              disabled={!unlocked}
+              onPress={onToggleFavourite}
+              hitSlop={layout.hitSlop}
+              style={({ pressed }) => [
+                s.favButton,
+                favourite && { borderColor: colors.primary, backgroundColor: colors.trackBg },
+                !unlocked && { opacity: 0.3 },
+                pressed && { opacity: 0.85 },
+              ]}
+            >
+              <Text style={[s.favIcon, favourite && { color: colors.primary }]}>
+                {favourite ? "★" : "☆"}
+              </Text>
+            </Pressable>
+          </View>
+
+          <Text style={s.achTitle}>{a.title}</Text>
+          <Text style={s.achDesc}>{a.description}</Text>
+
+          <View style={s.lockRow}>
+            <Pill tone={unlocked ? "success" : "neutral"} label={unlocked ? "Unlocked" : "Locked"} />
+          </View>
+        </View>
+      </Card>
+    );
+  }
 }
 
-/* ---------- themed styles & utils ---------- */
-const makeStyles = (colors: any) =>
-  StyleSheet.create({
-    center: { flex: 1, alignItems: "center", justifyContent: "center" },
+/* ---------- styles + utils ---------- */
+function makeStyles({
+  colors,
+  typography,
+  layout,
+}: {
+  colors: any;
+  typography: any;
+  layout: any;
+}) {
+  return StyleSheet.create({
+    center: { alignItems: "center", justifyContent: "center", paddingTop: 40 },
 
-    headerRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "space-between",
-      marginBottom: 8,
-    },
-    header: { fontSize: 20, fontWeight: "800", color: colors.text },
-
-    backButton: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 4,
-      paddingVertical: 4,
-      paddingRight: 6,
-    },
-    backIcon: {
-      fontSize: 20,
-      color: colors.text,
-      marginBottom: -2,
-    },
-    backLabel: {
-      fontSize: 14,
-      fontWeight: "700",
-      color: colors.text,
-    },
-
-    subtle: { color: colors.subtle, marginTop: 2, fontSize: 12 },
-
-    searchFilterRow: {
-      marginTop: 10,
-    },
-
-    searchContainer: {
-      borderRadius: 999,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: colors.border,
-      backgroundColor: colors.card,
+    headerAction: {
       paddingHorizontal: 12,
-      paddingVertical: 6,
-      flexDirection: "row",
-      alignItems: "center",
-      marginBottom: 8,
-    },
-    searchInput: {
-      flex: 1,
-      fontSize: 13,
-      color: colors.text,
-    },
-
-    filterRow: {
-      flexDirection: "row",
-      alignItems: "center",
-    },
-
-    card: {
-      flex: 1,
-      minHeight: 130,
-      backgroundColor: colors.card,
-      borderRadius: 16,
-      padding: 12,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: colors.border,
-    },
-    badgeRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "space-between",
-      marginBottom: 6,
-    },
-    badge: {
-      paddingVertical: 3,
-      paddingHorizontal: 8,
-      borderRadius: 999,
-      overflow: "hidden",
-      fontWeight: "800",
-      fontSize: 11,
-    },
-    cat: { color: colors.subtle, fontSize: 12 },
-    title: {
-      fontWeight: "800",
-      marginBottom: 4,
-      color: colors.text,
-      fontSize: 14,
-    },
-    desc: {
-      color: colors.text,
-      opacity: 0.9,
-      fontSize: 12,
-      marginTop: 2,
-    },
-    lockRow: {
-      marginTop: 10,
-      flexDirection: "row",
-      justifyContent: "flex-end",
-    },
-    lock: { fontWeight: "700", fontSize: 12 },
-
-    empty: {
-      alignItems: "center",
-      marginTop: 40,
-    },
-    emptyTitle: {
-      fontSize: 16,
-      fontWeight: "700",
-      color: colors.text,
-      marginBottom: 4,
-    },
-    emptyText: {
-      fontSize: 13,
-      color: colors.subtle,
-      textAlign: "center",
-      paddingHorizontal: 16,
-    },
-    saveButton: {
-      paddingHorizontal: 10,
-      paddingVertical: 6,
+      paddingVertical: 8,
       borderRadius: 999,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.border,
       backgroundColor: colors.surface,
     },
-    saveLabel: {
-      fontSize: 12,
-      fontWeight: "700",
+    headerActionText: {
+      fontFamily: typography.fontFamily.semibold,
+      fontSize: typography.size.meta,
+      lineHeight: typography.lineHeight.meta,
       color: colors.text,
     },
+
+    subtle: {
+      fontFamily: typography.fontFamily.regular,
+      fontSize: typography.size.meta,
+      lineHeight: typography.lineHeight.meta,
+      color: colors.textMuted,
+    },
+
+    helper: {
+      fontFamily: typography.fontFamily.regular,
+      fontSize: typography.size.meta,
+      lineHeight: typography.lineHeight.meta,
+      color: colors.textMuted,
+    },
+
+    searchRow: {
+      borderRadius: 999,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+      paddingHorizontal: layout.space.md,
+      paddingVertical: 10,
+    },
+    searchInput: {
+      fontFamily: typography.fontFamily.regular,
+      fontSize: typography.size.sub,
+      lineHeight: typography.lineHeight.sub,
+      color: colors.text,
+    },
+
+    filterRow: { flexDirection: "row", flexWrap: "wrap", gap: layout.space.sm },
+
+    filterPill: {
+      paddingVertical: 8,
+      paddingHorizontal: 12,
+      borderRadius: 999,
+      borderWidth: StyleSheet.hairlineWidth,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+    },
+    filterPillIdle: {
+      backgroundColor: colors.surface,
+      borderColor: colors.border,
+    },
+    filterPillActive: {
+      backgroundColor: colors.trackBg,
+      borderColor: colors.trackBorder,
+    },
+    filterPillText: {
+      fontFamily: typography.fontFamily.semibold,
+      fontSize: typography.size.meta,
+      lineHeight: typography.lineHeight.meta,
+    },
+    filterPillCount: {
+      fontFamily: typography.fontFamily.semibold,
+      fontSize: typography.size.meta,
+      lineHeight: typography.lineHeight.meta,
+      opacity: 0.9,
+    },
+
+    achWrap: { gap: 6 },
+
+    badgeRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+    },
+    badgeLeft: { flexDirection: "row", alignItems: "center", gap: 8 },
+
+    badge: {
+      paddingVertical: 4,
+      paddingHorizontal: 10,
+      borderRadius: 999,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+    },
+    badgeText: {
+      fontFamily: typography.fontFamily.bold,
+      fontSize: typography.size.meta,
+      lineHeight: typography.lineHeight.meta,
+      letterSpacing: 0.6,
+    },
+
+    cat: {
+      fontFamily: typography.fontFamily.medium,
+      fontSize: typography.size.meta,
+      lineHeight: typography.lineHeight.meta,
+      color: colors.textMuted,
+    },
+
+    achTitle: {
+      fontFamily: typography.fontFamily.bold,
+      fontSize: typography.size.sub,
+      lineHeight: typography.lineHeight.sub,
+      color: colors.text,
+      marginTop: 2,
+    },
+    achDesc: {
+      fontFamily: typography.fontFamily.regular,
+      fontSize: typography.size.meta,
+      lineHeight: typography.lineHeight.meta,
+      color: colors.textMuted,
+    },
+
     favButton: {
-      width: 28,
-      height: 28,
-      borderRadius: 14,
+      width: 34,
+      height: 34,
+      borderRadius: 17,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.border,
       alignItems: "center",
@@ -596,51 +537,51 @@ const makeStyles = (colors: any) =>
       backgroundColor: colors.surface,
     },
     favIcon: {
-      fontSize: 16,
-      color: colors.subtle,
+      fontSize: 18,
+      color: colors.textMuted,
+    },
+
+    lockRow: { marginTop: layout.space.sm, alignItems: "flex-end" },
+
+    emptyTitle: {
+      fontFamily: typography.fontFamily.bold,
+      fontSize: typography.size.h3,
+      lineHeight: typography.lineHeight.h3,
+      color: colors.text,
+      marginBottom: 6,
+    },
+    emptyText: {
+      fontFamily: typography.fontFamily.regular,
+      fontSize: typography.size.sub,
+      lineHeight: typography.lineHeight.sub,
+      color: colors.textMuted,
+      textAlign: "center",
+      paddingHorizontal: 20,
     },
   });
+}
 
-function diffBadge(
-  d: Achievement["difficulty"],
-  colors: any
-): { bg: string; fg: string; label: string } {
+function diffBadge(d: Achievement["difficulty"], colors: any) {
+  const mk = (bg: string, fg: string, label: string) => ({ bg, fg, label });
+  const neutralBg = colors.trackBg ?? colors.surface ?? colors.card;
+  const neutralFg = colors.text ?? "#111";
+
   switch (d) {
     case "easy":
-      return {
-        bg: colors.successBg ?? "#22c55e22",
-        fg: colors.successText ?? "#16a34a",
-        label: "EASY",
-      };
+      return mk("rgba(34,197,94,0.18)", colors.success ?? "#22C55E", "EASY");
     case "medium":
-      return {
-        bg: colors.primaryBg ?? "#3b82f622",
-        fg: colors.primaryText ?? colors.primary ?? "#3b82f6",
-        label: "MEDIUM",
-      };
+      return mk("rgba(37,99,235,0.18)", colors.primary ?? "#2563EB", "MEDIUM");
     case "hard":
-      return {
-        bg: colors.warnBg ?? "#f59e0b22",
-        fg: colors.warnText ?? "#f59e0b",
-        label: "HARD",
-      };
+      return mk("rgba(245,158,11,0.18)", colors.warning ?? "#F59E0B", "HARD");
     case "elite":
-      return {
-        bg: (colors.danger ?? "#ef4444") + "22",
-        fg: colors.danger ?? "#ef4444",
-        label: "ELITE",
-      };
+      return mk("rgba(239,68,68,0.18)", colors.danger ?? "#EF4444", "ELITE");
     case "legendary":
-      return {
-        bg: (colors.notification ?? "#8b5cf6") + "22",
-        fg: colors.notification ?? "#8b5cf6",
-        label: "LEGEND",
-      };
+      return mk("rgba(139,92,246,0.18)", colors.primary ?? "#2563EB", "LEGEND");
     default:
-      return { bg: colors.surface ?? colors.card, fg: colors.text, label: "—" };
+      return mk(neutralBg, neutralFg, "—");
   }
 }
 
 function capitalize(s: string) {
-  return s.charAt(0).toUpperCase() + s.slice(1);
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
 }
