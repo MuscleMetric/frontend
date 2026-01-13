@@ -1,3 +1,4 @@
+// ui/media/WorkoutCover.tsx
 import React from "react";
 import {
   ImageBackground,
@@ -7,127 +8,191 @@ import {
   View,
   ViewStyle,
   LayoutChangeEvent,
+  useColorScheme,
 } from "react-native";
 import { useAppTheme } from "@/lib/useAppTheme";
-import { resolveWorkoutCover } from "./workoutCovers";
+import { resolveWorkoutImage } from "./workoutCovers";
+
+type Variant = "banner" | "tile";
 
 export function WorkoutCover({
   imageKey,
   title,
   subtitle,
-  height = 170,
+
+  // shared
   radius,
   style,
+
+  // banner options
+  height = 170,
   children,
   badge,
   badgePosition = "bottomRight",
-  focusY = 0.5, // 0 = top, 0.5 = center, 1 = bottom
+  focusY = 0.5,
+
+  // ✅ new
+  variant = "banner",
+  tileSize = 56, // only used when variant="tile"
+  zoom = 1, // allow slight zoom per use-case
 }: {
   imageKey?: string | null;
   title?: string | null;
   subtitle?: string | null;
-  height?: number;
+
   radius?: number;
   style?: ViewStyle;
+
+  height?: number;
   children?: React.ReactNode;
   badge?: React.ReactNode;
-  badgePosition?: "topLeft" | "bottomRight";
+  badgePosition?: "topLeft" | "topRight" | "bottomRight";
   focusY?: number;
+
+  variant?: Variant;
+  tileSize?: number;
+  zoom?: number;
 }) {
   const { colors, typography, layout } = useAppTheme();
-  const r = radius ?? layout.radius.lg;
+  const r =
+    radius ?? (variant === "tile" ? layout.radius.md : layout.radius.lg);
 
-  const source = React.useMemo(() => resolveWorkoutCover(imageKey), [imageKey]);
+  const scheme = useColorScheme() === "dark" ? "dark" : "light";
 
+  const source = React.useMemo(
+    () => resolveWorkoutImage(imageKey, { variant, scheme }),
+    [imageKey, variant, scheme]
+  );
+
+  // TILE MODE ---------------------------------------------------
+  if (variant === "tile") {
+    return (
+      <View
+        style={[
+          styles.tileWrap,
+          {
+            width: tileSize,
+            height: tileSize,
+            borderRadius: r,
+            backgroundColor: colors.trackBg,
+            borderColor: colors.trackBorder,
+          },
+          style,
+        ]}
+      >
+        <Image
+          source={source}
+          style={[
+            styles.tileImg,
+            {
+              borderRadius: r,
+              transform: zoom !== 1 ? [{ scale: zoom }] : undefined,
+            },
+          ]}
+        />
+      </View>
+    );
+  }
+
+  // BANNER MODE --------------------------------------------------
   const [w, setW] = React.useState<number>(0);
 
   const onLayout = React.useCallback((e: LayoutChangeEvent) => {
     setW(e.nativeEvent.layout.width);
   }, []);
 
-  // Get intrinsic image size (works for local require() assets)
+  // Intrinsic size (works for local require() assets)
   const intrinsic = React.useMemo(() => {
     const s = Image.resolveAssetSource(source as any);
     return s?.width && s?.height ? { iw: s.width, ih: s.height } : null;
   }, [source]);
 
-  // Compute the translateY that changes the crop focus, but NEVER shows blank space.
   const translateY = React.useMemo(() => {
     if (!intrinsic || !w || !height) return 0;
 
     const { iw, ih } = intrinsic;
-
-    // cover scaling for this container (w x height)
     const scale = Math.max(w / iw, height / ih);
     const scaledH = ih * scale;
-
-    const extraH = Math.max(0, scaledH - height); // how much vertical "slack" we can move through
-    // focusY=0 -> show top -> image pushed DOWN by extraH/2
-    // focusY=1 -> show bottom -> image pushed UP by extraH/2
+    const extraH = Math.max(0, scaledH - height);
     const desired = (0.5 - focusY) * extraH;
-
-    // Clamp so we never reveal empty background
     const maxShift = extraH / 2;
     return Math.max(-maxShift, Math.min(maxShift, desired));
   }, [intrinsic, w, height, focusY]);
 
-  const styles = React.useMemo(
-    () => makeStyles(colors, typography, layout, height, r),
+  const s = React.useMemo(
+    () => makeBannerStyles(colors, typography, layout, height, r),
     [colors, typography, layout, height, r]
   );
 
   return (
-    <View onLayout={onLayout} style={[styles.bg, style]}>
+    <View onLayout={onLayout} style={[s.bg, style]}>
       <ImageBackground
         source={source}
         style={StyleSheet.absoluteFill}
         imageStyle={[
-          styles.img,
+          s.img,
           {
-            transform: [{ translateY }],
+            transform: [
+              { translateY },
+              ...(zoom !== 1 ? [{ scale: zoom }] : []),
+            ],
           },
         ]}
       >
-        <View style={styles.overlay} />
+        {/* overlay only for banner */}
+        <View style={s.overlay} />
 
-        {/* ✅ badge layer (above overlay + image) */}
         {badge ? (
           <View
             pointerEvents="box-none"
             style={[
-              styles.badgeWrap,
+              s.badgeWrap,
               badgePosition === "topLeft"
-                ? styles.badgeTopLeft
-                : styles.badgeBottomRight,
+                ? s.badgeTopLeft
+                : badgePosition === "topRight"
+                ? s.badgeTopRight
+                : s.badgeBottomRight,
             ]}
           >
             {badge}
           </View>
         ) : null}
 
-        <View style={styles.content}>
+        <View style={s.content}>
           <View style={{ flex: 1, gap: 4 }}>
             {!!title ? (
-              <Text style={styles.title} numberOfLines={2}>
+              <Text style={s.title} numberOfLines={2}>
                 {title}
               </Text>
             ) : null}
 
             {!!subtitle ? (
-              <Text style={styles.sub} numberOfLines={2}>
+              <Text style={s.sub} numberOfLines={2}>
                 {subtitle}
               </Text>
             ) : null}
           </View>
 
-          {!!children ? <View style={styles.right}>{children}</View> : null}
+          {!!children ? <View style={s.right}>{children}</View> : null}
         </View>
       </ImageBackground>
     </View>
   );
 }
 
-const makeStyles = (
+const styles = StyleSheet.create({
+  tileWrap: {
+    overflow: "hidden",
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  tileImg: {
+    width: "100%",
+    height: "100%",
+    resizeMode: "cover",
+  },
+});
+
+const makeBannerStyles = (
   colors: any,
   typography: any,
   layout: any,
@@ -139,7 +204,7 @@ const makeStyles = (
       height,
       borderRadius: radius,
       overflow: "hidden",
-      backgroundColor: colors.card,
+      backgroundColor: colors.surface,
     },
     img: {
       borderRadius: radius,
@@ -171,7 +236,6 @@ const makeStyles = (
     right: {
       alignSelf: "flex-end",
     },
-
     badgeWrap: {
       position: "absolute",
       zIndex: 5,
@@ -180,6 +244,11 @@ const makeStyles = (
       top: layout.space.md,
       left: layout.space.md,
     },
+    badgeTopRight: {
+      top: layout.space.md,
+      right: layout.space.md,
+    },
+
     badgeBottomRight: {
       bottom: layout.space.md,
       right: layout.space.md,

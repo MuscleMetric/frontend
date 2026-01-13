@@ -1,37 +1,31 @@
+// app/features/workouts/types/workoutsTab.ts
+
 export type WorkoutsTabState = "new_user" | "no_plan" | "with_plan";
 
 export type WorkoutsTabPayload = {
   state: WorkoutsTabState;
 
-  header: {
-    title: string;
-    actions: {
-      showSearch: boolean;
-      showNotifications?: boolean;
-    };
-  };
-
   setup?: {
     title: string;
     subtitle: string;
-    progressPct: number; // you can override client-side if you want
+    progressPct: number; // 0..100
     cta: { label: string; action: "create_first_workout" };
   };
 
   suggested?: {
-    title: "Suggested for You";
+    title: string;
     seeAll: boolean;
     items: Array<{
       workoutId: string;
       title: string;
-      imageKey: string; // workouts.workout_image_key
+      imageKey: string | null;
       previewText: string;
       tapAction: "preview";
     }>;
   };
 
   myWorkouts: {
-    title: "My Workouts";
+    title: string;
     seeAll: boolean;
     emptyState?: {
       title: string;
@@ -42,28 +36,37 @@ export type WorkoutsTabPayload = {
     items: Array<{
       workoutId: string;
       title: string;
-      imageKey: string;
+      imageKey: string | null;
       exerciseCount: number;
       previewText: string;
-      lastDoneAt: string | null;
+      lastDoneAt: string | null; // ISO
     }>;
   };
 
   activePlan?: {
     planId: string;
     title: string;
+
+    metaLine?: string | null; // "Week 3 of 12 • 4 Days Left"
+
     progress: { completedCount: number; totalCount: number; pct: number };
+
+    coachTip?: {
+      text: string;
+    } | null;
+
     nextWorkout: {
       planWorkoutId: string;
       workoutId: string;
       title: string;
-      imageKey: string;
+      imageKey: string | null;
     } | null;
+
     primaryCta: { label: string; action: "start_workout" };
   };
 
   planSchedule?: {
-    title: "Plan Schedule";
+    title: string;
     actions: { viewAll: boolean; edit: boolean };
     items: Array<{
       planWorkoutId: string;
@@ -71,25 +74,21 @@ export type WorkoutsTabPayload = {
       title: string;
       orderIndex: number | null;
       weeklyComplete: boolean;
-      imageKey: string;
+      imageKey: string | null;
       previewText: string;
+      lastDoneAt: string | null; // include last done (you asked for it)
     }>;
   };
 
   optionalSessions?: {
-    title: "Optional Sessions";
+    title: string;
     actionCreate: boolean;
     items: Array<{
       workoutId: string;
       title: string;
-      imageKey: string;
+      imageKey: string | null;
       previewText: string;
       lastDoneAt: string | null;
     }>;
-  };
-
-  fab: {
-    visible: boolean;
-    action: "create_workout" | "create_menu";
   };
 };

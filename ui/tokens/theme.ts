@@ -17,6 +17,8 @@ export type ThemeColors = {
   warning: string;
   danger: string;
 
+  successBg: string;
+
   overlay: string;
   cardPressed: string;
 
@@ -63,6 +65,8 @@ export const colors = {
     warning: palette.peakGold,
     danger: palette.controlledRed,
 
+    successBg: palette.momentumGreen,
+
     overlay: "rgba(0,0,0,0.45)",
     cardPressed: "rgba(37,99,235,0.08)",
 
@@ -85,6 +89,8 @@ export const colors = {
     success: palette.momentumGreen,
     warning: palette.peakGold,
     danger: palette.controlledRed,
+
+    successBg: palette.momentumGreen,
 
     overlay: "rgba(0,0,0,0.55)",
     cardPressed: "rgba(37,99,235,0.18)",
