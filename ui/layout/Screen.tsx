@@ -10,7 +10,7 @@ export type ScreenProps = {
   style?: ViewStyle;
 };
 
-export function Screen({ children, edges =  ["bottom"], style }: ScreenProps) {
+export function Screen({ children, edges =  ["left", "right"], style }: ScreenProps) {
   const { colors } = useAppTheme();
 
   return (

@@ -57,7 +57,7 @@ export default function WorkoutsHome() {
   }
 
   return (
-    <Screen edges={["bottom"]}>
+    <Screen>
       <ScrollView
         style={{ flex: 1, backgroundColor: colors.bg }}
         contentContainerStyle={{
