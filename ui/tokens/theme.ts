@@ -38,6 +38,9 @@ export const palette = {
   peakGold: "#F59E0B",
   controlledRed: "#EF4444",
 
+  successBgLight: "rgba(34,197,94,0.10)",
+  successBgDark: "rgba(34,197,94,0.18)",
+
   lightBg: "#F9FAFB",
   lightSurface: "#FFFFFF",
   lightText: "#0F172A",
@@ -65,7 +68,7 @@ export const colors = {
     warning: palette.peakGold,
     danger: palette.controlledRed,
 
-    successBg: palette.momentumGreen,
+    successBg: palette.successBgLight,
 
     overlay: "rgba(0,0,0,0.45)",
     cardPressed: "rgba(37,99,235,0.08)",
@@ -90,7 +93,7 @@ export const colors = {
     warning: palette.peakGold,
     danger: palette.controlledRed,
 
-    successBg: palette.momentumGreen,
+    successBg: palette.successBgDark,
 
     overlay: "rgba(0,0,0,0.55)",
     cardPressed: "rgba(37,99,235,0.18)",

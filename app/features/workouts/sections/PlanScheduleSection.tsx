@@ -109,14 +109,15 @@ export function PlanScheduleSection({
               left={
                 <WorkoutCover
                   imageKey={pw.imageKey}
-                  variant="tile"          // ✅ IMPORTANT
+                  variant="tile" // ✅ IMPORTANT
                   tileSize={68}
                   radius={14}
-                  zoom={1}                // or 1.08 if your tiles still feel wide
+                  zoom={1} // or 1.08 if your tiles still feel wide
                 />
               }
               rightNode={rightNode ?? undefined}
-              disabled={pw.weeklyComplete}   // ✅ completed rows not clickable
+              tone={pw.weeklyComplete ? "success" : "default"}
+              disabled={pw.weeklyComplete} // ✅ completed rows not clickable
               showChevron={!pw.weeklyComplete}
               onPress={
                 !pw.weeklyComplete && onPressWorkout
