@@ -1,4 +1,4 @@
-import { LiveWorkoutDraft, WorkoutLoadPayload, LiveExerciseDraft } from "./liveWorkoutTypes";
+import type { LiveWorkoutDraft, WorkoutLoadPayload, LiveExerciseDraft } from "./liveWorkoutTypes";
 
 function nowIso() {
   return new Date().toISOString();
@@ -15,9 +15,9 @@ export function makeDraftId() {
 }
 
 function initialSetsForExercise(ex: WorkoutLoadPayload["exercises"][number]) {
-  const target = ex.prescription.targetSets ?? 0;
-  const count = Math.max(1, Math.min(20, target || 1)); // default 1 set if not prescribed
-  return Array.from({ length: count }).map((_, i) => ({
+  const target = ex.prescription?.targetSets ?? null;
+  const count = Math.max(1, Math.min(20, target ?? 1)); // default 1 set if not prescribed
+  return Array.from({ length: count }, (_, i) => ({
     setNumber: i + 1,
     dropIndex: 0,
     reps: null,
@@ -28,33 +28,40 @@ function initialSetsForExercise(ex: WorkoutLoadPayload["exercises"][number]) {
   }));
 }
 
-export function buildDraftFromPayload(args: {
+/**
+ * Canonical builder used by the live session.
+ * This matches the RPC payload shape (WorkoutLoadPayload).
+ */
+export function buildDraftFromBootstrap(args: {
   payload: WorkoutLoadPayload;
   userId: string;
   draftId?: string;
 }): LiveWorkoutDraft {
   const { payload, userId } = args;
 
-  const exercises: LiveExerciseDraft[] = payload.exercises.map((ex) => ({
-    workoutExerciseId: ex.workoutExerciseId ?? null,
-    exerciseId: ex.exerciseId,
-    name: ex.name,
-    orderIndex: ex.orderIndex,
+  const exercises: LiveExerciseDraft[] = payload.exercises
+    .slice()
+    .sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0))
+    .map((ex) => ({
+      workoutExerciseId: ex.workoutExerciseId ?? null,
+      exerciseId: ex.exerciseId,
+      name: ex.name,
+      orderIndex: ex.orderIndex,
 
-    equipment: ex.equipment,
-    type: ex.type,
-    level: ex.level,
-    videoUrl: ex.videoUrl,
-    instructions: ex.instructions,
+      equipment: ex.equipment,
+      type: ex.type,
+      level: ex.level,
+      videoUrl: ex.videoUrl,
+      instructions: ex.instructions,
 
-    prescription: ex.prescription,
-    lastSession: ex.lastSession,
-    bestE1rm: ex.bestE1rm,
-    totalVolumeAllTime: ex.totalVolumeAllTime,
+      prescription: ex.prescription,
+      lastSession: ex.lastSession,
+      bestE1rm: ex.bestE1rm,
+      totalVolumeAllTime: ex.totalVolumeAllTime,
 
-    isDone: false,
-    sets: initialSetsForExercise(ex),
-  }));
+      isDone: false,
+      sets: initialSetsForExercise(ex),
+    }));
 
   const ts = nowIso();
 
@@ -81,3 +88,6 @@ export function buildDraftFromPayload(args: {
     ui: { activeExerciseIndex: 0, activeSetNumber: 1 },
   };
 }
+
+// Backwards compat (so any older imports don’t break)
+export const buildDraftFromPayload = buildDraftFromBootstrap;

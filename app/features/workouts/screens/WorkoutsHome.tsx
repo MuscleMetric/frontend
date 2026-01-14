@@ -22,11 +22,11 @@ import { PlanScheduleSection } from "../sections/PlanScheduleSection";
 import { OptionalSessionsSection } from "../sections/OptionalSessionsSection";
 
 const ROUTES = {
-  workoutPreview: "/features/workouts/view",
-  workoutUse: "/features/workouts/use",
-  planView: "/features/plans/view",
-  planEdit: "/features/plans/edit",
-  planCreate: "/features/plans/create/planInfo",
+  workoutPreview: "/features/workouts/screens/WorkoutOverview",
+  workoutUse: "/features/workouts/screens/WorkoutOverview",
+  planView: "/features/workouts/screens/WorkoutOverview",
+  planEdit: "/features/workouts/screens/WorkoutOverview",
+  planCreate: "/features/workouts/screens/WorkoutOverview",
 } as const;
 
 export default function WorkoutsHome() {
