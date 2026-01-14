@@ -117,7 +117,7 @@ export function PlanScheduleSection({
               }
               rightNode={rightNode ?? undefined}
               tone={pw.weeklyComplete ? "success" : "default"}
-              disabled={pw.weeklyComplete} // ✅ completed rows not clickable
+              disabled={pw.weeklyComplete} 
               showChevron={!pw.weeklyComplete}
               onPress={
                 !pw.weeklyComplete && onPressWorkout

@@ -43,3 +43,6 @@ export type { ScreenProps } from "./layout/Screen";
 
 // media
 export * from "./media/WorkoutCover";
+
+// modals
+export { ModalSheet } from "./modals/ModalSheet";
