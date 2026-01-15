@@ -1,35 +1,75 @@
-import React, { useEffect, useMemo, useState } from "react";
+// app/features/workouts/live/LiveWorkoutScreen.tsx
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { ScrollView, View, Text, Alert, AppState } from "react-native";
 import { useLocalSearchParams, router } from "expo-router";
-import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/authContext";
 import { useAppTheme } from "@/lib/useAppTheme";
-import { Screen, Button, Card, LoadingScreen, ErrorState } from "@/ui";
+import { Card, LoadingScreen, ErrorState, Screen } from "@/ui";
 
-import type { WorkoutLoadPayload, LiveWorkoutDraft } from "../hooks/liveWorkoutTypes";
-import { buildDraftFromPayload } from "../hooks/buildDraft";
-import {
-  loadLiveWorkoutDraft,
-  saveLiveWorkoutDraft,
-  clearLiveWorkoutDraft,
-} from "../hooks/liveWorkoutStorage";
+import type { LiveWorkoutDraft } from "./state/types";
+import { bootLiveDraft } from "./boot/bootLiveDraft";
+import { usePersistDraft } from "./persist/usePersistDraft";
+import { clearLiveDraftForUser } from "./persist/local";
+import { clearServerDraft } from "./persist/server";
 
-import { LiveWorkoutExerciseRow } from "./components/LiveWorkoutExerciseRow";
+import { openExercise } from "./state/mutators";
+import * as M from "./state/mutators";
+import * as S from "./state/selectors";
 
-// NEW
-import { LiveHeader } from "./components/LiveHeader";
-import { LiveStickyFooter } from "./components/LiveStickyFooter";
+import { LiveHeader } from "./ui/LiveHeader";
+import { LiveWorkoutExerciseRow } from "./ui/LiveWorkoutExerciseRow";
+import { LiveStickyFooter } from "./ui/LiveStickyFooter";
 import { ExerciseEntryModal } from "./modals/ExerciseEntryModal";
-import { getProgress } from "./state/selectors";
 
-type Params = {
-  workoutId?: string;
-  planWorkoutId?: string;
-};
+import { useLiveActivitySync } from "./liveActivity/useLiveActivitySync";
+import { stopLiveWorkout } from "@/lib/liveWorkout";
 
-function formatTimerPlaceholder(startedAtIso?: string) {
-  // placeholder until we wire real timer
-  return startedAtIso ? "Live" : undefined;
+type Params = { workoutId?: string; planWorkoutId?: string };
+
+function pad2(n: number) {
+  return String(n).padStart(2, "0");
+}
+
+function timerTextFromStartedAt(startedAtIso: string) {
+  const startMs = new Date(startedAtIso).getTime();
+  const nowMs = Date.now();
+  const diff = Math.max(0, nowMs - startMs);
+  const totalSeconds = Math.floor(diff / 1000);
+  const mm = Math.floor(totalSeconds / 60);
+  const ss = totalSeconds % 60;
+  return `${pad2(mm)}:${pad2(ss)}`;
+}
+
+function fmtNum(n: number, dp = 0) {
+  if (dp === 0) return `${Math.round(n)}`;
+  return n.toFixed(dp);
+}
+
+function buildExerciseSubtitle(ex: any) {
+  // ex is LiveExerciseDraft
+  const type = (ex.type ?? "").toLowerCase();
+  const p = ex.prescription ?? {};
+  const targetSets = p.targetSets ?? ex.sets?.length ?? 0;
+
+  if (type === "cardio") {
+    const parts: string[] = [];
+    parts.push(`${targetSets} sets`);
+    if (p.targetDistance != null)
+      parts.push(`${fmtNum(p.targetDistance, 2)}km`);
+    if (p.targetTimeSeconds != null)
+      parts.push(`${fmtNum(p.targetTimeSeconds)}s`);
+    return parts.join(" • ");
+  }
+
+  // strength default
+  if (p.targetReps != null && p.targetWeight != null) {
+    return `${targetSets} sets × ${p.targetReps} • ${fmtNum(p.targetWeight)}kg`;
+  }
+  if (p.targetReps != null) return `${targetSets} sets × ${p.targetReps}`;
+  if (p.targetWeight != null)
+    return `${targetSets} sets • ${fmtNum(p.targetWeight)}kg`;
+
+  return `${ex.sets?.length ?? 0} sets`;
 }
 
 export default function LiveWorkoutScreen() {
@@ -37,74 +77,68 @@ export default function LiveWorkoutScreen() {
   const { colors, typography, layout } = useAppTheme();
   const params = useLocalSearchParams<Params>();
 
-  const workoutId = typeof params.workoutId === "string" ? params.workoutId : undefined;
-  const planWorkoutId = typeof params.planWorkoutId === "string" ? params.planWorkoutId : undefined;
+  const workoutId =
+    typeof params.workoutId === "string" ? params.workoutId : undefined;
+  const planWorkoutId =
+    typeof params.planWorkoutId === "string" ? params.planWorkoutId : undefined;
 
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
-
   const [draft, setDraft] = useState<LiveWorkoutDraft | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
 
-  if (!userId) {
-    return <ErrorState title="Not signed in" message="Please log in to start a workout." />;
-  }
-  const uid = userId;
+  const uid = userId ?? null;
 
-  async function persist(next: LiveWorkoutDraft) {
-    setDraft(next);
-    await saveLiveWorkoutDraft(next);
-  }
+  const { persist } = usePersistDraft({
+    enabledServer: true,
+    serverDebounceMs: 1200,
+  });
 
-  function updateDraft(mutator: (d: LiveWorkoutDraft) => LiveWorkoutDraft) {
-    setDraft((prev) => {
-      if (!prev) return prev;
-      const next = mutator(prev);
-      saveLiveWorkoutDraft(next).catch(() => {});
-      return next;
-    });
-  }
+  // Live Activities sync (your existing hook)
+  useLiveActivitySync(draft, true);
 
+  // ---- Timer (ticks every second while draft exists) ----
+  const [timerText, setTimerText] = useState("00:00");
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    if (!draft?.startedAt) return;
+
+    // prime immediately
+    setTimerText(timerTextFromStartedAt(draft.startedAt));
+
+    if (timerRef.current) clearInterval(timerRef.current);
+
+    timerRef.current = setInterval(() => {
+      setTimerText(timerTextFromStartedAt(draft.startedAt));
+    }, 1000);
+
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+      timerRef.current = null;
+    };
+  }, [draft?.startedAt]);
+
+  // ---- Boot draft ----
   useEffect(() => {
     let cancelled = false;
 
     async function boot() {
+      if (!uid) return;
+
       setLoading(true);
       setErr(null);
 
       try {
-        // 1) Resume existing draft if it exists
-        const existing = await loadLiveWorkoutDraft(uid);
-        if (existing) {
-          if (cancelled) return;
-          setDraft(existing);
-          setLoading(false);
-          return;
-        }
-
-        // 2) No draft exists -> need workoutId
-        if (!workoutId) {
-          if (cancelled) return;
-          setErr("No workoutId provided to start a session.");
-          setLoading(false);
-          return;
-        }
-
-        // 3) Fetch bootstrap from RPC
-        const { data, error } = await supabase.rpc("get_workout_session_bootstrap", {
-          p_workout_id: workoutId,
-          p_plan_workout_id: planWorkoutId ?? null,
+        const next = await bootLiveDraft({
+          userId: uid,
+          workoutId,
+          planWorkoutId: planWorkoutId ?? null,
+          preferServer: true,
         });
-        if (error) throw error;
-
-        const payload = data as WorkoutLoadPayload;
-
-        // 4) Build + persist immediately
-        const nextDraft = buildDraftFromPayload({ userId: uid, payload });
-        await saveLiveWorkoutDraft(nextDraft);
 
         if (cancelled) return;
-        setDraft(nextDraft);
+        setDraft(next);
         setLoading(false);
       } catch (e: any) {
         if (cancelled) return;
@@ -119,155 +153,95 @@ export default function LiveWorkoutScreen() {
     };
   }, [uid, workoutId, planWorkoutId]);
 
+  // App background -> flush save
   useEffect(() => {
     const sub = AppState.addEventListener("change", (state) => {
-      if (state !== "active") {
-        const d = draft;
-        if (d) saveLiveWorkoutDraft(d).catch(() => {});
+      if (state !== "active" && draft) {
+        persist(draft).catch(() => {});
       }
     });
     return () => sub.remove();
-  }, [draft]);
+  }, [draft, persist]);
 
-  function openExercise(index: number) {
-    updateDraft((d) => ({
-      ...d,
-      ui: { ...d.ui, activeExerciseIndex: index, activeSetNumber: 1 },
-      updatedAt: new Date().toISOString(),
-    }));
+  function update(mut: (d: LiveWorkoutDraft) => LiveWorkoutDraft) {
+    setDraft((prev) => {
+      if (!prev) return prev;
+      const next = mut(prev);
+      persist(next).catch(() => {});
+      return next;
+    });
+  }
+
+  function openExerciseAt(index: number) {
+    update((d) => openExercise(d, index));
     setSheetOpen(true);
   }
 
-  function markExerciseDone(exerciseIndex: number, done: boolean) {
-    updateDraft((d) => {
-      const ex = d.exercises[exerciseIndex];
-      if (!ex) return d;
-
-      const nextExercises = d.exercises.slice();
-      nextExercises[exerciseIndex] = { ...ex, isDone: done };
-      return { ...d, exercises: nextExercises, updatedAt: new Date().toISOString() };
-    });
+  async function discardSessionConfirmed() {
+    if (!uid) return;
+    stopLiveWorkout();
+    await clearLiveDraftForUser(uid);
+    await clearServerDraft(uid);
+    router.back();
   }
 
-  function addSet(exerciseIndex: number) {
-    updateDraft((d) => {
-      const ex = d.exercises[exerciseIndex];
-      if (!ex) return d;
-
-      const lastSetNum = ex.sets.length ? ex.sets[ex.sets.length - 1].setNumber : 0;
-      const nextSetNumber = Math.min(20, lastSetNum + 1);
-
-      const nextExercises = d.exercises.slice();
-      nextExercises[exerciseIndex] = {
-        ...ex,
-        sets: [
-          ...ex.sets,
-          {
-            setNumber: nextSetNumber,
-            dropIndex: 0,
-            reps: null,
-            weight: null,
-            timeSeconds: null,
-            distance: null,
-            notes: null,
-          },
-        ],
-      };
-
-      return { ...d, exercises: nextExercises, updatedAt: new Date().toISOString() };
-    });
-  }
-
-  function removeSet(exerciseIndex: number) {
-    updateDraft((d) => {
-      const ex = d.exercises[exerciseIndex];
-      if (!ex) return d;
-      if (ex.sets.length <= 1) return d;
-
-      const nextExercises = d.exercises.slice();
-      nextExercises[exerciseIndex] = { ...ex, sets: ex.sets.slice(0, -1) };
-
-      const nextActiveSet = Math.min(d.ui.activeSetNumber, nextExercises[exerciseIndex].sets.length);
-
-      return {
-        ...d,
-        exercises: nextExercises,
-        ui: { ...d.ui, activeSetNumber: nextActiveSet },
-        updatedAt: new Date().toISOString(),
-      };
-    });
-  }
-
-  function updateSetValue(args: {
-    exerciseIndex: number;
-    setNumber: number;
-    field: "reps" | "weight" | "timeSeconds" | "distance";
-    value: number | null;
-  }) {
-    updateDraft((d) => {
-      const ex = d.exercises[args.exerciseIndex];
-      if (!ex) return d;
-
-      const nextSets = ex.sets.map((s) =>
-        s.setNumber === args.setNumber ? { ...s, [args.field]: args.value } : s
-      );
-
-      const nextExercises = d.exercises.slice();
-      nextExercises[args.exerciseIndex] = { ...ex, sets: nextSets };
-
-      return { ...d, exercises: nextExercises, updatedAt: new Date().toISOString() };
-    });
-  }
-
-  function goPrevSet() {
-    updateDraft((d) => ({
-      ...d,
-      ui: { ...d.ui, activeSetNumber: Math.max(1, d.ui.activeSetNumber - 1) },
-      updatedAt: new Date().toISOString(),
-    }));
-  }
-
-  function goNextSet() {
-    updateDraft((d) => {
-      const ex = d.exercises[d.ui.activeExerciseIndex];
-      const maxSet = ex?.sets.length ?? d.ui.activeSetNumber;
-      return {
-        ...d,
-        ui: { ...d.ui, activeSetNumber: Math.min(maxSet, d.ui.activeSetNumber + 1) },
-        updatedAt: new Date().toISOString(),
-      };
-    });
+  function confirmDiscard() {
+    Alert.alert(
+      "Leave workout?",
+      "If you leave now, this workout won't be saved.",
+      [
+        { text: "Stay", style: "cancel" },
+        {
+          text: "Leave",
+          style: "destructive",
+          onPress: discardSessionConfirmed,
+        },
+      ]
+    );
   }
 
   async function completeWorkout() {
-    Alert.alert("Complete workout?", "This will close your live session. Your workout will be saved.", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Complete",
-        style: "default",
-        onPress: async () => {
-          await clearLiveWorkoutDraft(uid);
-          router.back();
-        },
-      },
-    ]);
-  }
+    if (!uid || !draft) return;
 
-  async function cancelSession() {
     Alert.alert(
-      "Discard session?",
-      "This removes the local draft. Only do this if you truly want to throw away the session.",
+      "Complete workout?",
+      "This will close your live session. Your workout will be saved.",
       [
-        { text: "Keep", style: "cancel" },
+        { text: "Cancel", style: "cancel" },
         {
-          text: "Discard",
-          style: "destructive",
+          text: "Complete",
           onPress: async () => {
-            await clearLiveWorkoutDraft(uid);
+            // TODO: write workout_history + set history here
+            stopLiveWorkout();
+            await clearLiveDraftForUser(uid);
+            await clearServerDraft(uid);
             router.back();
           },
         },
       ]
+    );
+  }
+
+  // ✅ Hooks must run in consistent order — put memos BEFORE any early returns
+  const supersetLabels = useMemo(() => {
+    if (!draft) return {} as Record<string, string>;
+    return S.buildSupersetLabels(draft);
+  }, [draft?.exercises]);
+
+  const sortedExercises = useMemo(() => {
+    if (!draft) return [] as any[];
+    return draft.exercises
+      .slice()
+      .sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0));
+  }, [draft?.exercises]);
+
+  // ---- Early returns AFTER hooks ----
+  if (!uid) {
+    return (
+      <ErrorState
+        title="Not signed in"
+        message="Please log in to start a workout."
+      />
     );
   }
 
@@ -287,40 +261,38 @@ export default function LiveWorkoutScreen() {
           if (workoutId) nextParams.workoutId = workoutId;
           if (planWorkoutId) nextParams.planWorkoutId = planWorkoutId;
 
-          router.replace({ pathname: "/features/workouts/live", params: nextParams });
+          router.replace({
+            pathname: "/features/workouts/live",
+            params: nextParams,
+          });
         }}
       />
     );
   }
 
-  const progress = getProgress(draft);
+  const progress = S.getProgress(draft);
+  const footerDisabled = !S.canCompleteWorkout(draft);
 
   return (
-    <Screen>
+    <View style={{ flex: 1, backgroundColor: colors.bg }}>
       <LiveHeader
         title={draft.title}
-        timerText={formatTimerPlaceholder(draft.startedAt)}
-        progressText={`${progress.done} / ${progress.total}`}
-        onBack={() => router.back()}
-        onMore={() => {
-          Alert.alert("Session options", "", [
-            { text: "Cancel workout", style: "destructive", onPress: cancelSession },
-            { text: "Close", style: "cancel" },
-          ]);
-        }}
+        subtitle="In Progress"
+        timerText={timerText}
+        onClose={confirmDiscard}
       />
 
       <ScrollView
-        style={{ flex: 1, backgroundColor: colors.bg }}
+        style={{ flex: 1 }}
         contentContainerStyle={{
           padding: layout.space.lg,
-          paddingBottom: 140, // room for sticky footer
+          paddingBottom: 150,
           gap: layout.space.md,
         }}
         showsVerticalScrollIndicator={false}
       >
         <Card>
-          <View style={{ gap: layout.space.xs }}>
+          <View style={{ gap: 6 }}>
             <Text
               style={{
                 fontFamily: typography.fontFamily.semibold,
@@ -342,40 +314,84 @@ export default function LiveWorkoutScreen() {
           </View>
         </Card>
 
-        <View style={{ gap: layout.space.sm }}>
-          {draft.exercises.map((ex, idx) => (
-            <LiveWorkoutExerciseRow
-              key={`${ex.exerciseId}-${idx}`}
-              title={ex.name}
-              subtitle={`${ex.sets.length} sets`}
-              isDone={ex.isDone}
-              onPress={() => openExercise(idx)}
-              onToggleDone={() => markExerciseDone(idx, !ex.isDone)}
-            />
-          ))}
+        <View style={{ gap: layout.space.md }}>
+          {sortedExercises.map((ex: any, idx: number) => {
+            const tags: string[] = [];
+
+            const g = ex.prescription?.supersetGroup;
+            if (g && supersetLabels[g]) tags.push(supersetLabels[g]);
+            if (ex.prescription?.isDropset) tags.push("Dropset");
+
+            const subtitleBase = buildExerciseSubtitle(ex);
+
+            const lastLabel = S.getLastSessionLabel(ex);
+            const subtitle = lastLabel
+              ? `${subtitleBase} • Last: ${lastLabel}`
+              : subtitleBase;
+
+            const isComplete = S.isExerciseComplete(ex);
+            const pill = S.getExerciseCtaLabel(ex) === "Done ✓ Edit";
+
+            const completedLines = isComplete
+              ? (ex.sets ?? [])
+                  .filter((s: any) => S.hasSetData(ex, s))
+                  .slice(0, 10)
+                  .map((s: any) => {
+                    const type = (ex.type ?? "").toLowerCase();
+                    if (type === "cardio") {
+                      const parts: string[] = [];
+                      if (s.distance != null)
+                        parts.push(`${fmtNum(s.distance, 2)}km`);
+                      if (s.timeSeconds != null)
+                        parts.push(`${fmtNum(s.timeSeconds)}s`);
+                      return `${s.setNumber}. ${parts.join(" • ")}`;
+                    }
+                    const r = s.reps ?? 0;
+                    const w = s.weight ?? 0;
+                    if (r && w)
+                      return `${s.setNumber}. ${r} reps × ${fmtNum(w)}kg`;
+                    if (r) return `${s.setNumber}. ${r} reps`;
+                    if (w) return `${s.setNumber}. ${fmtNum(w)}kg`;
+                    return `${s.setNumber}.`;
+                  })
+              : undefined;
+
+            return (
+              <LiveWorkoutExerciseRow
+                key={`${ex.exerciseId}-${idx}`}
+                index={idx + 1}
+                title={ex.name}
+                subtitle={subtitle}
+                tags={tags.length ? tags : undefined}
+                ex={ex} // ✅ required
+                onPress={() => openExerciseAt(idx)}
+              />
+            );
+          })}
         </View>
 
-        <Button
-          title="Add exercise"
-          variant="ghost"
-          onPress={() => Alert.alert("Add exercise", "We’ll wire this to your exercise picker next.")}
-        />
+        <View style={{ height: 8 }} />
       </ScrollView>
 
-      <LiveStickyFooter onComplete={completeWorkout} />
+      <LiveStickyFooter
+        disabled={footerDisabled}
+        title={`Complete Workout (${progress.done}/${progress.total} exercises)`}
+        onPress={completeWorkout}
+      />
 
       <ExerciseEntryModal
         visible={sheetOpen}
         onClose={() => setSheetOpen(false)}
         draft={draft}
-        setDraft={persist}
-        onUpdateSetValue={updateSetValue}
-        onAddSet={addSet}
-        onRemoveSet={removeSet}
-        onPrevSet={goPrevSet}
-        onNextSet={goNextSet}
-        onSwapExercise={() => Alert.alert("Swap exercise", "We’ll wire this to your swap flow next.")}
+        onUpdateSetValue={(a) => update((d) => M.updateSetValue(d, a))}
+        onAddSet={(i) => update((d) => M.addSet(d, i))}
+        onRemoveSet={(i) => update((d) => M.removeSet(d, i))}
+        onPrevSet={() => update((d) => M.goPrevSet(d))}
+        onNextSet={() => update((d) => M.goNextSet(d))}
+        onSwapExercise={() =>
+          Alert.alert("Swap exercise", "Wire this to your swap flow next.")
+        }
       />
-    </Screen>
+    </View>
   );
 }
