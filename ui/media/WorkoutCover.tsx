@@ -26,15 +26,20 @@ export function WorkoutCover({
 
   // banner options
   height = 170,
-  children,
+  children, // bottom-right slot (legacy)
   badge,
   badgePosition = "bottomRight",
   focusY = 0.5,
 
   // ✅ new
   variant = "banner",
-  tileSize = 56, // only used when variant="tile"
-  zoom = 1, // allow slight zoom per use-case
+  tileSize = 56,
+  zoom = 1,
+
+  // ✅ NEW: top overlay slots
+  topLeft,
+  topCenter,
+  topRight,
 }: {
   imageKey?: string | null;
   title?: string | null;
@@ -52,10 +57,13 @@ export function WorkoutCover({
   variant?: Variant;
   tileSize?: number;
   zoom?: number;
+
+  topLeft?: React.ReactNode;
+  topCenter?: React.ReactNode;
+  topRight?: React.ReactNode;
 }) {
   const { colors, typography, layout } = useAppTheme();
-  const r =
-    radius ?? (variant === "tile" ? layout.radius.md : layout.radius.lg);
+  const r = radius ?? (variant === "tile" ? layout.radius.md : layout.radius.lg);
 
   const scheme = useColorScheme() === "dark" ? "dark" : "light";
 
@@ -124,6 +132,8 @@ export function WorkoutCover({
     [colors, typography, layout, height, r]
   );
 
+  const showTopRow = !!topLeft || !!topCenter || !!topRight;
+
   return (
     <View onLayout={onLayout} style={[s.bg, style]}>
       <ImageBackground
@@ -132,16 +142,23 @@ export function WorkoutCover({
         imageStyle={[
           s.img,
           {
-            transform: [
-              { translateY },
-              ...(zoom !== 1 ? [{ scale: zoom }] : []),
-            ],
+            transform: [{ translateY }, ...(zoom !== 1 ? [{ scale: zoom }] : [])],
           },
         ]}
       >
         {/* overlay only for banner */}
         <View style={s.overlay} />
 
+        {/* ✅ NEW: top overlay row */}
+        {showTopRow ? (
+          <View pointerEvents="box-none" style={s.topRow}>
+            <View style={s.topSlotLeft}>{topLeft}</View>
+            <View style={s.topSlotCenter}>{topCenter}</View>
+            <View style={s.topSlotRight}>{topRight}</View>
+          </View>
+        ) : null}
+
+        {/* Badge */}
         {badge ? (
           <View
             pointerEvents="box-none"
@@ -158,6 +175,7 @@ export function WorkoutCover({
           </View>
         ) : null}
 
+        {/* Bottom content area (title/sub + legacy children bottom-right) */}
         <View style={s.content}>
           <View style={{ flex: 1, gap: 4 }}>
             {!!title ? (
@@ -212,8 +230,37 @@ const makeBannerStyles = (
     },
     overlay: {
       ...StyleSheet.absoluteFillObject,
-      backgroundColor: "rgba(0,0,0,0.40)",
+      backgroundColor: "rgba(0,0,0,0.35)",
     },
+
+    // ✅ NEW top row
+    topRow: {
+      position: "absolute",
+      top: 0,
+      left: 0,
+      right: 0,
+      padding: layout.space.md,
+      flexDirection: "row",
+      alignItems: "center",
+      zIndex: 10,
+    },
+    topSlotLeft: {
+      width: 44,
+      alignItems: "flex-start",
+      justifyContent: "center",
+    },
+    topSlotCenter: {
+      flex: 1,
+      alignItems: "center",
+      justifyContent: "center",
+      paddingHorizontal: layout.space.sm,
+    },
+    topSlotRight: {
+      width: 88,
+      alignItems: "flex-end",
+      justifyContent: "center",
+    },
+
     content: {
       flex: 1,
       padding: layout.space.md,
@@ -238,7 +285,7 @@ const makeBannerStyles = (
     },
     badgeWrap: {
       position: "absolute",
-      zIndex: 5,
+      zIndex: 9,
     },
     badgeTopLeft: {
       top: layout.space.md,
@@ -248,7 +295,6 @@ const makeBannerStyles = (
       top: layout.space.md,
       right: layout.space.md,
     },
-
     badgeBottomRight: {
       bottom: layout.space.md,
       right: layout.space.md,

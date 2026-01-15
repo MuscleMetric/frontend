@@ -1,4 +1,3 @@
-// app/features/workouts/live/LiveWorkoutScreen.tsx
 import React, { useEffect, useMemo, useState } from "react";
 import { ScrollView, View, Text, Alert, AppState } from "react-native";
 import { useLocalSearchParams, router } from "expo-router";
@@ -15,14 +14,23 @@ import {
   clearLiveWorkoutDraft,
 } from "../hooks/liveWorkoutStorage";
 
-import { ExerciseEntrySheet } from "./components/ExerciseEntrySheet";
-import { LiveWorkoutTopBar } from "./components/LiveWorkoutTopBar";
 import { LiveWorkoutExerciseRow } from "./components/LiveWorkoutExerciseRow";
+
+// NEW
+import { LiveHeader } from "./components/LiveHeader";
+import { LiveStickyFooter } from "./components/LiveStickyFooter";
+import { ExerciseEntryModal } from "./modals/ExerciseEntryModal";
+import { getProgress } from "./state/selectors";
 
 type Params = {
   workoutId?: string;
   planWorkoutId?: string;
 };
+
+function formatTimerPlaceholder(startedAtIso?: string) {
+  // placeholder until we wire real timer
+  return startedAtIso ? "Live" : undefined;
+}
 
 export default function LiveWorkoutScreen() {
   const { userId } = useAuth();
@@ -38,19 +46,10 @@ export default function LiveWorkoutScreen() {
   const [draft, setDraft] = useState<LiveWorkoutDraft | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
 
-  // Hard guard: from here on, uid is definitely a string (fixes your TS errors)
   if (!userId) {
-    return (
-      <ErrorState title="Not signed in" message="Please log in to start a workout." />
-    );
+    return <ErrorState title="Not signed in" message="Please log in to start a workout." />;
   }
   const uid = userId;
-
-  const activeExercise = useMemo(() => {
-    if (!draft) return null;
-    const idx = Math.max(0, Math.min(draft.exercises.length - 1, draft.ui.activeExerciseIndex));
-    return draft.exercises[idx] ?? null;
-  }, [draft]);
 
   async function persist(next: LiveWorkoutDraft) {
     setDraft(next);
@@ -94,7 +93,7 @@ export default function LiveWorkoutScreen() {
         // 3) Fetch bootstrap from RPC
         const { data, error } = await supabase.rpc("get_workout_session_bootstrap", {
           p_workout_id: workoutId,
-          p_plan_workout_id: planWorkoutId ?? null, // null if not in plan
+          p_plan_workout_id: planWorkoutId ?? null,
         });
         if (error) throw error;
 
@@ -241,21 +240,17 @@ export default function LiveWorkoutScreen() {
   }
 
   async function completeWorkout() {
-    Alert.alert(
-      "Complete workout?",
-      "This will close your live session. Your workout will be saved.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Complete",
-          style: "default",
-          onPress: async () => {
-            await clearLiveWorkoutDraft(uid);
-            router.back();
-          },
+    Alert.alert("Complete workout?", "This will close your live session. Your workout will be saved.", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Complete",
+        style: "default",
+        onPress: async () => {
+          await clearLiveWorkoutDraft(uid);
+          router.back();
         },
-      ]
-    );
+      },
+    ]);
   }
 
   async function cancelSession() {
@@ -298,10 +293,14 @@ export default function LiveWorkoutScreen() {
     );
   }
 
+  const progress = getProgress(draft);
+
   return (
     <Screen>
-      <LiveWorkoutTopBar
+      <LiveHeader
         title={draft.title}
+        timerText={formatTimerPlaceholder(draft.startedAt)}
+        progressText={`${progress.done} / ${progress.total}`}
         onBack={() => router.back()}
         onMore={() => {
           Alert.alert("Session options", "", [
@@ -315,31 +314,22 @@ export default function LiveWorkoutScreen() {
         style={{ flex: 1, backgroundColor: colors.bg }}
         contentContainerStyle={{
           padding: layout.space.lg,
-          paddingBottom: layout.space.xxl,
+          paddingBottom: 140, // room for sticky footer
           gap: layout.space.md,
         }}
         showsVerticalScrollIndicator={false}
       >
         <Card>
-          <View style={{ gap: layout.space.sm }}>
-            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-              <Text
-                style={{
-                  flex: 1,
-                  fontFamily: typography.fontFamily.bold,
-                  fontSize: typography.size.h2,
-                  color: colors.text,
-                }}
-                numberOfLines={2}
-              >
-                {draft.title}
-              </Text>
-
-              <View style={{ marginLeft: layout.space.sm }}>
-                <Button title="Complete" variant="primary" fullWidth={false} onPress={completeWorkout} />
-              </View>
-            </View>
-
+          <View style={{ gap: layout.space.xs }}>
+            <Text
+              style={{
+                fontFamily: typography.fontFamily.semibold,
+                fontSize: typography.size.body,
+                color: colors.text,
+              }}
+            >
+              Keep moving
+            </Text>
             <Text
               style={{
                 fontFamily: typography.fontFamily.regular,
@@ -347,7 +337,7 @@ export default function LiveWorkoutScreen() {
                 color: colors.textMuted,
               }}
             >
-              Tap an exercise to start logging. Everything autosaves locally.
+              Tap an exercise to log sets. Everything autosaves.
             </Text>
           </View>
         </Card>
@@ -372,7 +362,9 @@ export default function LiveWorkoutScreen() {
         />
       </ScrollView>
 
-      <ExerciseEntrySheet
+      <LiveStickyFooter onComplete={completeWorkout} />
+
+      <ExerciseEntryModal
         visible={sheetOpen}
         onClose={() => setSheetOpen(false)}
         draft={draft}

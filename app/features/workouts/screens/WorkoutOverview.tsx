@@ -1,24 +1,30 @@
-// app/features/workouts/screens/WorkoutOverview.tsx
 import React from "react";
-import { View, Text, ScrollView, Pressable } from "react-native";
-import { useAppTheme } from "@/lib/useAppTheme";
-import { useAuth } from "@/lib/authContext";
+import { View, Text, Pressable } from "react-native";
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 import { router, useLocalSearchParams } from "expo-router";
 
+import { useAuth } from "@/lib/authContext";
+import { useAppTheme } from "@/lib/useAppTheme";
 import {
   Card,
   Button,
-  Pill,
-  WorkoutCover,
-  ListRow,
   Icon,
   ModalSheet,
-  Screen,
-  ScreenHeader,
-  BackButton,
+  WorkoutCover,
+  SafeScroll,
+  StatPillRow,
+  StickyFooter,
+  ExerciseRow,
+  Section,
+  Pill,
 } from "@/ui";
+
 import { useLiveWorkout } from "../hooks/useLiveWorkout";
-import { SafeAreaView } from "react-native-safe-area-context";
+
+// Helpers
 
 function formatLastDone(iso: string | null) {
   if (!iso) return null;
@@ -30,17 +36,149 @@ function formatLastDone(iso: string | null) {
   return `${days}d ago`;
 }
 
-function formatE1rm(n: number | null) {
-  if (n == null) return null;
-  const v = Math.round(Number(n));
-  return `${v} kg e1RM`;
-}
-
 function formatKg(n: number | null) {
   if (n == null) return null;
   const v = Math.round(Number(n));
   return `${v.toLocaleString()} kg`;
 }
+
+// Keep cues as a single line.
+function toSingleLineCue(s: string | null | undefined) {
+  if (!s) return null;
+  const one = s.replace(/\s+/g, " ").trim();
+  return one.length > 90 ? one.slice(0, 87) + "…" : one;
+}
+
+function getWorkoutLastCompletedIso(exercises: any[]) {
+  let best: string | null = null;
+  for (const e of exercises) {
+    const iso = e?.lastSession?.completedAt ?? null;
+    if (!iso) continue;
+    if (!best) best = iso;
+    else if (new Date(iso).getTime() > new Date(best).getTime()) best = iso;
+  }
+  return best;
+}
+
+function supersetLabel(group: any) {
+  if (group == null) return null;
+
+  // if backend already sends "A" / "B"
+  if (typeof group === "string") return `Superset ${group.toUpperCase()}`;
+
+  // if backend sends 1/2/3
+  if (typeof group === "number") {
+    const letter = String.fromCharCode(64 + Math.max(1, Math.min(26, group)));
+    return `Superset ${letter}`;
+  }
+
+  return "Superset";
+}
+
+type ExerciseVM = any;
+
+type RenderGroup =
+  | { kind: "single"; ex: ExerciseVM }
+  | {
+      kind: "superset";
+      groupKey: string;
+      letter: string;
+      items: ExerciseVM[];
+    };
+
+function buildExerciseGroups(exercises: ExerciseVM[]) {
+  const out: RenderGroup[] = [];
+
+  const idToLetter = new Map<string, string>();
+
+  let next = 1;
+
+  function getLetterFor(groupVal: any) {
+    const key = String(groupVal);
+    const existing = idToLetter.get(key);
+    if (existing) return existing;
+    const letter = toLetter(next++);
+    idToLetter.set(key, letter);
+    return letter;
+  }
+
+  let i = 0;
+
+  while (i < exercises.length) {
+    const ex = exercises[i];
+    const g = ex?.prescription?.supersetGroup ?? null;
+
+    // single
+    if (!g) {
+      out.push({ kind: "single", ex });
+      i += 1;
+      continue;
+    }
+
+    // superset block (consecutive items with same group id)
+    const groupKey = String(g);
+    const letter = getLetterFor(g);
+
+    const items: ExerciseVM[] = [ex];
+    let j = i + 1;
+
+    while (j < exercises.length) {
+      const nx = exercises[j];
+      const ng = nx?.prescription?.supersetGroup ?? null;
+      if (!ng || String(ng) !== groupKey) break;
+      items.push(nx);
+      j += 1;
+    }
+
+    // optional: A1 then A2 ordering
+    items.sort((a, b) => {
+      const ai = a?.prescription?.supersetIndex ?? 999;
+      const bi = b?.prescription?.supersetIndex ?? 999;
+      return ai - bi;
+    });
+
+    out.push({ kind: "superset", groupKey, letter, items });
+    i = j;
+  }
+
+  return out;
+}
+
+function toLetter(n: number) {
+  const clamped = Math.max(1, Math.min(26, n));
+  return String.fromCharCode(64 + clamped); // 1->A
+}
+
+function supersetLetter(group: any) {
+  if (group == null) return null;
+
+  if (typeof group === "string") return group.toUpperCase();
+  if (typeof group === "number") {
+    const n = Math.max(1, Math.min(26, group));
+    return String.fromCharCode(64 + n); // 1->A
+  }
+  return null;
+}
+
+function supersetPillLabel(group: any, items: any[]) {
+  const letter = supersetLetter(group) ?? "A";
+
+  // Use supersetIndex if present; otherwise 1..N
+  const idxs = items
+    .map((x) => x?.prescription?.supersetIndex)
+    .map((n: any, i: number) => (typeof n === "number" && n > 0 ? n : i + 1));
+
+  // de-dupe + sort
+  const uniq = Array.from(new Set(idxs)).sort((a, b) => a - b);
+
+  const detail = uniq.length
+    ? `${letter}${uniq.join(`/${letter}`)}` // A1/A2/A3
+    : `${letter}1/${letter}2`;
+
+  return `Superset ${letter}`;
+}
+
+// Main Screen
 
 export default function WorkoutOverviewScreen() {
   const { session } = useAuth();
@@ -50,30 +188,31 @@ export default function WorkoutOverviewScreen() {
     workoutId?: string;
     planWorkoutId?: string;
   }>();
-
   const workoutId = params.workoutId ?? null;
   const planWorkoutId = params.planWorkoutId ?? null;
 
+  const insets = useSafeAreaInsets();
   const { colors, typography, layout } = useAppTheme();
 
   const { loading, error, bootstrap, headerChips, hadSavedDraft, createDraft } =
-    useLiveWorkout({
-      userId,
-      workoutId,
-      planWorkoutId,
-    });
+    useLiveWorkout({ userId, workoutId, planWorkoutId });
 
   const [exerciseModalOpen, setExerciseModalOpen] = React.useState(false);
   const [activeExerciseId, setActiveExerciseId] = React.useState<string | null>(
     null
   );
 
-  const ex = React.useMemo(() => {
+  const exercises = React.useMemo(() => {
     if (!bootstrap) return [];
     return bootstrap.exercises
       .slice()
       .sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0));
   }, [bootstrap]);
+
+  const groups = React.useMemo(
+    () => buildExerciseGroups(exercises),
+    [exercises]
+  );
 
   const activeExercise = React.useMemo(() => {
     if (!bootstrap || !activeExerciseId) return null;
@@ -86,11 +225,8 @@ export default function WorkoutOverviewScreen() {
 
   const onPressStartOrContinue = React.useCallback(async () => {
     if (!bootstrap) return;
-
-    // ensure a draft exists before entering live flow
     await createDraft();
 
-    // TODO: adjust route to your live workout screen path
     router.push({
       pathname: "/features/workouts/live",
       params: {
@@ -102,7 +238,6 @@ export default function WorkoutOverviewScreen() {
 
   const onPressEdit = React.useCallback(() => {
     if (!bootstrap) return;
-    // TODO: adjust route to your workout editor
     router.push({
       pathname: "/features/workouts/edit",
       params: { workoutId: bootstrap.workout.workoutId },
@@ -153,52 +288,63 @@ export default function WorkoutOverviewScreen() {
     );
   }
 
+  // Build stat row: Duration | Avg volume | Last
+  const lastIso = getWorkoutLastCompletedIso(exercises);
+  const lastLabel = formatLastDone(lastIso);
+
+  const statItems = [
+    ...headerChips, // duration + avg volume
+    ...(lastLabel ? [{ label: "Last Completed", value: lastLabel }] : []),
+  ];
+
+  let runningIndex = 0;
+
   return (
-    <>
-      <View style={{ flex: 1, backgroundColor: colors.bg }}>
-        <SafeAreaView>
-          <ScrollView
-            contentContainerStyle={{
-              padding: layout.space.lg,
-              paddingBottom: 110, // space for bottom CTA
-              gap: layout.space.md,
-            }}
-          >
-            {/* Banner */}
-            <Card>
-              <View style={{ gap: layout.space.md }}>
-                <WorkoutCover
-                  imageKey={bootstrap.workout.imageKey}
-                  title={null}
-                  subtitle={null}
-                  height={190}
-                  radius={layout.radius.xl}
-                  badge={
-                    isPlanWorkout ? (
-                      <Pill
-                        label="Active Plan"
-                        tone="primary"
-                        variant="inverted"
-                        // if you later add "inverted" tone to Pill, set it here
-                      />
-                    ) : null
-                  }
-                  badgePosition="topLeft"
-                >
-                  {/* top-right action */}
-                  {!isPlanWorkout ? (
+    <View style={{ flex: 1, backgroundColor: colors.bg }}>
+      <SafeAreaView style={{ flex: 1 }}>
+        <SafeScroll contentPaddingBottom={120}>
+          {/* Banner card */}
+          <Card>
+            <View style={{ gap: layout.space.md }}>
+              <WorkoutCover
+                imageKey={bootstrap.workout.imageKey}
+                title={null}
+                subtitle={null}
+                height={210}
+                radius={layout.radius.xl}
+                topLeft={
+                  <Pressable
+                    onPress={() => router.back()}
+                    hitSlop={layout.hitSlop}
+                    style={{
+                      width: 40,
+                      height: 40,
+                      borderRadius: 999,
+                      alignItems: "center",
+                      justifyContent: "center",
+                      backgroundColor: "rgba(0,0,0,0.35)",
+                      borderWidth: 1,
+                      borderColor: "rgba(255,255,255,0.12)",
+                    }}
+                  >
+                    <Icon name="chevron-back" size={18} color="#fff" />
+                  </Pressable>
+                }
+                topRight={
+                  !isPlanWorkout ? (
                     <Pressable
                       onPress={onPressEdit}
+                      hitSlop={layout.hitSlop}
                       style={{
-                        paddingHorizontal: 10,
-                        paddingVertical: 8,
+                        paddingHorizontal: 12,
+                        paddingVertical: 9,
                         borderRadius: layout.radius.pill,
                         backgroundColor: "rgba(0,0,0,0.35)",
                         borderWidth: 1,
                         borderColor: "rgba(255,255,255,0.12)",
                         flexDirection: "row",
                         alignItems: "center",
-                        gap: 6,
+                        gap: 8,
                       }}
                     >
                       <Icon name="create-outline" size={16} color="#fff" />
@@ -212,129 +358,60 @@ export default function WorkoutOverviewScreen() {
                         Edit
                       </Text>
                     </Pressable>
-                  ) : null}
-                </WorkoutCover>
+                  ) : null
+                }
+              />
 
-                {/* Title + notes */}
-                <View style={{ gap: 6 }}>
-                  <View
-                    style={{
-                      flexDirection: "row",
-                      alignItems: "center",
-                      paddingHorizontal: layout.space.lg,
-                      paddingTop: layout.space.md,
-                      paddingBottom: layout.space.md,
-                    }}
-                  >
-                    {/* Left */}
-                    <View style={{ width: 44, alignItems: "flex-start" }}>
-                      <BackButton />
-                    </View>
+              {/* Title (no subtitle) */}
+              <Text
+                style={{
+                  fontFamily: typography.fontFamily.bold,
+                  fontSize: typography.size.h1,
+                  lineHeight: typography.lineHeight.h1,
+                  color: colors.text,
+                  letterSpacing: -0.3,
+                }}
+                numberOfLines={1}
+              >
+                {bootstrap.workout.title}
+              </Text>
 
-                    {/* Center */}
-                    <Text
-                      numberOfLines={1}
-                      style={{
-                        flex: 1,
-                        textAlign: "center",
-                        fontFamily: typography.fontFamily.bold,
-                        fontSize: typography.size.h1,
-                        lineHeight: typography.lineHeight.h1,
-                        color: colors.text,
-                        letterSpacing: -0.3,
-                        paddingHorizontal: layout.space.sm,
-                      }}
-                    >
-                      {bootstrap.workout.title}
-                    </Text>
+              {/* Optional notes */}
+              {bootstrap.workout.notes ? (
+                <Text
+                  style={{
+                    fontFamily: typography.fontFamily.regular,
+                    fontSize: typography.size.body,
+                    lineHeight: typography.lineHeight.body,
+                    color: colors.textMuted,
+                  }}
+                  numberOfLines={2}
+                >
+                  {bootstrap.workout.notes}
+                </Text>
+              ) : null}
 
-                    {/* Right spacer (keeps title perfectly centered) */}
-                    <View style={{ width: 44 }} />
-                  </View>
+              {/* Stats: borderless */}
+              {statItems.length ? (
+                <StatPillRow items={statItems} borderless />
+              ) : null}
+            </View>
+          </Card>
 
-                  {bootstrap.workout.notes ? (
-                    <Text
-                      style={{
-                        fontFamily: typography.fontFamily.regular,
-                        fontSize: typography.size.body,
-                        lineHeight: typography.lineHeight.body,
-                        color: colors.textMuted,
-                      }}
-                    >
-                      {bootstrap.workout.notes}
-                    </Text>
-                  ) : null}
-                </View>
-
-                {/* Header chips */}
-                {headerChips.length ? (
-                  <View
-                    style={{
-                      flexDirection: "row",
-                      flexWrap: "wrap",
-                      gap: layout.space.sm,
-                    }}
-                  >
-                    {headerChips.map((c) => (
-                      <View
-                        key={c.label}
-                        style={{
-                          paddingHorizontal: 12,
-                          paddingVertical: 10,
-                          borderRadius: layout.radius.lg,
-                          minWidth: 120,
-                        }}
-                      >
-                        <Text
-                          style={{
-                            fontFamily: typography.fontFamily.medium,
-                            fontSize: typography.size.meta,
-                            color: colors.textMuted,
-                          }}
-                        >
-                          {c.label}
-                        </Text>
-                        <Text
-                          style={{
-                            fontFamily: typography.fontFamily.semibold,
-                            fontSize: typography.size.sub,
-                            color: colors.text,
-                            marginTop: 2,
-                          }}
-                        >
-                          {c.value}
-                        </Text>
-                      </View>
-                    ))}
-                  </View>
-                ) : null}
-              </View>
-            </Card>
-
-            {/* Goals (plan only) */}
-            {bootstrap.goals.length ? (
-              <Card>
+          {/* Goal section (plan only) */}
+          {bootstrap.goals.length ? (
+            <Card>
+              <Section title="Today’s goal">
                 <View style={{ gap: layout.space.sm }}>
-                  <Text
-                    style={{
-                      fontFamily: typography.fontFamily.semibold,
-                      fontSize: typography.size.h3,
-                      lineHeight: typography.lineHeight.h3,
-                      color: colors.text,
-                    }}
-                  >
-                    Today’s Goal
-                  </Text>
-
                   {bootstrap.goals.map((g) => (
                     <View
                       key={g.id}
                       style={{
                         padding: layout.space.md,
-                        borderRadius: layout.radius.lg,
-                        backgroundColor: colors.trackBg,
+                        borderRadius: layout.radius.xl,
                         borderWidth: 1,
-                        borderColor: colors.trackBorder,
+                        borderColor: colors.border,
+                        backgroundColor: colors.surface,
                       }}
                     >
                       <Text
@@ -348,68 +425,69 @@ export default function WorkoutOverviewScreen() {
                       </Text>
                       {g.notes ? (
                         <Text style={{ marginTop: 4, color: colors.textMuted }}>
-                          {g.notes}
+                          {toSingleLineCue(g.notes)}
                         </Text>
                       ) : null}
                     </View>
                   ))}
                 </View>
-              </Card>
-            ) : null}
+              </Section>
+            </Card>
+          ) : null}
 
-            {/* Exercise list */}
-            <View style={{ gap: layout.space.sm }}>
-              <View
+          {/* Exercises list */}
+          <Section
+            title="Exercises"
+            right={
+              <Text
                 style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  justifyContent: "space-between",
+                  color: colors.textMuted,
+                  fontFamily: typography.fontFamily.medium,
                 }}
               >
-                <Text
-                  style={{
-                    fontFamily: typography.fontFamily.bold,
-                    fontSize: typography.size.h2,
-                    lineHeight: typography.lineHeight.h2,
-                    color: colors.text,
-                  }}
-                >
-                  Routine
-                </Text>
-                <Text
-                  style={{
-                    color: colors.textMuted,
-                    fontFamily: typography.fontFamily.medium,
-                  }}
-                >
-                  {ex.length} exercises
-                </Text>
-              </View>
+                {exercises.length} total
+              </Text>
+            }
+          >
+            <View style={{ gap: layout.space.sm }}>
+              {groups.map((g, gi) => {
+                if (g.kind === "single") {
+                  const e = g.ex;
+                  runningIndex += 1;
 
-              <View style={{ gap: layout.space.sm }}>
-                {ex.map((e, idx) => {
                   const last = formatLastDone(e.lastSession.completedAt);
-                  const e1rm = formatE1rm(e.bestE1rm);
                   const vol = formatKg(e.totalVolumeAllTime);
 
                   const subtitleParts = [
                     e.equipment ? e.equipment : null,
-                    last ? `Last: ${last}` : null,
-                    e1rm ? e1rm : null,
+                    e.prescription?.targetSets
+                      ? `${e.prescription.targetSets} sets`
+                      : null,
+                    e.prescription?.targetReps
+                      ? `${e.prescription.targetReps} reps`
+                      : null,
                   ].filter(Boolean);
 
+                  const isDropset = !!e?.prescription?.isDropset;
+
                   return (
-                    <ListRow
+                    <ExerciseRow
                       key={e.exerciseId}
-                      title={`${idx + 1}. ${e.name}`}
+                      index={runningIndex}
+                      title={e.name}
                       subtitle={subtitleParts.join(" • ")}
+                      leftBadge={
+                        isDropset ? (
+                          <Pill label="Dropset" tone="neutral" />
+                        ) : null
+                      }
                       rightNode={
                         vol ? (
                           <Text
                             style={{
+                              color: colors.textMuted,
                               fontFamily: typography.fontFamily.medium,
                               fontSize: typography.size.meta,
-                              color: colors.textMuted,
                             }}
                           >
                             {vol}
@@ -422,149 +500,193 @@ export default function WorkoutOverviewScreen() {
                       }}
                     />
                   );
-                })}
-              </View>
-            </View>
-          </ScrollView>
+                }
 
-          {/* Bottom CTA */}
-          <View
-            style={{
-              position: "absolute",
-              left: layout.space.lg,
-              right: layout.space.lg,
-              bottom: layout.space.lg,
-            }}
-          >
-            <Button
-              title={hadSavedDraft ? "Continue workout" : "Start workout"}
-              onPress={onPressStartOrContinue}
-            />
-          </View>
+                // Superset group block
+                const borderColor = colors.primary;
+                const pillText = supersetPillLabel(g.letter, g.items);
 
-          {/* Exercise Modal */}
-          <ModalSheet
-            visible={exerciseModalOpen}
-            onClose={() => setExerciseModalOpen(false)}
-            title={activeExercise?.name ?? "Exercise"}
-          >
-            {!activeExercise ? null : (
-              <View style={{ gap: layout.space.md }}>
-                {/* quick meta */}
-                <View
-                  style={{
-                    flexDirection: "row",
-                    flexWrap: "wrap",
-                    gap: layout.space.sm,
-                  }}
-                >
-                  {activeExercise.equipment ? (
-                    <Pill label={activeExercise.equipment} tone="neutral" />
-                  ) : null}
-                  {activeExercise.level ? (
-                    <Pill label={activeExercise.level} tone="neutral" />
-                  ) : null}
-                  {activeExercise.prescription?.targetSets ? (
-                    <Pill
-                      label={`${activeExercise.prescription.targetSets} sets`}
-                      tone="primary"
-                    />
-                  ) : null}
-                  {activeExercise.prescription?.targetReps ? (
-                    <Pill
-                      label={`${activeExercise.prescription.targetReps} reps`}
-                      tone="primary"
-                    />
-                  ) : null}
-                </View>
-
-                {/* instructions */}
-                {activeExercise.instructions ? (
-                  <Text
+                return (
+                  <View
+                    key={`superset-${g.groupKey}-${gi}`}
                     style={{
-                      color: colors.textMuted,
-                      lineHeight: typography.lineHeight.body,
+                      borderWidth: 1,
+                      borderColor: borderColor,
+                      borderRadius: layout.radius.lg,
+                      overflow: "hidden",
+                      backgroundColor: colors.surface,
                     }}
                   >
-                    {activeExercise.instructions}
-                  </Text>
-                ) : null}
-
-                {/* last session */}
-                <Card>
-                  <View style={{ gap: layout.space.sm }}>
-                    <Text
+                    {/* Superset header pill */}
+                    <View
                       style={{
-                        fontFamily: typography.fontFamily.semibold,
-                        color: colors.text,
+                        paddingHorizontal: layout.space.md,
+                        paddingTop: layout.space.md,
+                        paddingBottom: layout.space.sm,
+                        backgroundColor: "rgba(37,99,235,0.08)", // subtle tint behind pill (works in both modes)
                       }}
                     >
-                      Last session
-                    </Text>
-                    <Text style={{ color: colors.textMuted }}>
-                      {activeExercise.lastSession.completedAt
-                        ? `Completed: ${formatLastDone(
-                            activeExercise.lastSession.completedAt
-                          )}`
-                        : "No history yet"}
-                    </Text>
+                      <Pill label={pillText} tone="primary" />
+                    </View>
 
-                    {activeExercise.lastSession.sets?.length ? (
-                      <View style={{ gap: 8 }}>
-                        {activeExercise.lastSession.sets
-                          .slice(0, 6)
-                          .map((s) => (
-                            <View
-                              key={`${s.setNumber}-${s.dropIndex}`}
-                              style={{
-                                flexDirection: "row",
-                                justifyContent: "space-between",
-                                paddingVertical: 8,
-                                borderBottomWidth: 1,
-                                borderBottomColor: colors.border,
-                              }}
-                            >
+                    {g.items.map((e, idxInGroup) => {
+                      runningIndex += 1;
+
+                      const last = formatLastDone(e.lastSession.completedAt);
+                      const vol = formatKg(e.totalVolumeAllTime);
+
+                      const subtitleParts = [
+                        e.equipment ? e.equipment : null,
+                        e.prescription?.targetSets
+                          ? `${e.prescription.targetSets} sets`
+                          : null,
+                        e.prescription?.targetReps
+                          ? `${e.prescription.targetReps} reps`
+                          : null,
+                      ].filter(Boolean);
+
+                      const meta = last ? `Last: ${last}` : undefined;
+
+                      const isDropset = !!e?.prescription?.isDropset;
+
+                      const isFirst = idxInGroup === 0;
+                      const isLast = idxInGroup === g.items.length - 1;
+
+                      return (
+                        <ExerciseRow
+                          key={e.exerciseId}
+                          variant="plain"
+                          isFirst={isFirst}
+                          isLast={isLast}
+                          showDivider={!isLast}
+                          index={runningIndex}
+                          title={e.name}
+                          subtitle={subtitleParts.join(" • ")}
+                          meta={meta}
+                          leftBadge={
+                            isDropset ? (
+                              <Pill label="Dropset" tone="neutral" />
+                            ) : null
+                          }
+                          rightNode={
+                            vol ? (
                               <Text
-                                style={{ color: colors.text }}
-                              >{`Set ${s.setNumber}`}</Text>
-                              <Text style={{ color: colors.textMuted }}>
-                                {s.weight != null && s.reps != null
-                                  ? `${s.weight} × ${s.reps}`
-                                  : s.timeSeconds != null
-                                  ? `${s.timeSeconds}s`
-                                  : s.distance != null
-                                  ? `${s.distance}`
-                                  : "-"}
+                                style={{
+                                  color: colors.textMuted,
+                                  fontFamily: typography.fontFamily.medium,
+                                  fontSize: typography.size.meta,
+                                }}
+                              >
+                                {vol}
                               </Text>
-                            </View>
-                          ))}
-                      </View>
-                    ) : null}
+                            ) : undefined
+                          }
+                          onPress={() => {
+                            setActiveExerciseId(e.exerciseId);
+                            setExerciseModalOpen(true);
+                          }}
+                        />
+                      );
+                    })}
                   </View>
-                </Card>
+                );
+              })}
+            </View>
+          </Section>
+        </SafeScroll>
 
-                <Button
-                  title="Start this exercise"
-                  onPress={async () => {
-                    setExerciseModalOpen(false);
-                    await createDraft();
-                    // TODO: route into your exercise-live modal/screen with this exercise selected
-                    router.push({
-                      pathname: "/features/workouts/live",
-                      params: {
-                        workoutId: bootstrap.workout.workoutId,
-                        planWorkoutId:
-                          bootstrap.workout.planWorkoutId ?? undefined,
-                        exerciseId: activeExercise.exerciseId,
-                      },
-                    });
-                  }}
-                />
-              </View>
-            )}
-          </ModalSheet>
-        </SafeAreaView>
-      </View>
-    </>
+        {/* Bottom CTA */}
+        <StickyFooter>
+          <Button
+            title={hadSavedDraft ? "Continue workout" : "Start workout"}
+            onPress={onPressStartOrContinue}
+          />
+        </StickyFooter>
+
+        {/* Exercise preview modal */}
+        <ModalSheet
+          visible={exerciseModalOpen}
+          onClose={() => setExerciseModalOpen(false)}
+          title={activeExercise?.name ?? "Exercise"}
+          subtitle={
+            activeExercise
+              ? toSingleLineCue(activeExercise.instructions) ?? undefined
+              : undefined
+          }
+        >
+          {!activeExercise ? null : (
+            <View style={{ gap: layout.space.md }}>
+              <Card>
+                <View style={{ gap: layout.space.sm }}>
+                  <Text
+                    style={{
+                      fontFamily: typography.fontFamily.semibold,
+                      color: colors.text,
+                    }}
+                  >
+                    Last session
+                  </Text>
+
+                  <Text style={{ color: colors.textMuted }}>
+                    {activeExercise.lastSession.completedAt
+                      ? `Completed: ${formatLastDone(
+                          activeExercise.lastSession.completedAt
+                        )}`
+                      : "No history yet"}
+                  </Text>
+
+                  {activeExercise.lastSession.sets?.length ? (
+                    <View style={{ gap: 8 }}>
+                      {activeExercise.lastSession.sets.slice(0, 4).map((s) => (
+                        <View
+                          key={`${s.setNumber}-${s.dropIndex}`}
+                          style={{
+                            flexDirection: "row",
+                            justifyContent: "space-between",
+                            paddingVertical: 8,
+                            borderBottomWidth: 1,
+                            borderBottomColor: colors.border,
+                          }}
+                        >
+                          <Text
+                            style={{ color: colors.text }}
+                          >{`Set ${s.setNumber}`}</Text>
+                          <Text style={{ color: colors.textMuted }}>
+                            {s.weight != null && s.reps != null
+                              ? `${s.weight} × ${s.reps}`
+                              : s.timeSeconds != null
+                              ? `${s.timeSeconds}s`
+                              : s.distance != null
+                              ? `${s.distance}`
+                              : "—"}
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
+                  ) : null}
+                </View>
+              </Card>
+
+              <Button
+                title="Start exercise"
+                onPress={async () => {
+                  setExerciseModalOpen(false);
+                  await createDraft();
+                  router.push({
+                    pathname: "/features/workouts/live",
+                    params: {
+                      workoutId: bootstrap.workout.workoutId,
+                      planWorkoutId:
+                        bootstrap.workout.planWorkoutId ?? undefined,
+                      exerciseId: activeExercise.exerciseId,
+                    },
+                  });
+                }}
+              />
+            </View>
+          )}
+        </ModalSheet>
+      </SafeAreaView>
+    </View>
   );
 }

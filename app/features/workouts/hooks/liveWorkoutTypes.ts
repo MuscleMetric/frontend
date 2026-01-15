@@ -10,6 +10,7 @@ export type WorkoutLoadPayload = {
   headerStats: {
     avgDurationSeconds: number | null;
     avgTotalVolume: number | null;
+    lastCompletedAt: string | null;
   };
   goals: Array<{
     id: string;
@@ -82,7 +83,6 @@ export type LiveExerciseDraft = {
   equipment: string | null;
   type: string | null;
   level: string | null;
-  videoUrl: string | null;
   instructions: string | null;
 
   prescription: WorkoutLoadPayload["exercises"][number]["prescription"];

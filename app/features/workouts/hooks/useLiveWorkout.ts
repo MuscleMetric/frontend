@@ -15,6 +15,7 @@ type Bootstrap = {
   headerStats: {
     avgDurationSeconds: number | null;
     avgTotalVolume: number | null;
+    lastCompletedAt: string | null;
   };
   goals: Array<{
     id: string;
@@ -90,7 +91,11 @@ export type LiveDraft = {
   >;
 };
 
-function draftKey(userId: string, workoutId: string, planWorkoutId: string | null) {
+function draftKey(
+  userId: string,
+  workoutId: string,
+  planWorkoutId: string | null
+) {
   const suffix = planWorkoutId ? `pw:${planWorkoutId}` : `w:${workoutId}`;
   return `mm:liveDraft:${userId}:${suffix}`;
 }
@@ -138,10 +143,13 @@ export function useLiveWorkout(args: {
 
     try {
       // 1) fetch bootstrap data from RPC
-      const { data, error: rpcErr } = await supabase.rpc("get_workout_session_bootstrap", {
-        p_workout_id: workoutId,
-        p_plan_workout_id: planWorkoutId, // can be null
-      });
+      const { data, error: rpcErr } = await supabase.rpc(
+        "get_workout_session_bootstrap",
+        {
+          p_workout_id: workoutId,
+          p_plan_workout_id: planWorkoutId, // can be null
+        }
+      );
 
       if (rpcErr) throw rpcErr;
 
@@ -230,6 +238,9 @@ export function useLiveWorkout(args: {
 
     const vol = formatKg(s.avgTotalVolume);
     if (vol) out.push({ label: "Avg volume", value: vol });
+
+    const last = (s.lastCompletedAt);
+    if (last) out.push({ label: "Last Completed", value: last });
 
     return out;
   }, [bootstrap]);
