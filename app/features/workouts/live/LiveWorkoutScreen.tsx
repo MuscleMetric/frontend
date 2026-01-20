@@ -387,7 +387,7 @@ export default function LiveWorkoutScreen() {
         onAddSet={(i) => update((d) => M.addSet(d, i))}
         onRemoveSet={(i) => update((d) => M.removeSet(d, i))}
         onPrevSet={() => update((d) => M.goPrevSet(d))}
-        onNextSet={() => update((d) => M.goNextSet(d))}
+        onNextSet={() => update((d) => M.goNextSupersetAware(d))}
         onSwapExercise={() =>
           Alert.alert("Swap exercise", "Wire this to your swap flow next.")
         }
@@ -403,6 +403,7 @@ export default function LiveWorkoutScreen() {
         onClearDropSetForSet={(a) => update((d) => M.clearDropSetForSet(d, a))}
         onAddDrop={(a) => update((d) => M.addDrop(d, a))}
         onUpdateDropSetValue={(a) => update((d) => M.updateDropSetValue(d, a))}
+        onRemoveDrop={(a) => update((d) => M.removeDrop(d, a))}
       />
     </View>
   );

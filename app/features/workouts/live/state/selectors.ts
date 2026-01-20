@@ -15,7 +15,22 @@ export function hasSetData(ex: LiveExerciseDraft, s: LiveSetDraft): boolean {
     );
   }
 
-  // strength default
+  // ---- STRENGTH ----
+  // If this base set has drop rows, treat drops as the source of truth.
+  const setNumber = s.setNumber;
+  const drops = (ex.sets ?? []).filter(
+    (x) => x.setNumber === setNumber && (x.dropIndex ?? 0) > 0
+  );
+
+  if (drops.length) {
+    // at least one drop row has meaningful data
+    return drops.some(
+      (d) =>
+        (d.reps != null && d.reps > 0) || (d.weight != null && d.weight > 0)
+    );
+  }
+
+  // normal base set
   return (s.reps != null && s.reps > 0) || (s.weight != null && s.weight > 0);
 }
 
