@@ -391,6 +391,18 @@ export default function LiveWorkoutScreen() {
         onSwapExercise={() =>
           Alert.alert("Swap exercise", "Wire this to your swap flow next.")
         }
+        // ✅ new: dropset toggle
+        onToggleDropset={(exerciseIndex, value) =>
+          update((d) => M.setExerciseDropSet(d, { exerciseIndex, value }))
+        }
+        // ✅ new: superset tab switching (keeps modal open)
+        onJumpToExercise={(exerciseIndex) => {
+          update((d) => M.openExercise(d, exerciseIndex));
+        }}
+        onInitDropSetForSet={(a) => update((d) => M.initDropSetForSet(d, a))}
+        onClearDropSetForSet={(a) => update((d) => M.clearDropSetForSet(d, a))}
+        onAddDrop={(a) => update((d) => M.addDrop(d, a))}
+        onUpdateDropSetValue={(a) => update((d) => M.updateDropSetValue(d, a))}
       />
     </View>
   );

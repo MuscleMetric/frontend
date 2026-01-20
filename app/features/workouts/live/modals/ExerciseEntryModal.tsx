@@ -183,6 +183,29 @@ export function ExerciseEntryModal(props: {
   onNextSet: () => void;
 
   onSwapExercise?: () => void;
+
+  onToggleDropset?: (exerciseIndex: number, value: boolean) => void;
+  onJumpToExercise?: (exerciseIndex: number) => void;
+
+  onInitDropSetForSet?: (args: {
+    exerciseIndex: number;
+    setNumber: number;
+  }) => void;
+
+  onClearDropSetForSet?: (args: {
+    exerciseIndex: number;
+    setNumber: number;
+  }) => void;
+
+  onAddDrop?: (args: { exerciseIndex: number; setNumber: number }) => void;
+
+  onUpdateDropSetValue?: (args: {
+    exerciseIndex: number;
+    setNumber: number;
+    dropIndex: number;
+    field: "reps" | "weight";
+    value: number | null;
+  }) => void;
 }) {
   const { colors, typography } = useAppTheme();
   const insets = useSafeAreaInsets();
@@ -227,12 +250,52 @@ export function ExerciseEntryModal(props: {
     return bestNow.est - exercise.bestE1rm;
   }, [exercise, cardio, bestNow]);
 
-  const lastIsCompleteButton = useMemo(() => {
-    if (!exercise) return false;
-    return setNumber >= exercise.sets.length;
-  }, [exercise, setNumber]);
-
   if (!exercise || !set) return null;
+
+  const isDropset = Boolean(exercise.prescription?.isDropset);
+  const supersetGroup = exercise.prescription?.supersetGroup ?? null;
+
+  const supersetGroupExercises = useMemo(() => {
+    if (!supersetGroup) return [];
+    return props.draft.exercises
+      .map((e, i) => ({ e, i }))
+      .filter(({ e }) => e.prescription?.supersetGroup === supersetGroup)
+      .sort(
+        (a, b) =>
+          (a.e.prescription?.supersetIndex ?? 0) -
+          (b.e.prescription?.supersetIndex ?? 0)
+      );
+  }, [props.draft.exercises, supersetGroup]);
+
+  const supersetPos = useMemo(() => {
+    if (!supersetGroupExercises.length) return null;
+    const idxInGroup = supersetGroupExercises.findIndex((x) => x.i === index);
+    if (idxInGroup < 0) return null;
+    return idxInGroup; // 0-based
+  }, [supersetGroupExercises, index]);
+
+  function supersetLetterForGroup(group: string) {
+    const groups = Array.from(
+      new Set(
+        props.draft.exercises
+          .map((e) => e.prescription?.supersetGroup)
+          .filter((g): g is string => !!g && g.trim().length > 0)
+      )
+    ).sort((a, b) => a.localeCompare(b));
+    const at = groups.indexOf(group);
+    const letter = String.fromCharCode(
+      "A".charCodeAt(0) + Math.max(0, at % 26)
+    );
+    return letter;
+  }
+
+  const baseSetCount = useMemo(() => {
+    return exercise.sets.filter((s) => (s.dropIndex ?? 0) === 0).length;
+  }, [exercise.sets]);
+
+  const lastIsCompleteButton = useMemo(() => {
+    return setNumber >= baseSetCount;
+  }, [setNumber, baseSetCount]);
 
   // ---- commit helpers ----
   function commitWeightText(t: string) {
@@ -487,7 +550,7 @@ export function ExerciseEntryModal(props: {
                   fontSize: typography.size.sub,
                 }}
               >
-                Set {setNumber} of {exercise.sets.length}
+                Set {setNumber} of {baseSetCount}
               </Text>
             </View>
 
@@ -506,6 +569,56 @@ export function ExerciseEntryModal(props: {
               </Text>
             </Pressable>
           </View>
+
+          {!!supersetGroup && supersetGroupExercises.length >= 2 && (
+            <View style={{ paddingHorizontal: 16, paddingTop: 10 }}>
+              <View
+                style={{
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                  backgroundColor: colors.surface ?? colors.bg,
+                  borderRadius: 18,
+                  padding: 6,
+                  flexDirection: "row",
+                  gap: 6,
+                }}
+              >
+                {supersetGroupExercises.slice(0, 3).map(({ e, i }, k) => {
+                  const letter = supersetLetterForGroup(supersetGroup);
+                  const tag = `${letter}${k + 1}`;
+                  const active = i === index;
+
+                  return (
+                    <Pressable
+                      key={`${i}`}
+                      onPress={() => props.onJumpToExercise?.(i)}
+                      style={{
+                        flex: 1,
+                        paddingVertical: 10,
+                        borderRadius: 14,
+                        backgroundColor: active
+                          ? colors.primary
+                          : "transparent",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      <Text
+                        style={{
+                          color: active ? "#fff" : colors.textMuted,
+                          fontFamily: typography.fontFamily.semibold,
+                          fontSize: 13,
+                        }}
+                        numberOfLines={1}
+                      >
+                        {tag} {e.name}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+          )}
 
           {/* Technique cues moved ABOVE stats */}
           {!!exercise.instructions && (
@@ -530,6 +643,75 @@ export function ExerciseEntryModal(props: {
               </Text>
             </View>
           )}
+
+          // dropset toggle
+          {eligibleDropset && (
+            <Pressable
+              onPress={() => {
+                if (!dropMode) {
+                  props.onInitDropSetForSet?.({ exerciseIndex: index, setNumber });
+                } else {
+                  props.onClearDropSetForSet?.({ exerciseIndex: index, setNumber });
+                }
+              }}
+              style={{
+                marginTop: 10,
+                marginHorizontal: 16,
+                paddingVertical: 12,
+                paddingHorizontal: 14,
+                borderRadius: 18,
+                borderWidth: 1,
+                borderColor: colors.border,
+                backgroundColor: colors.surface ?? colors.bg,
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "space-between",
+              }}
+            >
+              <View style={{ flex: 1, paddingRight: 12 }}>
+                <Text
+                  style={{
+                    color: colors.text,
+                    fontFamily: typography.fontFamily.semibold,
+                    fontSize: 14,
+                  }}
+                >
+                  Dropset
+                </Text>
+                <Text
+                  style={{
+                    color: colors.textMuted,
+                    marginTop: 2,
+                    fontSize: typography.size.sub,
+                  }}
+                >
+                  Perform reps to failure, reduce weight, repeat immediately.
+                </Text>
+              </View>
+
+              <View
+                style={{
+                  width: 46,
+                  height: 28,
+                  borderRadius: 999,
+                  padding: 3,
+                  backgroundColor: dropMode ? colors.primary : colors.border,
+                  justifyContent: "center",
+                }}
+              >
+                <View
+                  style={{
+                    width: 22,
+                    height: 22,
+                    borderRadius: 999,
+                    backgroundColor: "#fff",
+                    alignSelf: dropMode ? "flex-end" : "flex-start",
+                  }}
+                />
+              </View>
+            </Pressable>
+          )}
+
 
           {/* Stats cards */}
           {!cardio && (
