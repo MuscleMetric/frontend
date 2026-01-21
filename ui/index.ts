@@ -58,6 +58,7 @@ export * from "./media/WorkoutCover";
 export { ModalSheet } from "./modals/ModalSheet";
 export * from "./modals/ActionSheet";
 export * from "./modals/SheetHandle";
+export * from "./modals/ExercisePickerSheet";
 
 // forms
 export * from "./forms/StepperField";

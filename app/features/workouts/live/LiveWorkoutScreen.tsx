@@ -4,7 +4,7 @@ import { ScrollView, View, Text, Alert, AppState } from "react-native";
 import { useLocalSearchParams, router } from "expo-router";
 import { useAuth } from "@/lib/authContext";
 import { useAppTheme } from "@/lib/useAppTheme";
-import { Card, LoadingScreen, ErrorState, Screen } from "@/ui";
+import { Card, LoadingScreen, ErrorState } from "@/ui";
 
 import type { LiveWorkoutDraft } from "./state/types";
 import { bootLiveDraft } from "./boot/bootLiveDraft";
@@ -23,6 +23,15 @@ import { ExerciseEntryModal } from "./modals/ExerciseEntryModal";
 
 import { useLiveActivitySync } from "./liveActivity/useLiveActivitySync";
 import { stopLiveWorkout } from "@/lib/liveWorkout";
+import { supabase } from "@/lib/supabase";
+
+import { setSwapHandler } from "./swap/swapBus";
+
+import {
+  setSwapPickerCache,
+  type SwapPickerOption,
+  type Chip,
+} from "./swap/swapPickerCache";
 
 type Params = { workoutId?: string; planWorkoutId?: string };
 
@@ -86,6 +95,129 @@ export default function LiveWorkoutScreen() {
   const [err, setErr] = useState<string | null>(null);
   const [draft, setDraft] = useState<LiveWorkoutDraft | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [swapOpen, setSwapOpen] = useState(false);
+  const [swapExerciseIndex, setSwapExerciseIndex] = useState<number | null>(
+    null
+  );
+  const [swapOptions, setSwapOptions] = useState<SwapPickerOption[]>([]);
+  const [swapLoading, setSwapLoading] = useState(false);
+
+  const [swapFavoriteIds, setSwapFavoriteIds] = useState<Set<string>>(
+    new Set()
+  );
+  const [swapUsageById, setSwapUsageById] = useState<Record<string, number>>(
+    {}
+  );
+  const [swapEquipmentOptions, setSwapEquipmentOptions] = useState<string[]>(
+    []
+  );
+  const [swapMuscleGroups, setSwapMuscleGroups] = useState<Chip[]>([]);
+
+  useEffect(() => {
+    return () => {
+      // IMPORTANT: cleanup so we don't keep stale handlers around
+      setSwapHandler(null);
+    };
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+
+    async function load() {
+      setSwapLoading(true);
+      try {
+        // 1) rpc: exercises + user meta
+        const { data, error } = await supabase.rpc("get_exercise_picker_data", {
+          p_include_private: false,
+        });
+        if (error) throw error;
+        if (!alive) return;
+
+        const rows = (data ?? []) as any[];
+
+        const nextOptions: SwapPickerOption[] = rows.map((r) => ({
+          id: r.id,
+          name: r.name,
+          type: r.type ?? null,
+          equipment: r.equipment ?? null,
+          level: r.level ?? null,
+          instructions: r.instructions ?? null,
+
+          muscleIds: Array.isArray(r.muscle_ids)
+            ? r.muscle_ids.map((x: any) => String(x))
+            : [],
+
+          isFavorite: Boolean(r.is_favorite),
+          sessionsCount: Number(r.sessions_count ?? 0),
+          setsCount: Number(r.sets_count ?? 0),
+          lastUsedAt: r.last_used_at ?? null,
+        }));
+
+        // derive fav + usage + equipment list
+        const fav = new Set<string>();
+        const usage: Record<string, number> = {};
+        const equipSet = new Set<string>();
+
+        for (const o of nextOptions) {
+          if (o.isFavorite) fav.add(o.id);
+          usage[o.id] = o.sessionsCount ?? 0;
+          if (o.equipment) equipSet.add(o.equipment);
+        }
+
+        // 2) muscles table for filter chips
+        const { data: muscles, error: mErr } = await supabase
+          .from("muscles")
+          .select("id,name")
+          .order("name", { ascending: true });
+
+        const mg: Chip[] = mErr
+          ? []
+          : (muscles ?? []).map((m: any) => ({
+              id: String(m.id),
+              label: m.name,
+            }));
+
+        if (!alive) return;
+
+        // write state
+        setSwapOptions(nextOptions);
+        setSwapFavoriteIds(fav);
+        setSwapUsageById(usage);
+        setSwapEquipmentOptions(
+          Array.from(equipSet).sort((a, b) => a.localeCompare(b))
+        );
+        setSwapMuscleGroups(mg);
+
+        // ✅ write global cache so swap page doesn't refetch
+        setSwapPickerCache({
+          options: nextOptions,
+          favoriteIds: fav,
+          usageByExerciseId: usage,
+          equipmentOptions: Array.from(equipSet).sort((a, b) =>
+            a.localeCompare(b)
+          ),
+          muscleGroups: mg,
+          loadedAt: Date.now(),
+        });
+      } catch (e) {
+        console.warn("swap picker load failed", e);
+      } finally {
+        if (alive) setSwapLoading(false);
+      }
+    }
+
+    // only fetch if we don't already have them
+    if (swapOptions.length === 0) load();
+
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    console.log("swapOpen state =", swapOpen);
+  }, [swapOpen]);
 
   const uid = userId ?? null;
 
@@ -329,42 +461,32 @@ export default function LiveWorkoutScreen() {
               ? `${subtitleBase} • Last: ${lastLabel}`
               : subtitleBase;
 
-            const isComplete = S.isExerciseComplete(ex);
-            const pill = S.getExerciseCtaLabel(ex) === "Done ✓ Edit";
+            // ✅ IMPORTANT: map sorted item back to its real index in draft.exercises
+            const realIndex = draft.exercises.findIndex((e: any) => {
+              // prefer workoutExerciseId when present (most stable)
+              if (e.workoutExerciseId && ex.workoutExerciseId) {
+                return e.workoutExerciseId === ex.workoutExerciseId;
+              }
+              // fallback: exerciseId + orderIndex (good enough for now)
+              return (
+                e.exerciseId === ex.exerciseId && e.orderIndex === ex.orderIndex
+              );
+            });
 
-            const completedLines = isComplete
-              ? (ex.sets ?? [])
-                  .filter((s: any) => S.hasSetData(ex, s))
-                  .slice(0, 10)
-                  .map((s: any) => {
-                    const type = (ex.type ?? "").toLowerCase();
-                    if (type === "cardio") {
-                      const parts: string[] = [];
-                      if (s.distance != null)
-                        parts.push(`${fmtNum(s.distance, 2)}km`);
-                      if (s.timeSeconds != null)
-                        parts.push(`${fmtNum(s.timeSeconds)}s`);
-                      return `${s.setNumber}. ${parts.join(" • ")}`;
-                    }
-                    const r = s.reps ?? 0;
-                    const w = s.weight ?? 0;
-                    if (r && w)
-                      return `${s.setNumber}. ${r} reps × ${fmtNum(w)}kg`;
-                    if (r) return `${s.setNumber}. ${r} reps`;
-                    if (w) return `${s.setNumber}. ${fmtNum(w)}kg`;
-                    return `${s.setNumber}.`;
-                  })
-              : undefined;
+            const indexToOpen = realIndex >= 0 ? realIndex : idx; // fallback (should rarely hit)
 
             return (
               <LiveWorkoutExerciseRow
-                key={`${ex.exerciseId}-${idx}`}
+                key={
+                  ex.workoutExerciseId ??
+                  `${ex.exerciseId}-${ex.orderIndex ?? idx}`
+                }
                 index={idx + 1}
                 title={ex.name}
                 subtitle={subtitle}
                 tags={tags.length ? tags : undefined}
-                ex={ex} // ✅ required
-                onPress={() => openExerciseAt(idx)}
+                ex={ex}
+                onPress={() => openExerciseAt(indexToOpen)}
               />
             );
           })}
@@ -388,17 +510,51 @@ export default function LiveWorkoutScreen() {
         onRemoveSet={(i) => update((d) => M.removeSet(d, i))}
         onPrevSet={() => update((d) => M.goPrevSet(d))}
         onNextSet={() => update((d) => M.goNextSupersetAware(d))}
-        onSwapExercise={() =>
-          Alert.alert("Swap exercise", "Wire this to your swap flow next.")
-        }
-        // ✅ new: dropset toggle
+        onSwapExercise={() => {
+          const exIndex = draft.ui.activeExerciseIndex;
+
+          // close the entry sheet
+          setSheetOpen(false);
+
+          // set the handler BEFORE navigation so the swap page can return a result
+          setSwapHandler((picked) => {
+            update((d) =>
+              M.swapExercise(d, {
+                exerciseIndex: exIndex,
+                newExercise: {
+                  exerciseId: picked.id,
+                  name: picked.name ?? "Exercise",
+                  equipment: picked.equipment ?? null,
+                  type: picked.type ?? null,
+                  level: picked.level ?? null,
+                  instructions: picked.instructions ?? null,
+                },
+                resetSuperset: false,
+                resetDropsetFlag: false,
+              })
+            );
+
+            // optional: reopen the entry modal for the swapped exercise
+            setTimeout(() => setSheetOpen(true), 0);
+
+            // clear handler so it can’t fire again
+            setSwapHandler(null);
+          });
+
+          // push the swap page
+          router.push({
+            pathname: "/features/workouts/live/swap/",
+            params: {
+              replacingExerciseId: draft.exercises[exIndex]?.exerciseId ?? "",
+            },
+          });
+        }}
         onToggleDropset={(exerciseIndex, value) =>
           update((d) => M.setExerciseDropSet(d, { exerciseIndex, value }))
         }
-        // ✅ new: superset tab switching (keeps modal open)
-        onJumpToExercise={(exerciseIndex) => {
-          update((d) => M.openExercise(d, exerciseIndex));
-        }}
+        onJumpToExercise={(exerciseIndex) =>
+          update((d) => M.openExercise(d, exerciseIndex))
+        }
         onInitDropSetForSet={(a) => update((d) => M.initDropSetForSet(d, a))}
         onClearDropSetForSet={(a) => update((d) => M.clearDropSetForSet(d, a))}
         onAddDrop={(a) => update((d) => M.addDrop(d, a))}

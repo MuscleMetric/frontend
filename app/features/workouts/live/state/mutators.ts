@@ -453,3 +453,147 @@ export function goNextSupersetAware(d: LiveWorkoutDraft): LiveWorkoutDraft {
     updatedAt: nowIso(),
   };
 }
+
+// --- SWAP EXERCISE ---
+
+type SwapExerciseArgs = {
+  exerciseIndex: number;
+  newExercise: {
+    exerciseId: string;
+    name: string;
+    equipment: string | null;
+    type: string | null;
+    level: string | null;
+    instructions: string | null;
+    videoUrl?: string | null; // optional; LiveExerciseDraft doesn't store but allow pass-through
+  };
+  /**
+   * If true, clears superset metadata when swapping.
+   * Default false (keeps group/index so A/B doesn't break mid-workout).
+   */
+  resetSuperset?: boolean;
+  /**
+   * If true, clears dropset toggle on the swapped-in exercise.
+   * Default false (keeps user's "isDropset" choice if they had toggled it).
+   */
+  resetDropsetFlag?: boolean;
+};
+
+export function swapExercise(
+  d: LiveWorkoutDraft,
+  args: SwapExerciseArgs
+): LiveWorkoutDraft {
+  const idx = clamp(args.exerciseIndex, 0, d.exercises.length - 1);
+  const cur = d.exercises[idx];
+  if (!cur) return d;
+
+  // avoid no-op
+  if (cur.exerciseId === args.newExercise.exerciseId) return d;
+
+  // keep same number of BASE sets the user is working with right now
+  const baseCount = baseSetCount(cur);
+
+  const nextPrescription = {
+    ...cur.prescription,
+    ...(args.resetSuperset
+      ? { supersetGroup: null, supersetIndex: null }
+      : null),
+    ...(args.resetDropsetFlag ? { isDropset: false } : null),
+  };
+
+  const next: LiveExerciseDraft = {
+    ...cur,
+
+    // new exercise identity + snapshot
+    exerciseId: args.newExercise.exerciseId,
+    name: args.newExercise.name,
+    equipment: args.newExercise.equipment,
+    type: args.newExercise.type,
+    level: args.newExercise.level,
+    instructions: args.newExercise.instructions,
+
+    // IMPORTANT: swapped exercise isn't persisted as a workout_exercise row yet
+    workoutExerciseId: null,
+
+    // keep prescription (targets, notes) but optionally reset superset/dropset flags
+    prescription: nextPrescription,
+
+    // new exercise => last session info + PRs should be cleared until you load them
+    lastSession: { completedAt: null, sets: [] },
+    bestE1rm: null,
+    totalVolumeAllTime: null,
+
+    // reset completion and all entered set data
+    isDone: false,
+
+    // regenerate clean base sets (dropIndex 0 only) for the same count
+    sets: makeEmptyBaseSets(baseCount),
+  };
+
+  const nextExercises = d.exercises.slice();
+  nextExercises[idx] = next;
+
+  // keep UI stable; clamp set number to new base count
+  const nextUi =
+    d.ui.activeExerciseIndex === idx
+      ? {
+          ...d.ui,
+          activeSetNumber: clamp(d.ui.activeSetNumber, 1, baseCount),
+        }
+      : d.ui;
+
+  return {
+    ...d,
+    exercises: nextExercises,
+    ui: nextUi,
+    updatedAt: nowIso(),
+  };
+}
+
+/**
+ * Optional helper if your picker only returns an id.
+ * You provide a lookup function that returns the snapshot fields we store.
+ */
+export function swapExerciseById(
+  d: LiveWorkoutDraft,
+  args: {
+    exerciseIndex: number;
+    newExerciseId: string;
+    lookup: (exerciseId: string) => {
+      exerciseId: string;
+      name: string;
+      equipment: string | null;
+      type: string | null;
+      level: string | null;
+      instructions: string | null;
+    } | null;
+    resetSuperset?: boolean;
+    resetDropsetFlag?: boolean;
+  }
+): LiveWorkoutDraft {
+  const snap = args.lookup(args.newExerciseId);
+  if (!snap) return d;
+  return swapExercise(d, {
+    exerciseIndex: args.exerciseIndex,
+    newExercise: snap,
+    resetSuperset: args.resetSuperset,
+    resetDropsetFlag: args.resetDropsetFlag,
+  });
+}
+
+function makeEmptyBaseSets(count: number): LiveSetDraft[] {
+  const n = clamp(count, 1, 20);
+  const out: LiveSetDraft[] = [];
+  for (let i = 1; i <= n; i++) {
+    out.push({
+      setNumber: i,
+      dropIndex: 0,
+      reps: null,
+      weight: null,
+      timeSeconds: null,
+      distance: null,
+      notes: null,
+    });
+  }
+  return out;
+}

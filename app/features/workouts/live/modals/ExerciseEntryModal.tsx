@@ -385,15 +385,18 @@ export function ExerciseEntryModal(props: {
                 typography={typography}
                 title={exercise.name}
                 subtitle={`Set ${setNumber} of ${baseSetCount}`}
-                onClose={() => {
-                  Keyboard.dismiss();
-                  props.onClose();
+                onClose={props.onClose}
+                // ✅ menu
+                canDropset={!cardio}
+                dropsetEnabled={Boolean(exercise.prescription?.isDropset)}
+                onToggleDropset={() => {
+                  // this is the EXERCISE-level flag (not per-set drop rows)
+                  props.onToggleDropset?.(
+                    index,
+                    !Boolean(exercise.prescription?.isDropset)
+                  );
                 }}
-                rightLabel="Swap"
-                onRightPress={() => {
-                  Keyboard.dismiss();
-                  props.onSwapExercise?.();
-                }}
+                onSwapExercise={props.onSwapExercise}
               />
 
               {supersetGroup ? (
