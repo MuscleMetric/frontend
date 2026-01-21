@@ -141,7 +141,7 @@ export function ResumeWorkoutGate() {
       onClose={() => setOpen(false)}
       title="Continue workout?"
       subtitle={title}
-      heightVariant="default"
+      heightVariant="short"
     >
       {/* Summary card */}
       <Card>
@@ -230,13 +230,6 @@ export function ResumeWorkoutGate() {
         variant="ghost"
         disabled={busy}
         onPress={confirmDiscard}
-      />
-
-      <Button
-        title="Not now"
-        variant="text"
-        disabled={busy}
-        onPress={() => setOpen(false)}
       />
 
       {/* Optional: tiny debug line (remove if you want) */}

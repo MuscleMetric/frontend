@@ -119,4 +119,8 @@ export type LiveWorkoutDraft = {
     activeExerciseIndex: number; // which exercise modal is on
     activeSetNumber: number; // 1-based
   };
+
+  timerRuntimeId?: string | null;
+  timerElapsedSeconds?: number; // total “active” time accumulated
+  timerLastActiveAt?: string | null;
 };

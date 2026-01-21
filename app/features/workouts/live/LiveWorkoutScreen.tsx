@@ -24,8 +24,8 @@ import { ExerciseEntryModal } from "./modals/ExerciseEntryModal";
 import { useLiveActivitySync } from "./liveActivity/useLiveActivitySync";
 import { stopLiveWorkout } from "@/lib/liveWorkout";
 import { supabase } from "@/lib/supabase";
-
 import { setSwapHandler } from "./swap/swapBus";
+import { getRuntimeId } from "@/lib/runtimeId";
 
 import {
   setSwapPickerCache,
@@ -35,18 +35,68 @@ import {
 
 type Params = { workoutId?: string; planWorkoutId?: string };
 
-function pad2(n: number) {
-  return String(n).padStart(2, "0");
+function nowIso() {
+  return new Date().toISOString();
 }
 
-function timerTextFromStartedAt(startedAtIso: string) {
-  const startMs = new Date(startedAtIso).getTime();
-  const nowMs = Date.now();
-  const diff = Math.max(0, nowMs - startMs);
-  const totalSeconds = Math.floor(diff / 1000);
+function secondsBetween(aIso: string, bIso: string) {
+  const a = new Date(aIso).getTime();
+  const b = new Date(bIso).getTime();
+  return Math.max(0, Math.floor((b - a) / 1000));
+}
+
+/**
+ * Timer derivation:
+ * - timerElapsedSeconds = accumulated “confirmed” seconds
+ * - timerLastActiveAt = anchor when running; null = paused (future)
+ */
+function timerSecondsFromDraft(d: LiveWorkoutDraft) {
+  const base = Number(d.timerElapsedSeconds ?? 0);
+  const last = d.timerLastActiveAt;
+  if (!last) return base;
+  return base + secondsBetween(last, nowIso());
+}
+
+function timerTextFromSeconds(totalSeconds: number) {
   const mm = Math.floor(totalSeconds / 60);
   const ss = totalSeconds % 60;
-  return `${pad2(mm)}:${pad2(ss)}`;
+  return `${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
+}
+
+/**
+ * Cold-start normalization:
+ * When the app was killed, we DO NOT want the timer to include time since last save.
+ *
+ * So:
+ * - Commit only up to updatedAt (the last saved moment)
+ * - Then resume timer from NOW (so it continues while app is alive)
+ */
+function normalizeTimerOnBoot(d: LiveWorkoutDraft): LiveWorkoutDraft {
+  const now = nowIso();
+
+  const elapsed = Number(d.timerElapsedSeconds ?? 0);
+  const anchor = d.timerLastActiveAt;
+
+  // If missing anchor, treat as "running from now" (you don't have pause UX yet)
+  if (!anchor) {
+    return {
+      ...d,
+      timerElapsedSeconds: elapsed,
+      timerLastActiveAt: now,
+      updatedAt: now,
+    };
+  }
+
+  // Commit time ONLY up to last saved time (updatedAt). Ignore anything after that.
+  const commitTo = d.updatedAt ?? anchor;
+  const add = secondsBetween(anchor, commitTo);
+
+  return {
+    ...d,
+    timerElapsedSeconds: elapsed + add,
+    timerLastActiveAt: now,
+    updatedAt: now,
+  };
 }
 
 function fmtNum(n: number, dp = 0) {
@@ -55,7 +105,6 @@ function fmtNum(n: number, dp = 0) {
 }
 
 function buildExerciseSubtitle(ex: any) {
-  // ex is LiveExerciseDraft
   const type = (ex.type ?? "").toLowerCase();
   const p = ex.prescription ?? {};
   const targetSets = p.targetSets ?? ex.sets?.length ?? 0;
@@ -70,7 +119,6 @@ function buildExerciseSubtitle(ex: any) {
     return parts.join(" • ");
   }
 
-  // strength default
   if (p.targetReps != null && p.targetWeight != null) {
     return `${targetSets} sets × ${p.targetReps} • ${fmtNum(p.targetWeight)}kg`;
   }
@@ -91,17 +139,16 @@ export default function LiveWorkoutScreen() {
   const planWorkoutId =
     typeof params.planWorkoutId === "string" ? params.planWorkoutId : undefined;
 
+  const uid = userId ?? null;
+
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [draft, setDraft] = useState<LiveWorkoutDraft | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
-  const [swapOpen, setSwapOpen] = useState(false);
-  const [swapExerciseIndex, setSwapExerciseIndex] = useState<number | null>(
-    null
-  );
+
+  // swap picker cache state (kept as you had it)
   const [swapOptions, setSwapOptions] = useState<SwapPickerOption[]>([]);
   const [swapLoading, setSwapLoading] = useState(false);
-
   const [swapFavoriteIds, setSwapFavoriteIds] = useState<Set<string>>(
     new Set()
   );
@@ -115,7 +162,6 @@ export default function LiveWorkoutScreen() {
 
   useEffect(() => {
     return () => {
-      // IMPORTANT: cleanup so we don't keep stale handlers around
       setSwapHandler(null);
     };
   }, []);
@@ -123,10 +169,9 @@ export default function LiveWorkoutScreen() {
   useEffect(() => {
     let alive = true;
 
-    async function load() {
+    async function loadSwapPicker() {
       setSwapLoading(true);
       try {
-        // 1) rpc: exercises + user meta
         const { data, error } = await supabase.rpc("get_exercise_picker_data", {
           p_include_private: false,
         });
@@ -142,18 +187,15 @@ export default function LiveWorkoutScreen() {
           equipment: r.equipment ?? null,
           level: r.level ?? null,
           instructions: r.instructions ?? null,
-
           muscleIds: Array.isArray(r.muscle_ids)
             ? r.muscle_ids.map((x: any) => String(x))
             : [],
-
           isFavorite: Boolean(r.is_favorite),
           sessionsCount: Number(r.sessions_count ?? 0),
           setsCount: Number(r.sets_count ?? 0),
           lastUsedAt: r.last_used_at ?? null,
         }));
 
-        // derive fav + usage + equipment list
         const fav = new Set<string>();
         const usage: Record<string, number> = {};
         const equipSet = new Set<string>();
@@ -164,7 +206,6 @@ export default function LiveWorkoutScreen() {
           if (o.equipment) equipSet.add(o.equipment);
         }
 
-        // 2) muscles table for filter chips
         const { data: muscles, error: mErr } = await supabase
           .from("muscles")
           .select("id,name")
@@ -179,23 +220,19 @@ export default function LiveWorkoutScreen() {
 
         if (!alive) return;
 
-        // write state
+        const eqList = Array.from(equipSet).sort((a, b) => a.localeCompare(b));
+
         setSwapOptions(nextOptions);
         setSwapFavoriteIds(fav);
         setSwapUsageById(usage);
-        setSwapEquipmentOptions(
-          Array.from(equipSet).sort((a, b) => a.localeCompare(b))
-        );
+        setSwapEquipmentOptions(eqList);
         setSwapMuscleGroups(mg);
 
-        // ✅ write global cache so swap page doesn't refetch
         setSwapPickerCache({
           options: nextOptions,
           favoriteIds: fav,
           usageByExerciseId: usage,
-          equipmentOptions: Array.from(equipSet).sort((a, b) =>
-            a.localeCompare(b)
-          ),
+          equipmentOptions: eqList,
           muscleGroups: mg,
           loadedAt: Date.now(),
         });
@@ -206,8 +243,7 @@ export default function LiveWorkoutScreen() {
       }
     }
 
-    // only fetch if we don't already have them
-    if (swapOptions.length === 0) load();
+    if (swapOptions.length === 0) loadSwapPicker();
 
     return () => {
       alive = false;
@@ -215,41 +251,33 @@ export default function LiveWorkoutScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => {
-    console.log("swapOpen state =", swapOpen);
-  }, [swapOpen]);
-
-  const uid = userId ?? null;
-
   const { persist } = usePersistDraft({
     enabledServer: true,
     serverDebounceMs: 1200,
   });
 
-  // Live Activities sync (your existing hook)
+  // Live Activities sync (existing)
   useLiveActivitySync(draft, true);
 
-  // ---- Timer (ticks every second while draft exists) ----
+  // ---- Timer UI tick ----
   const [timerText, setTimerText] = useState("00:00");
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
-    if (!draft?.startedAt) return;
+    if (!draft) return;
 
-    // prime immediately
-    setTimerText(timerTextFromStartedAt(draft.startedAt));
+    setTimerText(timerTextFromSeconds(timerSecondsFromDraft(draft)));
 
     if (timerRef.current) clearInterval(timerRef.current);
-
     timerRef.current = setInterval(() => {
-      setTimerText(timerTextFromStartedAt(draft.startedAt));
+      setTimerText(timerTextFromSeconds(timerSecondsFromDraft(draft)));
     }, 1000);
 
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
       timerRef.current = null;
     };
-  }, [draft?.startedAt]);
+  }, [draft?.draftId, draft?.timerElapsedSeconds, draft?.timerLastActiveAt]);
 
   // ---- Boot draft ----
   useEffect(() => {
@@ -270,7 +298,43 @@ export default function LiveWorkoutScreen() {
         });
 
         if (cancelled) return;
-        setDraft(next);
+
+        const now = nowIso();
+        const currentRuntime = getRuntimeId();
+
+        // hydrate defaults
+        const hydrated: LiveWorkoutDraft = {
+          ...next,
+          timerElapsedSeconds: next.timerElapsedSeconds ?? 0,
+          timerLastActiveAt: next.timerLastActiveAt ?? now, // running by default
+          updatedAt: next.updatedAt ?? now,
+          timerRuntimeId: next.timerRuntimeId ?? null,
+        };
+
+        // ✅ cold start detection:
+        // if the saved runtimeId differs from current process runtimeId, the app was killed
+        const isColdStart =
+          hydrated.timerRuntimeId != null &&
+          hydrated.timerRuntimeId !== currentRuntime;
+
+        let finalDraft: LiveWorkoutDraft;
+
+        if (isColdStart) {
+          // subtract time since last save
+          finalDraft = {
+            ...normalizeTimerOnBoot(hydrated),
+            timerRuntimeId: currentRuntime,
+          };
+        } else {
+          // normal resume/navigation: DO NOT subtract anything
+          finalDraft = {
+            ...hydrated,
+            timerRuntimeId: currentRuntime,
+          };
+        }
+
+        setDraft(finalDraft);
+        persist(finalDraft).catch(() => {});
         setLoading(false);
       } catch (e: any) {
         if (cancelled) return;
@@ -283,24 +347,47 @@ export default function LiveWorkoutScreen() {
     return () => {
       cancelled = true;
     };
-  }, [uid, workoutId, planWorkoutId]);
+  }, [uid, workoutId, planWorkoutId, persist]);
 
-  // App background -> flush save
+  // Background/lock -> snapshot only (timer continues in real life)
   useEffect(() => {
     const sub = AppState.addEventListener("change", (state) => {
-      if (state !== "active" && draft) {
-        persist(draft).catch(() => {});
+      if (state !== "active") {
+        setDraft((prev) => {
+          if (!prev) return prev;
+          const now = nowIso();
+          const next: LiveWorkoutDraft = {
+            ...prev,
+            updatedAt: now,
+            timerRuntimeId: getRuntimeId(),
+          };
+
+          persist(next).catch(() => {});
+          return next;
+        });
       }
     });
     return () => sub.remove();
-  }, [draft, persist]);
+  }, [persist]);
 
   function update(mut: (d: LiveWorkoutDraft) => LiveWorkoutDraft) {
     setDraft((prev) => {
       if (!prev) return prev;
+
+      const now = nowIso();
       const next = mut(prev);
-      persist(next).catch(() => {});
-      return next;
+
+      // IMPORTANT: stamp updatedAt so persist/server debounce works
+      const stamped: LiveWorkoutDraft = {
+        ...next,
+        updatedAt: now,
+        timerElapsedSeconds: next.timerElapsedSeconds ?? 0,
+        timerLastActiveAt: next.timerLastActiveAt ?? now,
+        timerRuntimeId: getRuntimeId(),
+      };
+
+      persist(stamped).catch(() => {});
+      return stamped;
     });
   }
 
@@ -343,7 +430,6 @@ export default function LiveWorkoutScreen() {
         {
           text: "Complete",
           onPress: async () => {
-            // TODO: write workout_history + set history here
             stopLiveWorkout();
             await clearLiveDraftForUser(uid);
             await clearServerDraft(uid);
@@ -354,7 +440,6 @@ export default function LiveWorkoutScreen() {
     );
   }
 
-  // ✅ Hooks must run in consistent order — put memos BEFORE any early returns
   const supersetLabels = useMemo(() => {
     if (!draft) return {} as Record<string, string>;
     return S.buildSupersetLabels(draft);
@@ -367,7 +452,6 @@ export default function LiveWorkoutScreen() {
       .sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0));
   }, [draft?.exercises]);
 
-  // ---- Early returns AFTER hooks ----
   if (!uid) {
     return (
       <ErrorState
@@ -455,25 +539,21 @@ export default function LiveWorkoutScreen() {
             if (ex.prescription?.isDropset) tags.push("Dropset");
 
             const subtitleBase = buildExerciseSubtitle(ex);
-
             const lastLabel = S.getLastSessionLabel(ex);
             const subtitle = lastLabel
               ? `${subtitleBase} • Last: ${lastLabel}`
               : subtitleBase;
 
-            // ✅ IMPORTANT: map sorted item back to its real index in draft.exercises
             const realIndex = draft.exercises.findIndex((e: any) => {
-              // prefer workoutExerciseId when present (most stable)
               if (e.workoutExerciseId && ex.workoutExerciseId) {
                 return e.workoutExerciseId === ex.workoutExerciseId;
               }
-              // fallback: exerciseId + orderIndex (good enough for now)
               return (
                 e.exerciseId === ex.exerciseId && e.orderIndex === ex.orderIndex
               );
             });
 
-            const indexToOpen = realIndex >= 0 ? realIndex : idx; // fallback (should rarely hit)
+            const indexToOpen = realIndex >= 0 ? realIndex : idx;
 
             return (
               <LiveWorkoutExerciseRow
@@ -513,10 +593,8 @@ export default function LiveWorkoutScreen() {
         onSwapExercise={() => {
           const exIndex = draft.ui.activeExerciseIndex;
 
-          // close the entry sheet
           setSheetOpen(false);
 
-          // set the handler BEFORE navigation so the swap page can return a result
           setSwapHandler((picked) => {
             update((d) =>
               M.swapExercise(d, {
@@ -534,14 +612,10 @@ export default function LiveWorkoutScreen() {
               })
             );
 
-            // optional: reopen the entry modal for the swapped exercise
             setTimeout(() => setSheetOpen(true), 0);
-
-            // clear handler so it can’t fire again
             setSwapHandler(null);
           });
 
-          // push the swap page
           router.push({
             pathname: "/features/workouts/live/swap/",
             params: {

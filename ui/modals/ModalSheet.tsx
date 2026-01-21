@@ -43,7 +43,7 @@ type ModalSheetProps = {
    * Allows taller sheets (up to ~92% height).
    * Default: "default"
    */
-  heightVariant?: "default" | "tall";
+  heightVariant?: "default" | "tall" | "short";
 
   children: React.ReactNode;
 };
@@ -65,7 +65,9 @@ export function ModalSheet({
   const backdrop = useRef(new Animated.Value(0)).current;
 
   const sheetMaxHeight = useMemo(() => {
-    return heightVariant === "tall" ? "92%" : "78%";
+    if (heightVariant === "tall") return "92%";
+    if (heightVariant === "short") return "52%";
+    return "78%";
   }, [heightVariant]);
 
   const animateIn = () => {
@@ -120,7 +122,11 @@ export function ModalSheet({
       PanResponder.create({
         onMoveShouldSetPanResponder: (_, gesture) => {
           // only respond to vertical swipe down
-          return Math.abs(gesture.dy) > 6 && Math.abs(gesture.dx) < 10 && gesture.dy > 0;
+          return (
+            Math.abs(gesture.dy) > 6 &&
+            Math.abs(gesture.dx) < 10 &&
+            gesture.dy > 0
+          );
         },
         onPanResponderMove: (_, gesture) => {
           // drag sheet down slightly (clamped)
@@ -172,7 +178,10 @@ export function ModalSheet({
           },
         ]}
       >
-        <Pressable style={StyleSheet.absoluteFill} onPress={() => animateOut(onClose)} />
+        <Pressable
+          style={StyleSheet.absoluteFill}
+          onPress={() => animateOut(onClose)}
+        />
       </Animated.View>
 
       {/* Sheet */}
@@ -186,7 +195,10 @@ export function ModalSheet({
               borderTopLeftRadius: layout.radius.xl,
               borderTopRightRadius: layout.radius.xl,
               maxHeight: sheetMaxHeight as any,
-              paddingBottom: Math.max(layout.space.lg, insets.bottom + layout.space.sm),
+              paddingBottom: Math.max(
+                layout.space.lg,
+                insets.bottom + layout.space.sm
+              ),
               transform: [
                 { translateY },
                 {
@@ -203,7 +215,10 @@ export function ModalSheet({
           {/* Drag handle */}
           <View
             {...panResponder.panHandlers}
-            style={{ paddingTop: layout.space.sm, paddingBottom: layout.space.sm }}
+            style={{
+              paddingTop: layout.space.sm,
+              paddingBottom: layout.space.sm,
+            }}
           >
             <View
               style={{
@@ -218,7 +233,12 @@ export function ModalSheet({
           </View>
 
           {/* Header */}
-          <View style={{ paddingHorizontal: layout.space.lg, paddingBottom: layout.space.md }}>
+          <View
+            style={{
+              paddingHorizontal: layout.space.lg,
+              paddingBottom: layout.space.md,
+            }}
+          >
             <View style={{ flexDirection: "row", alignItems: "center" }}>
               <View style={{ flex: 1 }}>
                 {title ? (
@@ -267,7 +287,11 @@ export function ModalSheet({
                   }}
                 >
                   {rightAction.iconName ? (
-                    <Icon name={rightAction.iconName as any} size={16} color={colors.text} />
+                    <Icon
+                      name={rightAction.iconName as any}
+                      size={16}
+                      color={colors.text}
+                    />
                   ) : null}
                   <Text
                     style={{
