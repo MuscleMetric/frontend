@@ -47,7 +47,7 @@ export function useAddPickerData() {
       try {
         // 1) exercise picker RPC
         const { data, error } = await supabase.rpc("get_exercise_picker_data", {
-          p_include_private: false,
+          p_include_private: true,
         });
         if (error) throw error;
         if (!alive) return;

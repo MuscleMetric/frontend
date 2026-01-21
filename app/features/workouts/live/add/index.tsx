@@ -129,7 +129,6 @@ export default function AddExercisesScreen() {
           p_equipment: equipment,
           p_muscle_ids: muscleIntIds,
           p_instructions: instructions ?? null,
-          // p_contribution: 30, // only include if your RPC signature includes it; otherwise remove
         });
 
         if (error) throw error;
