@@ -1,7 +1,12 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import type { LiveWorkoutDraft } from "./liveWorkoutTypes";
 
-const keyFor = (userId: string) => `live_workout:${userId}`;
+// liveWorkoutStorage.ts
+export const liveWorkoutDraftKeyFor = (userId: string) => `live_workout:${userId}`;
+
+// keep existing keyFor if you want, but use the exported one everywhere
+const keyFor = liveWorkoutDraftKeyFor;
+
 
 export async function loadLiveDraftForUser(userId: string): Promise<LiveWorkoutDraft | null> {
   try {

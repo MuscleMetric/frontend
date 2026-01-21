@@ -1,73 +1,123 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { AppState, Text } from "react-native";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { AppState, View, Text, Alert } from "react-native";
 import { useRouter, usePathname } from "expo-router";
 import { ModalSheet, Button, Card } from "@/ui";
 import { useAuth } from "@/lib/authContext";
 import { useAppTheme } from "@/lib/useAppTheme";
 
+import {
+  loadLiveDraftForUser,
+  clearLiveDraftForUser,
+} from "@/app/features/workouts/hooks/liveWorkoutStorage";
+
+import { clearServerDraft } from "@/app/features/workouts/live/persist/server";
 
 type Draft = {
-  clientSaveId: string;
-  workoutId: string;
+  draftId: string;
+  userId: string;
+  workoutId?: string | null;
   planWorkoutId?: string | null;
   title?: string | null;
   startedAt?: string | null;
-  lastTouchedAt?: string | null;
+  updatedAt?: string | null;
 };
 
-function keyFor(userId: string) {
-  return `mm_live_session_draft:${userId}`;
+function timeAgo(iso?: string | null) {
+  if (!iso) return null;
+  const t = new Date(iso).getTime();
+  if (!Number.isFinite(t)) return null;
+
+  const diffSec = Math.max(0, Math.floor((Date.now() - t) / 1000));
+  if (diffSec < 60) return `${diffSec}s ago`;
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return `${diffHr}h ago`;
+  const diffDay = Math.floor(diffHr / 24);
+  return `${diffDay}d ago`;
+}
+
+function durationSince(iso?: string | null) {
+  if (!iso) return null;
+  const t = new Date(iso).getTime();
+  if (!Number.isFinite(t)) return null;
+
+  const diffSec = Math.max(0, Math.floor((Date.now() - t) / 1000));
+  const mm = Math.floor(diffSec / 60);
+  const hh = Math.floor(mm / 60);
+
+  if (hh > 0) return `${hh}h ${mm % 60}m`;
+  return `${mm}m`;
 }
 
 export function ResumeWorkoutGate() {
   const { session } = useAuth();
   const userId = session?.user?.id ?? null;
+
   const router = useRouter();
   const pathname = usePathname();
-  const { typography, colors, layout } = useAppTheme();
+  const { colors, typography, layout } = useAppTheme();
 
   const [draft, setDraft] = useState<Draft | null>(null);
   const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
 
+  // ✅ don’t show if already in live flow
   const shouldSuppress = useMemo(() => {
-    // don't prompt if already in the live flow
-    return pathname?.startsWith("/workouts/live");
+    return pathname?.startsWith("/features/workouts/live");
   }, [pathname]);
+
+  useEffect(() => {
+    if (shouldSuppress && open) setOpen(false);
+  }, [shouldSuppress, open]);
 
   async function loadDraft() {
     if (!userId) return;
-    const raw = await AsyncStorage.getItem(keyFor(userId));
-    if (!raw) {
+
+    const d = await loadLiveDraftForUser(userId);
+    if (!d) {
       setDraft(null);
       setOpen(false);
       return;
     }
+
+    setDraft(d as any);
+
+    if (!shouldSuppress) setOpen(true);
+  }
+
+  async function discardEverywhere() {
+    if (!userId) return;
+
+    setBusy(true);
     try {
-      const parsed = JSON.parse(raw) as Draft;
-      // very light validation
-      if (!parsed?.clientSaveId || !parsed?.workoutId) {
-        setDraft(null);
-        setOpen(false);
-        return;
-      }
-      setDraft(parsed);
-      if (!shouldSuppress) setOpen(true);
-    } catch {
+      // local first (instant UX)
+      await clearLiveDraftForUser(userId);
+
+      // server too
+      await clearServerDraft(userId);
+
       setDraft(null);
       setOpen(false);
+    } finally {
+      setBusy(false);
     }
   }
 
-  async function discardDraft() {
-    if (!userId) return;
-    await AsyncStorage.removeItem(keyFor(userId));
-    setDraft(null);
-    setOpen(false);
+  function confirmDiscard() {
+    Alert.alert(
+      "Delete this session?",
+      "This will permanently remove your in-progress workout from this device and the server.",
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Delete", style: "destructive", onPress: discardEverywhere },
+      ]
+    );
   }
 
   useEffect(() => {
     if (!userId) return;
+
     loadDraft();
 
     const sub = AppState.addEventListener("change", (state) => {
@@ -79,61 +129,129 @@ export function ResumeWorkoutGate() {
   }, [userId, shouldSuppress]);
 
   if (!userId) return null;
+  if (!draft) return null;
+
+  const title = draft.title?.trim() || "In-progress workout";
+  const lastSaved = timeAgo(draft.updatedAt);
+  const startedFor = durationSince(draft.startedAt);
 
   return (
     <ModalSheet
       visible={open}
       onClose={() => setOpen(false)}
       title="Continue workout?"
-      subtitle={draft?.title ? draft.title : "You have an in-progress session"}
+      subtitle={title}
       heightVariant="default"
     >
+      {/* Summary card */}
       <Card>
-        <CardContent
-          title="Session found"
-          body={`Workout ID: ${draft?.workoutId}\nSave ID: ${draft?.clientSaveId}`}
-        />
+        <View style={{ gap: 10 }}>
+          <View style={{ flexDirection: "row", alignItems: "center" }}>
+            <View style={{ flex: 1 }}>
+              <Text
+                style={{
+                  fontFamily: typography.fontFamily.bold,
+                  fontSize: 18,
+                  color: colors.text,
+                  letterSpacing: -0.2,
+                }}
+              >
+                Session recovered
+              </Text>
+
+              <Text
+                style={{
+                  marginTop: 4,
+                  fontFamily: typography.fontFamily.medium,
+                  fontSize: typography.size.sub,
+                  color: colors.textMuted,
+                }}
+              >
+                {startedFor ? `Started ${startedFor} ago` : "Started earlier"}
+                {lastSaved ? ` • Last saved ${lastSaved}` : ""}
+              </Text>
+            </View>
+
+            {/* little status dot */}
+            <View
+              style={{
+                width: 10,
+                height: 10,
+                borderRadius: 999,
+                backgroundColor: colors.primary,
+                opacity: 0.9,
+              }}
+            />
+          </View>
+
+          <View
+            style={{
+              height: 1,
+              backgroundColor: colors.border,
+              opacity: 0.8,
+            }}
+          />
+
+          <Text
+            style={{
+              fontFamily: typography.fontFamily.regular,
+              fontSize: typography.size.sub,
+              color: colors.textMuted,
+              lineHeight: 18,
+            }}
+          >
+            We found an autosaved workout draft. Continue to pick up where you left off, or delete it to start fresh.
+          </Text>
+        </View>
       </Card>
 
+      {/* Primary CTA */}
       <Button
-        title="Continue"
+        title={busy ? "Please wait…" : "Continue"}
+        disabled={busy}
         onPress={() => {
           setOpen(false);
-          router.push("/workouts/live");
+
+          router.push({
+            pathname: "/features/workouts/live",
+            params: {
+              workoutId: draft.workoutId ?? "",
+              planWorkoutId: draft.planWorkoutId ?? "",
+            },
+          } as any);
         }}
       />
 
-      <Button title="Discard" variant="ghost" onPress={discardDraft} />
+      {/* Secondary actions */}
+      <View style={{ height: layout.space.sm }} />
 
-      <Button title="Not now" variant="text" onPress={() => setOpen(false)} />
-    </ModalSheet>
-  );
-}
+      <Button
+        title="Delete session"
+        variant="ghost"
+        disabled={busy}
+        onPress={confirmDiscard}
+      />
 
-// tiny helper so we don’t assume you have a CardContent component
-function CardContent({ title, body }: { title: string; body: string }) {
-  const { typography, colors, layout } = useAppTheme();
-  return (
-    <>
+      <Button
+        title="Not now"
+        variant="text"
+        disabled={busy}
+        onPress={() => setOpen(false)}
+      />
+
+      {/* Optional: tiny debug line (remove if you want) */}
       <Text
         style={{
-          fontFamily: typography.fontFamily.semibold,
-          fontSize: typography.size.body,
-          color: colors.text,
-        }}
-      >
-        {title}
-      </Text>
-      <Text
-        style={{
-          marginTop: layout.space.xs,
-          fontFamily: typography.fontFamily.regular,
-          fontSize: typography.size.sub,
+          marginTop: 8,
+          textAlign: "center",
+          fontFamily: typography.fontFamily.medium,
+          fontSize: 11,
           color: colors.textMuted,
+          opacity: 0.6,
         }}
       >
-        {body}
+        Autosave is enabled
       </Text>
-    </>
+    </ModalSheet>
   );
 }
