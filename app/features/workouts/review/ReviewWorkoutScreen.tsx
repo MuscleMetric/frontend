@@ -1,5 +1,5 @@
 // app/features/workouts/live/review/ReviewWorkoutScreen.tsx
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { View, ScrollView, Alert } from "react-native";
 import { useLocalSearchParams, router } from "expo-router";
 import { useAuth } from "@/lib/authContext";
@@ -23,7 +23,10 @@ import { useReviewData } from "./useReviewData";
 
 // ✅ Your save function (the one that calls save_completed_workout_v1)
 // Make sure the path matches where you placed it.
-import { saveCompletedWorkoutFromLiveDraft } from "@/lib/saveWorkout";
+import {
+  saveCompletedWorkoutFromLiveDraft,
+  durationSecondsFromDraft,
+} from "@/lib/saveWorkout";
 
 type Params = { workoutId?: string; planWorkoutId?: string };
 
@@ -42,8 +45,10 @@ export default function ReviewWorkoutScreen() {
   const { userId } = useAuth();
   const params = useLocalSearchParams<Params>();
 
-  const workoutId = typeof params.workoutId === "string" ? params.workoutId : undefined;
-  const planWorkoutId = typeof params.planWorkoutId === "string" ? params.planWorkoutId : undefined;
+  const workoutId =
+    typeof params.workoutId === "string" ? params.workoutId : undefined;
+  const planWorkoutId =
+    typeof params.planWorkoutId === "string" ? params.planWorkoutId : undefined;
 
   const uid = userId ?? null;
 
@@ -52,6 +57,13 @@ export default function ReviewWorkoutScreen() {
   const [draft, setDraft] = useState<LiveWorkoutDraft | null>(null);
 
   const [saving, setSaving] = useState(false);
+
+  const clientSaveIdRef = useRef<string>(newClientSaveId());
+
+  const durationSeconds = useMemo(() => {
+    if (!draft) return 0;
+    return durationSecondsFromDraft(draft);
+  }, [draft]);
 
   useEffect(() => {
     let cancelled = false;
@@ -97,7 +109,10 @@ export default function ReviewWorkoutScreen() {
     if (!uid || !draft || !vm) return;
 
     if (!canSave) {
-      Alert.alert("Nothing to save", "Add at least one completed set before saving.");
+      Alert.alert(
+        "Nothing to save",
+        "Add at least one completed set before saving."
+      );
       return;
     }
 
@@ -120,18 +135,18 @@ export default function ReviewWorkoutScreen() {
               // Your saveWorkout.ts you mentioned earlier must include a builder that accepts LiveWorkoutDraft.
               // If your current saveWorkout.ts still expects the old ReviewPayload type,
               // tell me and I’ll adapt it in-place to accept LiveWorkoutDraft.
-              const clientSaveId = newClientSaveId();
+              const clientSaveId = clientSaveIdRef.current;
 
               // duration seconds (stable committed)
-              const durationSeconds = Number(draft.timerElapsedSeconds ?? 0);
+              const durationSeconds = durationSecondsFromDraft(draft);
 
               const completedAt = new Date();
 
               await saveCompletedWorkoutFromLiveDraft({
                 clientSaveId,
-                // @ts-expect-error — your implementation should accept LiveWorkoutDraft mapping
-                payload: draft,
-                totalDurationSec: durationSeconds,
+                draft, // ✅ correct key
+                workoutId, // ✅ pass it explicitly (draft likely doesn't store this)
+                durationSeconds, // ✅ correct key
                 completedAt,
                 planWorkoutIdToComplete: planWorkoutId,
               });
@@ -142,10 +157,13 @@ export default function ReviewWorkoutScreen() {
               await clearServerDraft(uid);
 
               // Leave review screen + live screen
-              router.back(); // back to LiveWorkoutScreen
-              setTimeout(() => router.back(), 0); // exit live session route
+              router.replace("/(tabs)");
+              setTimeout(() => router.replace("/(tabs)"), 0); // exit live session route
             } catch (e: any) {
-              Alert.alert("Save failed", e?.message ?? "Something went wrong while saving.");
+              Alert.alert(
+                "Save failed",
+                e?.message ?? "Something went wrong while saving."
+              );
             } finally {
               setSaving(false);
             }
@@ -156,7 +174,12 @@ export default function ReviewWorkoutScreen() {
   }
 
   if (!uid) {
-    return <ErrorState title="Not signed in" message="Please log in to save a workout." />;
+    return (
+      <ErrorState
+        title="Not signed in"
+        message="Please log in to save a workout."
+      />
+    );
   }
 
   if (loading) return <LoadingScreen />;
@@ -177,10 +200,7 @@ export default function ReviewWorkoutScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
-      <ReviewHeader
-        title="Review Workout"
-        onBack={() => router.back()}
-      />
+      <ReviewHeader title="Review Workout" onBack={() => router.back()} />
 
       <ScrollView
         style={{ flex: 1 }}
@@ -203,7 +223,11 @@ export default function ReviewWorkoutScreen() {
         {/* Exercise Breakdown */}
         <View style={{ gap: 12 }}>
           {vm.exercises.map((ex, idx) => (
-            <ExerciseReviewCard key={`${ex.id}-${ex.orderIndex}`} index={idx} exercise={ex} />
+            <ExerciseReviewCard
+              key={`${ex.id}-${ex.orderIndex}`}
+              index={idx}
+              exercise={ex}
+            />
           ))}
         </View>
       </ScrollView>

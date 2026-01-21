@@ -481,27 +481,6 @@ export default function LiveWorkoutScreen() {
     );
   }
 
-  async function completeWorkout() {
-    if (!uid || !draft) return;
-
-    Alert.alert(
-      "Complete workout?",
-      "This will close your live session. Your workout will be saved.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Complete",
-          onPress: async () => {
-            stopLiveWorkout();
-            await clearLiveDraftForUser(uid);
-            await clearServerDraft(uid);
-            router.back();
-          },
-        },
-      ]
-    );
-  }
-
   const supersetLabels = useMemo(() => {
     if (!draft) return {} as Record<string, string>;
     return S.buildSupersetLabels(draft);

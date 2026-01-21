@@ -2,7 +2,12 @@
 import { useMemo } from "react";
 import type { LiveWorkoutDraft } from "../live/state/types";
 import * as S from "../live/state/selectors";
-import type { ReviewVM, ReviewExerciseVM, ReviewIssue, ReviewSetRow } from "./reviewTypes";
+import type {
+  ReviewVM,
+  ReviewExerciseVM,
+  ReviewIssue,
+  ReviewSetRow,
+} from "./reviewTypes";
 
 function pad2(n: number) {
   return String(n).padStart(2, "0");
@@ -26,11 +31,19 @@ function toNumOrNull(v: any): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+function secondsBetween(aIso: string, bIso: string) {
+  const a = new Date(aIso).getTime();
+  const b = new Date(bIso).getTime();
+  return Math.max(0, Math.floor((b - a) / 1000));
+}
+
 function deriveTimerSeconds(d: LiveWorkoutDraft) {
-  // In LiveWorkoutScreen you derive it by adding “since last active”.
-  // For review, we want stable: use committed elapsedSeconds only.
-  // If you prefer “live” duration, swap to your timerSecondsFromDraft logic.
-  return Math.max(0, Number(d.timerElapsedSeconds ?? 0));
+  const base = Math.max(0, Number(d.timerElapsedSeconds ?? 0));
+  const anchor = d.timerLastActiveAt;
+  if (!anchor) return base;
+
+  // live duration = committed + time since last active
+  return base + secondsBetween(anchor, new Date().toISOString());
 }
 
 function isCardio(ex: any) {
@@ -76,7 +89,10 @@ function calcStrengthVolumeKg(ex: any) {
   return vol;
 }
 
-function buildExerciseVM(ex: any, supersetLabels: Record<string, string>): ReviewExerciseVM {
+function buildExerciseVM(
+  ex: any,
+  supersetLabels: Record<string, string>
+): ReviewExerciseVM {
   const cardio = isCardio(ex);
 
   const sets: ReviewSetRow[] = (ex.sets ?? []).map((s: any) => {
@@ -143,33 +159,49 @@ export function useReviewData(draft: LiveWorkoutDraft | null): ReviewVM | null {
       .slice()
       .sort((a: any, b: any) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0));
 
-    const exerciseVMs = exercisesSorted.map((ex: any) => buildExerciseVM(ex, supersetLabels));
+    const exerciseVMs = exercisesSorted.map((ex: any) =>
+      buildExerciseVM(ex, supersetLabels)
+    );
 
     const durationSeconds = deriveTimerSeconds(draft);
     const exercisesTotal = exerciseVMs.length;
 
-    const exercisesWithCompletedSets = exerciseVMs.filter((e) => e.completedSetsCount > 0).length;
-    const setsCompleted = exerciseVMs.reduce((acc, e) => acc + e.completedSetsCount, 0);
+    const exercisesWithCompletedSets = exerciseVMs.filter(
+      (e) => e.completedSetsCount > 0
+    ).length;
+    const setsCompleted = exerciseVMs.reduce(
+      (acc, e) => acc + e.completedSetsCount,
+      0
+    );
     const volumeKg = exerciseVMs.reduce((acc, e) => acc + e.volumeKg, 0);
 
     const issues: ReviewIssue[] = [];
 
-    const missingWeightSets = exerciseVMs.reduce((acc, e) => acc + e.missingWeightSetCount, 0);
+    const missingWeightSets = exerciseVMs.reduce(
+      (acc, e) => acc + e.missingWeightSetCount,
+      0
+    );
     if (missingWeightSets > 0) {
       issues.push({
         key: "missing_weight",
         title: "Some sets are missing weight",
-        detail: `${missingWeightSets} set${missingWeightSets === 1 ? "" : "s"} have reps but no weight.`,
+        detail: `${missingWeightSets} set${
+          missingWeightSets === 1 ? "" : "s"
+        } have reps but no weight.`,
         severity: "warn",
       });
     }
 
-    const noCompletedExercises = exerciseVMs.filter((e) => e.hasNoCompletedSets).length;
+    const noCompletedExercises = exerciseVMs.filter(
+      (e) => e.hasNoCompletedSets
+    ).length;
     if (noCompletedExercises > 0) {
       issues.push({
         key: "no_completed_sets",
         title: "Some exercises have no completed sets",
-        detail: `${noCompletedExercises} exercise${noCompletedExercises === 1 ? "" : "s"} won’t be saved unless at least one set is filled.`,
+        detail: `${noCompletedExercises} exercise${
+          noCompletedExercises === 1 ? "" : "s"
+        } won’t be saved unless at least one set is filled.`,
         severity: "warn",
       });
     }
