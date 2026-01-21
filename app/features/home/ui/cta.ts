@@ -9,9 +9,9 @@ export function performCTA(cta: any) {
       router.push("/(tabs)/workout");
       return;
 
-    case "start_plan_workout":
+    case "start_workout":
       router.push({
-        pathname: "/features/workouts/view",
+        pathname: "/features/workouts/screens/WorkoutOverview",
         params: { workoutId: cta.workout_id, planWorkoutId: cta.plan_workout_id },
       });
       return;

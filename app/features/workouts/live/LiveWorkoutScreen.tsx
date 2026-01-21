@@ -1,6 +1,13 @@
 // app/features/workouts/live/LiveWorkoutScreen.tsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { ScrollView, View, Text, Alert, AppState } from "react-native";
+import {
+  ScrollView,
+  View,
+  Text,
+  Alert,
+  AppState,
+  Pressable,
+} from "react-native";
 import { useLocalSearchParams, router } from "expo-router";
 import { useAuth } from "@/lib/authContext";
 import { useAppTheme } from "@/lib/useAppTheme";
@@ -32,6 +39,9 @@ import {
   type SwapPickerOption,
   type Chip,
 } from "./swap/swapPickerCache";
+
+// ✅ NEW: add flow (full-screen route + return handler)
+import { setAddExercisesHandler } from "./add/addBus";
 
 type Params = { workoutId?: string; planWorkoutId?: string };
 
@@ -112,10 +122,8 @@ function buildExerciseSubtitle(ex: any) {
   if (type === "cardio") {
     const parts: string[] = [];
     parts.push(`${targetSets} sets`);
-    if (p.targetDistance != null)
-      parts.push(`${fmtNum(p.targetDistance, 2)}km`);
-    if (p.targetTimeSeconds != null)
-      parts.push(`${fmtNum(p.targetTimeSeconds)}s`);
+    if (p.targetDistance != null) parts.push(`${fmtNum(p.targetDistance, 2)}km`);
+    if (p.targetTimeSeconds != null) parts.push(`${fmtNum(p.targetTimeSeconds)}s`);
     return parts.join(" • ");
   }
 
@@ -123,8 +131,7 @@ function buildExerciseSubtitle(ex: any) {
     return `${targetSets} sets × ${p.targetReps} • ${fmtNum(p.targetWeight)}kg`;
   }
   if (p.targetReps != null) return `${targetSets} sets × ${p.targetReps}`;
-  if (p.targetWeight != null)
-    return `${targetSets} sets • ${fmtNum(p.targetWeight)}kg`;
+  if (p.targetWeight != null) return `${targetSets} sets • ${fmtNum(p.targetWeight)}kg`;
 
   return `${ex.sets?.length ?? 0} sets`;
 }
@@ -149,20 +156,80 @@ export default function LiveWorkoutScreen() {
   // swap picker cache state (kept as you had it)
   const [swapOptions, setSwapOptions] = useState<SwapPickerOption[]>([]);
   const [swapLoading, setSwapLoading] = useState(false);
-  const [swapFavoriteIds, setSwapFavoriteIds] = useState<Set<string>>(
-    new Set()
-  );
-  const [swapUsageById, setSwapUsageById] = useState<Record<string, number>>(
-    {}
-  );
-  const [swapEquipmentOptions, setSwapEquipmentOptions] = useState<string[]>(
-    []
-  );
+  const [swapFavoriteIds, setSwapFavoriteIds] = useState<Set<string>>(new Set());
+  const [swapUsageById, setSwapUsageById] = useState<Record<string, number>>({});
+  const [swapEquipmentOptions, setSwapEquipmentOptions] = useState<string[]>([]);
   const [swapMuscleGroups, setSwapMuscleGroups] = useState<Chip[]>([]);
+
+  const alreadyInIds = useMemo(() => {
+    if (!draft) return [];
+    return draft.exercises.map((e) => e.exerciseId);
+  }, [draft?.exercises]);
+
+  const optionsById = useMemo(() => {
+    const map = new Map<string, SwapPickerOption>();
+    for (const o of swapOptions) map.set(o.id, o);
+    return map;
+  }, [swapOptions]);
+
+  function makeNewLiveExerciseDraft(args: {
+    pick: SwapPickerOption;
+    orderIndex: number;
+  }): LiveWorkoutDraft["exercises"][number] {
+    const { pick, orderIndex } = args;
+
+    const isCardio = (pick.type ?? "").toLowerCase() === "cardio";
+    const targetSets = isCardio ? 1 : 3;
+
+    return {
+      workoutExerciseId: null,
+      exerciseId: pick.id,
+      name: pick.name ?? "Exercise",
+      orderIndex,
+
+      equipment: pick.equipment ?? null,
+      type: pick.type ?? null,
+      level: pick.level ?? null,
+      instructions: pick.instructions ?? null,
+
+      prescription: {
+        targetSets,
+        targetReps: null,
+        targetWeight: null,
+        targetTimeSeconds: null,
+        targetDistance: null,
+        notes: null,
+        supersetGroup: null,
+        supersetIndex: null,
+        isDropset: false,
+      },
+
+      lastSession: {
+        completedAt: null,
+        sets: [],
+      },
+
+      bestE1rm: null,
+      totalVolumeAllTime: null,
+
+      isDone: false,
+      sets: Array.from({ length: targetSets }).map((_, i) => ({
+        setNumber: i + 1,
+        dropIndex: 0,
+        reps: null,
+        weight: null,
+        timeSeconds: null,
+        distance: null,
+        notes: null,
+      })),
+    };
+  }
 
   useEffect(() => {
     return () => {
+      // cleanup handlers
       setSwapHandler(null);
+      setAddExercisesHandler(null);
     };
   }, []);
 
@@ -256,7 +323,6 @@ export default function LiveWorkoutScreen() {
     serverDebounceMs: 1200,
   });
 
-  // Live Activities sync (existing)
   useLiveActivitySync(draft, true);
 
   // ---- Timer UI tick ----
@@ -302,36 +368,21 @@ export default function LiveWorkoutScreen() {
         const now = nowIso();
         const currentRuntime = getRuntimeId();
 
-        // hydrate defaults
         const hydrated: LiveWorkoutDraft = {
           ...next,
           timerElapsedSeconds: next.timerElapsedSeconds ?? 0,
-          timerLastActiveAt: next.timerLastActiveAt ?? now, // running by default
+          timerLastActiveAt: next.timerLastActiveAt ?? now,
           updatedAt: next.updatedAt ?? now,
           timerRuntimeId: next.timerRuntimeId ?? null,
         };
 
-        // ✅ cold start detection:
-        // if the saved runtimeId differs from current process runtimeId, the app was killed
         const isColdStart =
           hydrated.timerRuntimeId != null &&
           hydrated.timerRuntimeId !== currentRuntime;
 
-        let finalDraft: LiveWorkoutDraft;
-
-        if (isColdStart) {
-          // subtract time since last save
-          finalDraft = {
-            ...normalizeTimerOnBoot(hydrated),
-            timerRuntimeId: currentRuntime,
-          };
-        } else {
-          // normal resume/navigation: DO NOT subtract anything
-          finalDraft = {
-            ...hydrated,
-            timerRuntimeId: currentRuntime,
-          };
-        }
+        const finalDraft: LiveWorkoutDraft = isColdStart
+          ? { ...normalizeTimerOnBoot(hydrated), timerRuntimeId: currentRuntime }
+          : { ...hydrated, timerRuntimeId: currentRuntime };
 
         setDraft(finalDraft);
         persist(finalDraft).catch(() => {});
@@ -349,7 +400,7 @@ export default function LiveWorkoutScreen() {
     };
   }, [uid, workoutId, planWorkoutId, persist]);
 
-  // Background/lock -> snapshot only (timer continues in real life)
+  // Background/lock -> snapshot only
   useEffect(() => {
     const sub = AppState.addEventListener("change", (state) => {
       if (state !== "active") {
@@ -377,7 +428,6 @@ export default function LiveWorkoutScreen() {
       const now = nowIso();
       const next = mut(prev);
 
-      // IMPORTANT: stamp updatedAt so persist/server debounce works
       const stamped: LiveWorkoutDraft = {
         ...next,
         updatedAt: now,
@@ -410,11 +460,7 @@ export default function LiveWorkoutScreen() {
       "If you leave now, this workout won't be saved.",
       [
         { text: "Stay", style: "cancel" },
-        {
-          text: "Leave",
-          style: "destructive",
-          onPress: discardSessionConfirmed,
-        },
+        { text: "Leave", style: "destructive", onPress: discardSessionConfirmed },
       ]
     );
   }
@@ -548,19 +594,14 @@ export default function LiveWorkoutScreen() {
               if (e.workoutExerciseId && ex.workoutExerciseId) {
                 return e.workoutExerciseId === ex.workoutExerciseId;
               }
-              return (
-                e.exerciseId === ex.exerciseId && e.orderIndex === ex.orderIndex
-              );
+              return e.exerciseId === ex.exerciseId && e.orderIndex === ex.orderIndex;
             });
 
             const indexToOpen = realIndex >= 0 ? realIndex : idx;
 
             return (
               <LiveWorkoutExerciseRow
-                key={
-                  ex.workoutExerciseId ??
-                  `${ex.exerciseId}-${ex.orderIndex ?? idx}`
-                }
+                key={ex.workoutExerciseId ?? `${ex.exerciseId}-${ex.orderIndex ?? idx}`}
                 index={idx + 1}
                 title={ex.name}
                 subtitle={subtitle}
@@ -570,6 +611,93 @@ export default function LiveWorkoutScreen() {
               />
             );
           })}
+
+          {/* ✅ Add exercises now navigates to full-screen add route */}
+          <Card>
+            <Pressable
+              onPress={() => {
+                // 1) register handler to receive selected IDs from /live/add
+                setAddExercisesHandler(({ selectedIds }) => {
+                  // IMPORTANT: clear immediately so it can’t fire twice
+                  setAddExercisesHandler(null);
+
+                  if (!selectedIds?.length) return;
+
+                  // safety: remove duplicates
+                  const uniqueNewIds = selectedIds.filter(
+                    (id) => !alreadyInIds.includes(id)
+                  );
+                  if (uniqueNewIds.length === 0) return;
+
+                  update((d) => {
+                    const maxOrder =
+                      d.exercises.reduce(
+                        (m, e) => Math.max(m, e.orderIndex ?? 0),
+                        0
+                      ) ?? 0;
+
+                    let order = maxOrder + 1;
+
+                    const additions = uniqueNewIds
+                      .map((id) => optionsById.get(id))
+                      .filter(Boolean)
+                      .map((pick) =>
+                        makeNewLiveExerciseDraft({
+                          pick: pick as SwapPickerOption,
+                          orderIndex: order++,
+                        })
+                      );
+
+                    // if picker returned IDs we don't have cached yet, just ignore them
+                    if (additions.length === 0) return d;
+
+                    return {
+                      ...d,
+                      exercises: [...d.exercises, ...additions],
+                    };
+                  });
+                });
+
+                // 2) navigate to full-screen picker route
+                router.push({
+                  pathname: "/features/workouts/live/add",
+                  params: {
+                    alreadyInIds: JSON.stringify(alreadyInIds),
+                  },
+                });
+              }}
+              style={{
+                height: 52,
+                borderRadius: 14,
+                alignItems: "center",
+                justifyContent: "center",
+                borderWidth: 1,
+                borderColor: colors.border,
+                backgroundColor: colors.surface,
+              }}
+            >
+              <Text
+                style={{
+                  fontFamily: typography.fontFamily.semibold,
+                  fontSize: typography.size.body,
+                  color: colors.text,
+                }}
+              >
+                + Add exercises
+              </Text>
+            </Pressable>
+
+            <Text
+              style={{
+                marginTop: 10,
+                fontFamily: typography.fontFamily.regular,
+                fontSize: typography.size.sub,
+                color: colors.textMuted,
+              }}
+            >
+              Add as many as you like. Exercises already in this workout are disabled.
+            </Text>
+          </Card>
         </View>
 
         <View style={{ height: 8 }} />
