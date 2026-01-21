@@ -1,6 +1,6 @@
 // lib/saveWorkout.ts
 import { supabase } from "./supabase";
-import type { ReviewPayload, StrengthSet, CardioSet } from "./sessionStore";
+import type { LiveWorkoutDraft } from "@/app/features/workouts/live/state/types";
 import * as Sentry from "@sentry/react-native";
 
 function bc(message: string, data?: Record<string, any>) {
@@ -12,47 +12,76 @@ function bc(message: string, data?: Record<string, any>) {
   });
 }
 
-function n(x: any): number | null {
-  const v = Number(x);
-  return Number.isFinite(v) ? v : null;
+function nowIso() {
+  return new Date().toISOString();
 }
 
-function hasStrengthData(
-  s?: { reps?: any; weight?: any; drops?: any[] },
-  dropMode?: boolean
+function secondsBetween(aIso: string, bIso: string) {
+  const a = new Date(aIso).getTime();
+  const b = new Date(bIso).getTime();
+  return Math.max(0, Math.floor((b - a) / 1000));
+}
+
+function repsNumOrNull(x: any): number | null {
+  if (x === "" || x === undefined || x === null) return null;
+  const n = Number(x);
+  return Number.isFinite(n) ? n : null;
+}
+
+function shouldIncludeStrengthSet(s: any) {
+  // Your rule, but safe: include only if reps is actually a number
+  return repsNumOrNull(s?.reps) !== null;
+}
+
+/**
+ * Duration derivation from LiveWorkoutDraft timer fields.
+ * - timerElapsedSeconds = accumulated “confirmed” seconds
+ * - timerLastActiveAt = anchor when running; null = paused
+ */
+export function durationSecondsFromDraft(
+  d: LiveWorkoutDraft,
+  atIso = nowIso()
 ) {
-  if (!s) return false;
-  if (dropMode) {
-    const drops = s.drops ?? [];
-    return drops.some(
-      (d) => (d?.reps && d.reps !== "0") || (d?.weight && d.weight !== "0")
-    );
-  }
-  return (s.reps && s.reps !== "0") || (s.weight && s.weight !== "0");
+  const base = Number((d as any).timerElapsedSeconds ?? 0);
+  const last = (d as any).timerLastActiveAt as string | null | undefined;
+  if (!last) return Math.max(0, base);
+  return Math.max(0, base + secondsBetween(last, atIso));
 }
 
-function hasCardioData(s?: { distance?: any; timeSec?: any }) {
-  if (!s) return false;
-  return (s.distance && s.distance !== "0") || (s.timeSec && s.timeSec !== "0");
+function toNumOrNull(x: any): number | null {
+  if (x === "" || x === undefined) return null;
+  if (x === null) return null;
+  const n = Number(x);
+  return Number.isFinite(n) ? n : null;
 }
 
-type SaveArgs = {
-  clientSaveId: string; // REQUIRED for idempotency
-  payload: ReviewPayload;
-  totalDurationSec: number;
-  completedAt?: Date;
-  planWorkoutIdToComplete?: string;
-};
+function hasStrengthData(set: { reps: any } | null | undefined) {
+  // Your rule: include if reps is not null
+  if (!set) return false;
+  return set.reps !== null && set.reps !== undefined && set.reps !== "";
+}
 
-export type SaveResult = { workoutHistoryId: string };
+function hasCardioData(
+  set: { timeSeconds: any; distance: any } | null | undefined
+) {
+  // Your rule: include if time OR distance exists
+  if (!set) return false;
+  const t = set.timeSeconds;
+  const d = set.distance;
+  const hasT = t !== null && t !== undefined && t !== "";
+  const hasD = d !== null && d !== undefined && d !== "";
+  return hasT || hasD;
+}
 
+// ---- RPC shape (matches your SQL function) ----
 type RpcWorkout = {
-  client_save_id: string; // NEW
+  client_save_id: string;
   workout_id: string;
   completed_at: string;
   duration_seconds: number;
   notes: string;
   plan_workout_id?: string;
+
   exercise_history: Array<{
     exercise_id: string;
     order_index: number;
@@ -71,6 +100,7 @@ type RpcWorkout = {
       notes: string | null;
     }>;
   }>;
+
   workout_exercise_updates: Array<{
     id: string;
     target_sets?: number;
@@ -81,185 +111,16 @@ type RpcWorkout = {
   }>;
 };
 
-function buildRpcPayload(args: SaveArgs): RpcWorkout {
-  const {
-    payload,
-    totalDurationSec,
-    completedAt = new Date(),
-    planWorkoutIdToComplete,
-  } = args;
-
-  const { workout, state } = payload;
-
-  const exercise_history: RpcWorkout["exercise_history"] = [];
-  const workout_exercise_updates: RpcWorkout["workout_exercise_updates"] = [];
-
-  for (const we of workout.workout_exercises) {
-    const exState = state.byWeId[we.id];
-    if (!exState) continue;
-
-    const isAdHoc = (we as any).isAdHoc === true;
-
-    const exerciseId = (we as any).exercise_id ?? we.exercises?.id ?? "";
-    if (!exerciseId)
-      throw new Error(`Missing exercise_id for workout_exercise ${we.id}`);
-
-    const dropMode =
-      exState.kind === "strength" ? !!(exState as any).dropMode : false;
-
-    const sets: RpcWorkout["exercise_history"][number]["sets"] = [];
-
-    if (exState.kind === "strength") {
-      (exState.sets as StrengthSet[]).forEach((s, i) => {
-        if (!hasStrengthData(s, dropMode)) return;
-
-        if (dropMode) {
-          const drops = (s.drops ?? []).length
-            ? s.drops!
-            : [{ reps: s.reps, weight: s.weight }];
-          drops.forEach((d, di) => {
-            if (!((d.reps && d.reps !== "0") || (d.weight && d.weight !== "0")))
-              return;
-            sets.push({
-              set_number: i + 1,
-              drop_index: di,
-              reps: n(d.reps),
-              weight: n(d.weight),
-              time_seconds: null,
-              distance: null,
-              notes: null,
-            });
-          });
-        } else {
-          sets.push({
-            set_number: i + 1,
-            drop_index: 0,
-            reps: n(s.reps),
-            weight: n(s.weight),
-            time_seconds: null,
-            distance: null,
-            notes: null,
-          });
-        }
-      });
-    } else {
-      (exState.sets as CardioSet[]).forEach((s, i) => {
-        if (!hasCardioData(s)) return;
-        sets.push({
-          set_number: i + 1,
-          drop_index: 0,
-          reps: null,
-          weight: null,
-          time_seconds: n(s.timeSec),
-          distance: n(s.distance),
-          notes: null,
-        });
-      });
-    }
-
-    // If user never entered any data for this exercise, skip it entirely (like you do today)
-    if (!sets.length) continue;
-
-    exercise_history.push({
-      exercise_id: String(exerciseId),
-      order_index: we.order_index ?? 0,
-      notes: exState.notes ?? "",
-      workout_exercise_id: isAdHoc ? "" : we.id ?? "",
-      is_dropset: exState.kind === "strength" ? dropMode : false,
-      superset_group: we.superset_group ?? "",
-      superset_index:
-        we.superset_index != null ? String(we.superset_index) : "",
-      sets,
-    });
-
-    // Build your target updates for next time (skip ad-hoc)
-    if (!isAdHoc) {
-      const patch: any = { id: we.id };
-
-      if (exState.kind === "strength") {
-        const filled = (exState.sets as StrengthSet[]).filter((s) =>
-          hasStrengthData(s, dropMode)
-        );
-        if (filled.length) {
-          patch.target_sets = filled.length;
-
-          for (let i = filled.length - 1; i >= 0; i--) {
-            const st = filled[i];
-            const lastReps = dropMode
-              ? (st.drops ?? []).at(-1)?.reps ?? st.reps
-              : st.reps;
-            if (Number(lastReps)) {
-              patch.target_reps = Number(lastReps);
-              break;
-            }
-          }
-
-          let maxW = 0;
-          for (const st of filled) {
-            if (dropMode) {
-              for (const d of st.drops ?? []) {
-                const w = Number(d?.weight || 0);
-                if (w > maxW) maxW = w;
-              }
-            } else {
-              const w = Number(st.weight || 0);
-              if (w > maxW) maxW = w;
-            }
-          }
-          patch.target_weight = maxW;
-        }
-      } else {
-        const filled = (exState.sets as CardioSet[]).filter((s) =>
-          hasCardioData(s)
-        );
-        if (filled.length) {
-          for (let i = filled.length - 1; i >= 0; i--) {
-            const st = filled[i];
-            if (Number(st.distance)) {
-              patch.target_distance = Number(st.distance);
-              break;
-            }
-          }
-          for (let i = filled.length - 1; i >= 0; i--) {
-            const st = filled[i];
-            if (Number(st.timeSec)) {
-              patch.target_time_seconds = Number(st.timeSec);
-              break;
-            }
-          }
-        }
-      }
-
-      if (Object.keys(patch).length > 1) workout_exercise_updates.push(patch);
-    }
-  }
-
-  return {
-    client_save_id: args.clientSaveId,
-    workout_id: workout.id,
-    completed_at: completedAt.toISOString(),
-    duration_seconds: totalDurationSec,
-    notes: state.workoutNotes ?? "",
-    plan_workout_id: planWorkoutIdToComplete ?? "",
-    exercise_history,
-    workout_exercise_updates,
-  };
-}
-
 function summarizeRpcPayload(p: RpcWorkout) {
   const exerciseCount = p.exercise_history.length;
   const setCount = p.exercise_history.reduce(
     (acc, ex) => acc + ex.sets.length,
     0
   );
-  const updateCount = p.workout_exercise_updates.length;
-
-  // Rough size to debug “payload too large” style issues
   let approxBytes = 0;
   try {
     approxBytes = JSON.stringify(p).length;
   } catch {}
-
   return {
     client_save_id: p.client_save_id,
     workout_id: p.workout_id,
@@ -268,15 +129,166 @@ function summarizeRpcPayload(p: RpcWorkout) {
     plan_workout_id: p.plan_workout_id,
     exerciseCount,
     setCount,
-    updateCount,
+    updateCount: p.workout_exercise_updates.length,
     approxBytes,
   };
 }
 
-export async function saveCompletedWorkout(
-  args: SaveArgs
+export type SaveFromDraftArgs = {
+  clientSaveId: string; // REQUIRED for idempotency
+  draft: LiveWorkoutDraft;
+
+  // If your draft doesn’t contain these, pass them in here.
+  workoutId?: string;
+  planWorkoutIdToComplete?: string;
+
+  // Optional overrides
+  completedAt?: Date;
+  durationSeconds?: number;
+  notes?: string;
+};
+
+export type SaveResult = { workoutHistoryId: string };
+
+function buildRpcPayloadFromDraft(args: SaveFromDraftArgs): RpcWorkout {
+  const {
+    draft,
+    clientSaveId,
+    completedAt = new Date(),
+    planWorkoutIdToComplete,
+  } = args;
+
+  // Prefer explicit args, fallback to draft fields if they exist
+  const workoutId =
+    args.workoutId ??
+    ((draft as any).workoutId as string | undefined) ??
+    ((draft as any).workout_id as string | undefined);
+
+  if (!workoutId) {
+    throw new Error(
+      "Missing workoutId (pass workoutId or ensure draft.workoutId exists)."
+    );
+  }
+
+  const planWorkoutId =
+    planWorkoutIdToComplete ??
+    ((draft as any).planWorkoutId as string | undefined) ??
+    ((draft as any).plan_workout_id as string | undefined) ??
+    "";
+
+  const durationSeconds =
+    typeof args.durationSeconds === "number"
+      ? Math.max(0, Math.floor(args.durationSeconds))
+      : durationSecondsFromDraft(draft);
+
+  const notes =
+    (args.notes ??
+      ((draft as any).notes as string | undefined) ??
+      ((draft as any).workoutNotes as string | undefined) ??
+      "") ||
+    "";
+
+  // Sort by orderIndex so save is consistent
+  const exercises = (draft.exercises ?? [])
+    .slice()
+    .sort((a: any, b: any) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0));
+
+  const exercise_history: RpcWorkout["exercise_history"] = [];
+
+  for (const ex of exercises as any[]) {
+    const exerciseId = String(ex.exerciseId ?? ex.exercise_id ?? "");
+    if (!exerciseId) continue;
+
+    const type = String(ex.type ?? "").toLowerCase();
+    const isCardio = type === "cardio";
+
+    const p = ex.prescription ?? {};
+    const supersetGroup = String(p.supersetGroup ?? "");
+    const supersetIndex =
+      p.supersetIndex !== null &&
+      p.supersetIndex !== undefined &&
+      String(p.supersetIndex) !== ""
+        ? String(p.supersetIndex)
+        : "";
+
+    const isDropset = Boolean(p.isDropset);
+
+    const exNotes = (p.notes ?? ex.notes ?? "") as string;
+
+    const sets: RpcWorkout["exercise_history"][number]["sets"] = [];
+
+    for (const s of (ex.sets ?? []) as any[]) {
+      const setNumber = Number(s.setNumber ?? s.set_number ?? 0);
+      const dropIndex = Number(s.dropIndex ?? s.drop_index ?? 0);
+
+      if (!Number.isFinite(setNumber) || setNumber <= 0) continue;
+
+      if (!isCardio) {
+        if (!shouldIncludeStrengthSet(s)) continue;
+
+        const reps = repsNumOrNull(s.reps);
+        const weightRaw = toNumOrNull(s.weight);
+        const weight = weightRaw === null ? 0 : weightRaw;
+
+        sets.push({
+          set_number: setNumber,
+          drop_index: Number.isFinite(dropIndex) ? dropIndex : 0,
+          reps,
+          weight,
+          time_seconds: null,
+          distance: null,
+          notes: s.notes ?? null,
+        });
+      } else {
+        if (!hasCardioData(s)) continue;
+
+        sets.push({
+          set_number: setNumber,
+          drop_index: Number.isFinite(dropIndex) ? dropIndex : 0,
+          reps: null,
+          weight: null,
+          time_seconds: toNumOrNull(s.timeSeconds),
+          distance: toNumOrNull(s.distance),
+          notes: s.notes ?? null,
+        });
+      }
+    }
+
+    // Match your old behavior: if no filled sets, skip exercise entirely
+    if (!sets.length) continue;
+
+    const workoutExerciseId = ex.workoutExerciseId
+      ? String(ex.workoutExerciseId)
+      : "";
+
+    exercise_history.push({
+      exercise_id: exerciseId,
+      order_index: Number(ex.orderIndex ?? 0) || 0,
+      notes: exNotes ?? "",
+      workout_exercise_id: workoutExerciseId, // "" means ad-hoc
+      is_dropset: isDropset,
+      superset_group: supersetGroup,
+      superset_index: supersetIndex,
+      sets,
+    });
+  }
+
+  return {
+    client_save_id: clientSaveId,
+    workout_id: workoutId,
+    completed_at: completedAt.toISOString(),
+    duration_seconds: durationSeconds,
+    notes,
+    plan_workout_id: planWorkoutId,
+    exercise_history,
+    workout_exercise_updates: [], // keep empty for now; we’ll add later if you want target updates
+  };
+}
+
+export async function saveCompletedWorkoutFromLiveDraft(
+  args: SaveFromDraftArgs
 ): Promise<SaveResult> {
-  const payload = buildRpcPayload(args);
+  const payload = buildRpcPayloadFromDraft(args);
   const summary = summarizeRpcPayload(payload);
 
   bc("rpc start", summary);
@@ -287,7 +299,6 @@ export async function saveCompletedWorkout(
     });
 
     if (error) {
-      // breadcrumb first (always)
       bc("rpc error", {
         ...summary,
         code: (error as any).code,
@@ -296,12 +307,8 @@ export async function saveCompletedWorkout(
         message: error.message,
       });
 
-      // capture exception (creates an issue)
       Sentry.captureException(error, {
-        tags: {
-          area: "save_rpc",
-          fn: "save_completed_workout_v1",
-        },
+        tags: { area: "save_rpc", fn: "save_completed_workout_v1" },
         extra: {
           ...summary,
           code: (error as any).code,
@@ -311,21 +318,14 @@ export async function saveCompletedWorkout(
         },
       });
 
-      // still throw (so caller can keep UX behavior)
       throw new Error(error.message);
     }
 
     bc("rpc success", { ...summary, workoutHistoryId: String(data) });
-
     return { workoutHistoryId: String(data) };
   } catch (e: any) {
-    // This catches non-Supabase errors too (JSON issues, unexpected runtime, etc.)
-    bc("rpc exception", {
-      ...summary,
-      message: String(e?.message ?? e),
-    });
+    bc("rpc exception", { ...summary, message: String(e?.message ?? e) });
 
-    // Only capture if it's not already a Supabase error we captured above
     if (!(e && (e as any).name === "PostgrestError")) {
       Sentry.captureException(e, {
         tags: { area: "save_rpc", stage: "unexpected" },

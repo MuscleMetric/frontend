@@ -122,8 +122,10 @@ function buildExerciseSubtitle(ex: any) {
   if (type === "cardio") {
     const parts: string[] = [];
     parts.push(`${targetSets} sets`);
-    if (p.targetDistance != null) parts.push(`${fmtNum(p.targetDistance, 2)}km`);
-    if (p.targetTimeSeconds != null) parts.push(`${fmtNum(p.targetTimeSeconds)}s`);
+    if (p.targetDistance != null)
+      parts.push(`${fmtNum(p.targetDistance, 2)}km`);
+    if (p.targetTimeSeconds != null)
+      parts.push(`${fmtNum(p.targetTimeSeconds)}s`);
     return parts.join(" • ");
   }
 
@@ -131,7 +133,8 @@ function buildExerciseSubtitle(ex: any) {
     return `${targetSets} sets × ${p.targetReps} • ${fmtNum(p.targetWeight)}kg`;
   }
   if (p.targetReps != null) return `${targetSets} sets × ${p.targetReps}`;
-  if (p.targetWeight != null) return `${targetSets} sets • ${fmtNum(p.targetWeight)}kg`;
+  if (p.targetWeight != null)
+    return `${targetSets} sets • ${fmtNum(p.targetWeight)}kg`;
 
   return `${ex.sets?.length ?? 0} sets`;
 }
@@ -156,9 +159,15 @@ export default function LiveWorkoutScreen() {
   // swap picker cache state (kept as you had it)
   const [swapOptions, setSwapOptions] = useState<SwapPickerOption[]>([]);
   const [swapLoading, setSwapLoading] = useState(false);
-  const [swapFavoriteIds, setSwapFavoriteIds] = useState<Set<string>>(new Set());
-  const [swapUsageById, setSwapUsageById] = useState<Record<string, number>>({});
-  const [swapEquipmentOptions, setSwapEquipmentOptions] = useState<string[]>([]);
+  const [swapFavoriteIds, setSwapFavoriteIds] = useState<Set<string>>(
+    new Set()
+  );
+  const [swapUsageById, setSwapUsageById] = useState<Record<string, number>>(
+    {}
+  );
+  const [swapEquipmentOptions, setSwapEquipmentOptions] = useState<string[]>(
+    []
+  );
   const [swapMuscleGroups, setSwapMuscleGroups] = useState<Chip[]>([]);
 
   const alreadyInIds = useMemo(() => {
@@ -381,7 +390,10 @@ export default function LiveWorkoutScreen() {
           hydrated.timerRuntimeId !== currentRuntime;
 
         const finalDraft: LiveWorkoutDraft = isColdStart
-          ? { ...normalizeTimerOnBoot(hydrated), timerRuntimeId: currentRuntime }
+          ? {
+              ...normalizeTimerOnBoot(hydrated),
+              timerRuntimeId: currentRuntime,
+            }
           : { ...hydrated, timerRuntimeId: currentRuntime };
 
         setDraft(finalDraft);
@@ -460,7 +472,11 @@ export default function LiveWorkoutScreen() {
       "If you leave now, this workout won't be saved.",
       [
         { text: "Stay", style: "cancel" },
-        { text: "Leave", style: "destructive", onPress: discardSessionConfirmed },
+        {
+          text: "Leave",
+          style: "destructive",
+          onPress: discardSessionConfirmed,
+        },
       ]
     );
   }
@@ -594,14 +610,19 @@ export default function LiveWorkoutScreen() {
               if (e.workoutExerciseId && ex.workoutExerciseId) {
                 return e.workoutExerciseId === ex.workoutExerciseId;
               }
-              return e.exerciseId === ex.exerciseId && e.orderIndex === ex.orderIndex;
+              return (
+                e.exerciseId === ex.exerciseId && e.orderIndex === ex.orderIndex
+              );
             });
 
             const indexToOpen = realIndex >= 0 ? realIndex : idx;
 
             return (
               <LiveWorkoutExerciseRow
-                key={ex.workoutExerciseId ?? `${ex.exerciseId}-${ex.orderIndex ?? idx}`}
+                key={
+                  ex.workoutExerciseId ??
+                  `${ex.exerciseId}-${ex.orderIndex ?? idx}`
+                }
                 index={idx + 1}
                 title={ex.name}
                 subtitle={subtitle}
@@ -695,7 +716,8 @@ export default function LiveWorkoutScreen() {
                 color: colors.textMuted,
               }}
             >
-              Add as many as you like. Exercises already in this workout are disabled.
+              Add as many as you like. Exercises already in this workout are
+              disabled.
             </Text>
           </Card>
         </View>
@@ -706,7 +728,15 @@ export default function LiveWorkoutScreen() {
       <LiveStickyFooter
         disabled={footerDisabled}
         title={`Complete Workout (${progress.done}/${progress.total} exercises)`}
-        onPress={completeWorkout}
+        onPress={() => {
+          router.push({
+            pathname: "/features/workouts/review",
+            params: {
+              workoutId: workoutId ?? "",
+              planWorkoutId: planWorkoutId ?? "",
+            },
+          });
+        }}
       />
 
       <ExerciseEntryModal
