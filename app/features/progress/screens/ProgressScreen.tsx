@@ -47,9 +47,9 @@ export default function ProgressScreen() {
             highlights={vm.highlights}
             onOpenExercise={(exerciseId) =>
               router.push({
-                pathname: "/features/progress/exercise", // later
+                pathname: "/features/progress/screens/deep-analytics",
                 params: { exerciseId },
-              } as any)
+              })
             }
           />
 
@@ -57,15 +57,17 @@ export default function ProgressScreen() {
             exerciseSummary={vm.exerciseSummary}
             onOpenExercise={(exerciseId) =>
               router.push({
-                pathname: "/features/progress/exercise", // later
+                pathname: "/features/progress/screens/deep-analytics",
                 params: { exerciseId },
-              } as any)
+              })
             }
           />
 
           <RecentActivitySection
             recent={vm.recent}
-            onOpenHistory={() => router.push("/features/workouts/history" as any)}
+            onOpenHistory={() =>
+              router.push("/features/workouts/history" as any)
+            }
             onOpenWorkoutHistoryDetail={(id) =>
               router.push({
                 pathname: "/features/workouts/history/detail",

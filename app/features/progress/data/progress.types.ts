@@ -38,32 +38,47 @@ export type ProgressOverview = {
       achieved_at?: string;
       exercise_id?: string;
     } | null;
+
     cards: Array<{
       exercise_id: string;
       exercise_name: string;
-      metric: "e1rm";
-      current_value: number;
-      prev_value?: number | null;
-      delta?: number | null;
-      delta_pct?: number | null;
-      e1rm: number;
-      best_weight: number;
+
+      // what to display on the card
+      e1rm: number; // already rounded server-side
+      best_weight: number; // already rounded server-side
       best_reps: number;
-      delta_abs: number | null;
       achieved_at: string;
+
+      // top-right badge
+      delta_abs: number | null; // null => NEW PR (first ever PR for that exercise)
     }>;
   };
 
   exercise_summary: {
-    top_exercises: Array<{
+    min_sessions: number;
+
+    best_picks: Array<{
       exercise_id: string;
       exercise_name: string;
+
       sessions_30d: number;
+      sessions_180d: number;
+
       last_done_at?: string | null;
       trend: "up" | "down" | "flat";
-      latest_e1rm?: number | null;
-      prev_e1rm?: number | null;
     }>;
+
+    eligible_exercises: Array<{
+      exercise_id: string;
+      exercise_name: string;
+
+      sessions_30d: number;
+      sessions_180d: number;
+
+      last_done_at?: string | null;
+      trend: "up" | "down" | "flat";
+    }>;
+
     prompt?: { title: string; subtitle: string } | null;
   };
 

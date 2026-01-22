@@ -27,7 +27,7 @@ export type ButtonTone =
 export type ButtonProps = {
   title: string;
   onPress: () => void;
-  variant?: ButtonVariant;
+  variant?: ButtonVariant; 
   tone?: ButtonTone;
   fullWidth?: boolean;
   disabled?: boolean;
