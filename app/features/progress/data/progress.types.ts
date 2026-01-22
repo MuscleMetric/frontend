@@ -14,6 +14,8 @@ export type ProgressOverview = {
     streak_days: number;
     volume_30d: number;
     unit: "kg";
+    workouts_prev_30d: number;
+    volume_prev_30d: number;
   };
 
   consistency: {

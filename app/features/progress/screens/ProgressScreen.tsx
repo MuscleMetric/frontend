@@ -1,5 +1,5 @@
 import React, { useMemo } from "react";
-import { View } from "react-native";
+import { ScrollView, View, RefreshControl } from "react-native";
 import { router } from "expo-router";
 import { Screen, ScreenHeader } from "@/ui";
 
@@ -24,12 +24,21 @@ export default function ProgressScreen() {
 
   return (
     <Screen>
-      <ScreenHeader title="Progress" />
-
       {error || !vm ? (
         <ProgressErrorState onRetry={refresh} />
       ) : (
-        <View style={{ paddingHorizontal: 16, gap: 12, paddingBottom: 16 }}>
+        <ScrollView
+          contentContainerStyle={{
+            paddingHorizontal: 16,
+            paddingTop: 12,
+            paddingBottom: 24,
+            gap: 12,
+          }}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl refreshing={loading} onRefresh={refresh} />
+          }
+        >
           <MomentumHeroSection momentum={vm.momentum} />
 
           <ConsistencySection consistency={vm.consistency} />
@@ -38,7 +47,7 @@ export default function ProgressScreen() {
             highlights={vm.highlights}
             onOpenExercise={(exerciseId) =>
               router.push({
-                pathname: "/features/progress/exercise", // we'll create this later
+                pathname: "/features/progress/exercise", // later
                 params: { exerciseId },
               } as any)
             }
@@ -64,7 +73,10 @@ export default function ProgressScreen() {
               } as any)
             }
           />
-        </View>
+
+          {/* Spacer so last card doesn't kiss the bottom nav */}
+          <View style={{ height: 8 }} />
+        </ScrollView>
       )}
     </Screen>
   );
