@@ -85,9 +85,8 @@ export default function ExerciseSummarySection({
       {topPicks.length ? (
         <View style={{ marginTop: 2 }}>
           {topPicks.map((x) => (
-            <View style={{ marginTop: 10 }}>
+            <View key={x.exercise_id} style={{ marginTop: 10 }}>
               <ListRow
-                key={x.exercise_id}
                 title={x.exercise_name}
                 subtitle={`${
                   x.sessions_30d

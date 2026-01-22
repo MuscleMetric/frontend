@@ -1,4 +1,3 @@
-// ui/navigation/ScreenHeader.tsx
 import React from "react";
 import { View, Text, StyleSheet } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -30,29 +29,32 @@ export function ScreenHeader({
         },
       ]}
     >
-      <View style={styles.row}>
-        {showBack ? (
-          <View style={styles.back}>
-            <BackButton />
-          </View>
-        ) : null}
+      <View style={styles.container}>
+        {/* Left slot */}
+        <View style={styles.side}>
+          {showBack ? <BackButton /> : null}
+        </View>
 
-        <Text
-          numberOfLines={1}
-          style={[
-            styles.title,
-            {
+        {/* Center title (absolute, true center) */}
+        <View pointerEvents="none" style={styles.center}>
+          <Text
+            numberOfLines={1}
+            style={{
               fontFamily: typography.fontFamily.semibold,
               fontSize: typography.size.h2,
               lineHeight: typography.lineHeight.h2,
               color: colors.text,
-            },
-          ]}
-        >
-          {title}
-        </Text>
+              textAlign: "center",
+            }}
+          >
+            {title}
+          </Text>
+        </View>
 
-        {right ? <View style={styles.right}>{right}</View> : null}
+        {/* Right slot */}
+        <View style={styles.sideRight}>
+          {right}
+        </View>
       </View>
     </View>
   );
@@ -62,22 +64,33 @@ const styles = StyleSheet.create({
   wrap: {
     paddingBottom: 10,
   },
-  row: {
-    minHeight: 44,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-  },
-  back: {
-    width: 36,
+
+  container: {
+    height: 44,
     justifyContent: "center",
   },
-  title: {
-    flexShrink: 1,
+
+  side: {
+    position: "absolute",
+    left: 0,
+    width: 44,
+    alignItems: "flex-start",
+    justifyContent: "center",
   },
-  right: {
-    marginLeft: "auto",
-    minWidth: 36,
+
+  sideRight: {
+    position: "absolute",
+    right: 0,
+    width: 44,
     alignItems: "flex-end",
+    justifyContent: "center",
+  },
+
+  center: {
+    position: "absolute",
+    left: 44,
+    right: 44,
+    alignItems: "center",
+    justifyContent: "center",
   },
 });
