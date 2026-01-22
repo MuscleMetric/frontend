@@ -46,6 +46,10 @@ export type ProgressOverview = {
       prev_value?: number | null;
       delta?: number | null;
       delta_pct?: number | null;
+      e1rm: number;
+      best_weight: number;
+      best_reps: number;
+      delta_abs: number | null;
       achieved_at: string;
     }>;
   };
