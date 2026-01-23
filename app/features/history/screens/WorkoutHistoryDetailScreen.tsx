@@ -1,6 +1,5 @@
-// app/features/history/screens/WorkoutHistoryDetailScreen.tsx
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { View, Text, ScrollView, RefreshControl } from "react-native";
+import { View, Text, ScrollView, RefreshControl, Pressable, Alert } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import { supabase } from "@/lib/supabase";
 import { useAppTheme } from "@/lib/useAppTheme";
@@ -9,6 +8,10 @@ import { Screen, ScreenHeader, Card, LoadingScreen, ErrorState, Icon } from "@/u
 import { HistorySectionHeader } from "../ui/HistorySectionHeader";
 import { PRBadge } from "../ui/PRBadge";
 import { WorkoutHistoryExerciseRow } from "../ui/WorkoutHistoryExerciseRow";
+
+// ✅ Share sheet
+import { ShareWorkoutSheet } from "../share/ShareWorkoutSheet";
+import type { ShareWorkoutData } from "../share/workoutShare";
 
 const RPC_WORKOUT_HISTORY_DETAIL = "get_workout_history_detail";
 
@@ -51,15 +54,15 @@ type DetailPayload = {
     exercise_id: string;
     exercise_name: string;
     order_index?: number | null;
-    is_pr?: boolean | null; // ✅ exercise-level PR flag (if you return it)
+    is_pr?: boolean | null;
     sets?: Array<{
       set_id?: string;
       set_number: number;
       reps?: number | null;
       weight_kg?: number | null;
       e1rm?: number | null;
-      is_best?: boolean | null; // ✅ best set highlight
-      is_pr?: boolean | null;   // ✅ true PR set badge (NOT best)
+      is_best?: boolean | null;
+      is_pr?: boolean | null;
     }>;
   }>;
 };
@@ -68,11 +71,7 @@ function fmtDayTime(iso?: string | null) {
   if (!iso) return "";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleDateString("en-GB", {
-    weekday: "short",
-    day: "2-digit",
-    month: "short",
-  });
+  return d.toLocaleDateString("en-GB", { weekday: "short", day: "2-digit", month: "short" });
 }
 
 function fmtMins(sec?: number | null) {
@@ -107,6 +106,9 @@ export default function WorkoutHistoryDetailScreen({
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+
+  // ✅ Share UI state
+  const [shareOpen, setShareOpen] = useState(false);
 
   const load = useCallback(
     async (mode: "initial" | "refresh" = "initial") => {
@@ -143,22 +145,89 @@ export default function WorkoutHistoryDetailScreen({
     load("initial");
   }, [load]);
 
+  // ✅ SAFE derived values (defined BEFORE early returns)
+  const header = data?.header ?? null;
+  const stats = data?.stats ?? null;
+  const insight = stats?.insight ?? null;
+  const exercises = data?.exercises ?? [];
+  const prs = data?.prs ?? [];
+  const prsCount = prs.length;
+
+  // ✅ Build share data (HOOK ALWAYS RUNS)
+  const shareData: ShareWorkoutData = useMemo(() => {
+    if (!header) {
+      return {
+        title: "",
+        dateLabel: "",
+        durationLabel: "",
+        totalSets: null,
+        totalVolumeKg: null,
+        exercises: [],
+        prs: [],
+      };
+    }
+
+    const dateLabel = fmtDayTime(header.completed_at);
+    const durationLabel = fmtMins(stats?.duration_seconds);
+
+    return {
+      title: header.title ?? "Workout",
+      dateLabel,
+      durationLabel,
+      totalSets: stats?.sets_count ?? null,
+      totalVolumeKg: stats?.volume_kg ?? null,
+
+      exercises: exercises.map((ex) => ({
+        name: ex.exercise_name,
+        sets: (ex.sets ?? []).map((s) => ({
+          setNumber: s.set_number,
+          weightKg: s.weight_kg ?? null,
+          reps: s.reps ?? null,
+        })),
+      })),
+
+      // PRs already include the set data that caused the PR (weight_kg + reps)
+      prs: prs.map((p) => ({
+        exerciseName: p.exercise_name,
+        weightKg: p.weight_kg ?? null,
+        reps: p.reps ?? null,
+        e1rm: p.e1rm ?? null,
+      })),
+    };
+  }, [header, stats?.duration_seconds, stats?.sets_count, stats?.volume_kg, exercises, prs]);
+
+  // ✅ EARLY RETURNS AFTER ALL HOOKS
   if (loading) return <LoadingScreen />;
   if (err) return <ErrorState title="Workout detail failed" message={err} />;
-  if (!data?.header) return <ErrorState title="No session" message="Try another workout." />;
-
-  const header = data.header;
-  const stats = data.stats;
-  const insight = stats?.insight ?? null;
-
-  const exercises = data.exercises ?? [];
-  const prsCount = data.prs?.length ?? 0;
+  if (!header) return <ErrorState title="No session" message="Try another workout." />;
 
   return (
     <Screen>
       <ScreenHeader
         title="Workout"
-        right={<Icon name="share-outline" size={20} color={colors.textMuted} />}
+        right={
+          <Pressable
+            onPress={() => {
+              if (!shareData.title) {
+                Alert.alert("Share unavailable", "Missing share data.");
+                return;
+              }
+              setShareOpen(true);
+            }}
+            style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1, padding: 6 }]}
+            hitSlop={10}
+          >
+            <Icon name="share-outline" size={20} color={colors.textMuted} />
+          </Pressable>
+        }
+      />
+
+      {/* ✅ Share sheet mounted here */}
+      <ShareWorkoutSheet
+        visible={shareOpen}
+        onClose={() => setShareOpen(false)}
+        data={shareData}
+        shareUrl={null}
       />
 
       <ScrollView
@@ -168,9 +237,7 @@ export default function WorkoutHistoryDetailScreen({
           gap: 12,
         }}
         showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={() => load("refresh")} />
-        }
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load("refresh")} />}
       >
         <HistorySectionHeader
           title={header.title}
@@ -193,11 +260,9 @@ export default function WorkoutHistoryDetailScreen({
           }
         />
 
-        {/* ✅ Insight line (if available) */}
+        {/* ✅ Insight line */}
         {insight?.label ? (
-          <Text style={{ color: colors.textMuted, marginTop: -6 }}>
-            {insight.label}
-          </Text>
+          <Text style={{ color: colors.textMuted, marginTop: -6 }}>{insight.label}</Text>
         ) : null}
 
         {/* Summary strip */}
@@ -248,7 +313,7 @@ export default function WorkoutHistoryDetailScreen({
             Exercises
           </Text>
           <Text style={{ color: colors.textMuted, marginTop: 6 }}>
-            Best sets are highlighted.
+            PR pills only show when you broke your previous best.
           </Text>
 
           <View style={{ marginTop: 12, gap: 14 }}>
@@ -267,7 +332,7 @@ export default function WorkoutHistoryDetailScreen({
                     {ex.exercise_name}
                   </Text>
 
-                  {/* ✅ Exercise-level PR badge (only if backend marks exercise as PR) */}
+                  {/* Optional: exercise-level PR badge if you return ex.is_pr */}
                   {ex.is_pr ? <PRBadge /> : null}
                 </View>
 
@@ -284,10 +349,7 @@ export default function WorkoutHistoryDetailScreen({
                             ? `${st.reps} reps`
                             : "—"
                         }
-                        // ✅ PR pill only when it BROKE PR (set.is_pr)
-                        // Best highlighting should be a different style inside the row (see note below)
                         isPr={!!st.is_pr}
-                        isBest={!!st.is_best as any} // if your component supports it; otherwise remove this
                       />
                     ))}
                   </View>
@@ -308,11 +370,16 @@ export default function WorkoutHistoryDetailScreen({
             </Text>
 
             <View style={{ marginTop: 12, gap: 10 }}>
-              {(data.prs ?? []).slice(0, 12).map((p) => (
+              {prs.slice(0, 12).map((p) => (
                 <View key={p.exercise_id} style={{ flexDirection: "row", alignItems: "center" }}>
                   <Text style={{ flex: 1, color: colors.text }} numberOfLines={1}>
                     {p.exercise_name}
                   </Text>
+
+                  <Text style={{ color: colors.textMuted, marginRight: 10 }}>
+                    {p.weight_kg != null && p.reps != null ? `${p.weight_kg} × ${p.reps}` : ""}
+                  </Text>
+
                   <PRBadge />
                 </View>
               ))}
