@@ -4,7 +4,6 @@ import { View, Text, Pressable } from "react-native";
 import { Card, Icon } from "@/ui";
 import { useAppTheme } from "@/lib/useAppTheme";
 import { Insight, InsightChip } from "./InsightChip";
-import { WorkoutHistoryExerciseRow } from "./WorkoutHistoryExerciseRow";
 
 export type WorkoutHistoryCardItem = {
   workout_history_id: string;
@@ -13,23 +12,28 @@ export type WorkoutHistoryCardItem = {
   duration_seconds?: number | null;
 
   // from backend
+  pr_count?: number | null;
+  volume_kg?: number | null;
+
   top_items?: {
     exercise_id: string;
     exercise_name: string;
     summary?: string | null;
-
-    // optional: if backend returns PR hits for session
     is_pr?: boolean;
   }[];
 
   insight?: Insight | null;
 };
 
-function fmtDay(iso?: string | null) {
+function fmtDayTime(iso?: string | null) {
   if (!iso) return "";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
+  return d.toLocaleDateString("en-GB", {
+    weekday: "short",
+    day: "2-digit",
+    month: "short",
+  });
 }
 
 function fmtMins(sec?: number | null) {
@@ -37,53 +41,49 @@ function fmtMins(sec?: number | null) {
   return `${Math.max(1, Math.round(sec / 60))}m`;
 }
 
+function n0(x?: number | null) {
+  if (x == null || !isFinite(x)) return null;
+  return Math.round(x).toLocaleString("en-GB");
+}
+
 export function WorkoutHistoryCard({
   w,
   onPress,
-  width = 320,
-  variantLabel = "WORKOUT",
 }: {
   w: WorkoutHistoryCardItem;
   onPress: () => void;
-  width?: number;
-  variantLabel?: string;
 }) {
-  const { colors, typography } = useAppTheme();
+  const { colors, typography, layout } = useAppTheme();
+
   const mins = fmtMins(w.duration_seconds);
+  const prCount = w.pr_count ?? 0;
+  const vol = n0(w.volume_kg);
+
+  const preview = (w.top_items ?? [])
+    .slice(0, 4)
+    .map((x) => x.exercise_name)
+    .join(" • ");
 
   return (
     <Pressable onPress={onPress} style={({ pressed }) => [{ opacity: pressed ? 0.92 : 1 }]}>
       <Card
         style={{
-          width,
           padding: 14,
-          borderRadius: 22,
+          borderRadius: 18,
           borderColor: colors.border,
           backgroundColor: colors.surface,
         }}
       >
-        {/* top */}
+        {/* title row */}
         <View style={{ flexDirection: "row", alignItems: "center" }}>
           <View style={{ flex: 1 }}>
-            <Text
-              style={{
-                color: colors.textMuted,
-                fontSize: 12,
-                letterSpacing: 0.6,
-                fontFamily: typography.fontFamily.semibold,
-              }}
-            >
-              {variantLabel}
-            </Text>
-
-            {/* title + chevron inline */}
-            <View style={{ flexDirection: "row", alignItems: "center", marginTop: 6 }}>
+            <View style={{ flexDirection: "row", alignItems: "center" }}>
               <Text
                 numberOfLines={1}
                 style={{
                   flex: 1,
                   color: colors.text,
-                  fontSize: 22,
+                  fontSize: 17,
                   fontFamily: typography.fontFamily.bold,
                   letterSpacing: -0.2,
                 }}
@@ -92,6 +92,10 @@ export function WorkoutHistoryCard({
               </Text>
               <Icon name="chevron-forward" size={18} color={colors.textMuted} />
             </View>
+
+            <Text style={{ color: colors.textMuted, marginTop: 4, fontSize: 13 }}>
+              {fmtDayTime(w.completed_at)}
+            </Text>
           </View>
 
           {mins ? (
@@ -111,25 +115,57 @@ export function WorkoutHistoryCard({
           ) : null}
         </View>
 
-        {/* date */}
-        <Text style={{ color: colors.textMuted, marginTop: 6, fontSize: 13 }}>
-          {fmtDay(w.completed_at)}
-        </Text>
+        {/* chips row */}
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginTop: 10 }}>
+          {prCount > 0 ? (
+            <View
+              style={{
+                paddingHorizontal: 10,
+                paddingVertical: 6,
+                borderRadius: 999,
+                backgroundColor: "rgba(34,197,94,0.12)",
+                borderWidth: 1,
+                borderColor: "rgba(34,197,94,0.18)",
+              }}
+            >
+              <Text style={{ color: colors.text, fontSize: 12 }}>
+                🏆 {prCount} PR{prCount === 1 ? "" : "s"}
+              </Text>
+            </View>
+          ) : null}
 
-        {/* insight */}
+          {vol ? (
+            <View
+              style={{
+                paddingHorizontal: 10,
+                paddingVertical: 6,
+                borderRadius: 999,
+                backgroundColor: "rgba(59,130,246,0.10)",
+                borderWidth: 1,
+                borderColor: "rgba(59,130,246,0.16)",
+              }}
+            >
+              <Text style={{ color: colors.text, fontSize: 12 }}>Volume: {vol}kg</Text>
+            </View>
+          ) : null}
+        </View>
+
+        {/* optional insight */}
         {w.insight?.label ? <InsightChip insight={w.insight} /> : null}
 
-        {/* exercises */}
-        <View style={{ marginTop: 12, gap: 10 }}>
-          {(w.top_items ?? []).slice(0, 4).map((it) => (
-            <WorkoutHistoryExerciseRow
-              key={it.exercise_id}
-              name={it.exercise_name}
-              summary={it.summary}
-              isPr={!!it.is_pr}
-            />
-          ))}
-        </View>
+        {/* preview */}
+        {preview ? (
+          <Text
+            numberOfLines={1}
+            style={{
+              marginTop: 10,
+              color: colors.textMuted,
+              fontSize: 13,
+            }}
+          >
+            {preview}
+          </Text>
+        ) : null}
       </Card>
     </Pressable>
   );

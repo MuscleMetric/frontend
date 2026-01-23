@@ -8,10 +8,12 @@ export function WorkoutHistoryExerciseRow({
   name,
   summary,
   isPr,
+  isBest,
 }: {
   name: string;
   summary?: string | null;
   isPr?: boolean;
+  isBest?: boolean;
 }) {
   const { colors } = useAppTheme();
 
@@ -28,12 +30,6 @@ export function WorkoutHistoryExerciseRow({
           {name}
         </Text>
       </View>
-
-      {isPr ? (
-        <View style={{ marginLeft: 10 }}>
-          <PRBadge />
-        </View>
-      ) : null}
 
       {summary ? (
         <Text style={{ color: colors.textMuted, fontSize: 14, marginLeft: 10 }}>

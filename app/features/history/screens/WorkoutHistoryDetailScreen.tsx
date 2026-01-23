@@ -4,52 +4,62 @@ import { View, Text, ScrollView, RefreshControl } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import { supabase } from "@/lib/supabase";
 import { useAppTheme } from "@/lib/useAppTheme";
-import {
-  Screen,
-  ScreenHeader,
-  Card,
-  LoadingScreen,
-  ErrorState,
-  Icon,
-} from "@/ui";
+import { Screen, ScreenHeader, Card, LoadingScreen, ErrorState, Icon } from "@/ui";
 
 import { HistorySectionHeader } from "../ui/HistorySectionHeader";
 import { PRBadge } from "../ui/PRBadge";
 import { WorkoutHistoryExerciseRow } from "../ui/WorkoutHistoryExerciseRow";
 
-/** ✅ Change these to your real RPC names if different */
-const RPC_WORKOUT_HISTORY_DETAIL = "get_workout_history_detail"; // (p_workout_history_id uuid)
+const RPC_WORKOUT_HISTORY_DETAIL = "get_workout_history_detail";
 
-/** payload shape (keep it permissive, safe optional chaining) */
+type Insight = {
+  metric?: "volume" | string;
+  trend?: "up" | "down" | "flat";
+  delta_pct?: number | null;
+  label?: string;
+} | null;
+
 type DetailPayload = {
-  meta?: { generated_at?: string; timezone?: string; unit?: "kg" };
-  session?: {
+  meta?: { timezone?: string; unit?: "kg" };
+
+  header?: {
     workout_history_id: string;
     workout_id?: string | null;
     title: string;
     completed_at: string;
-    duration_seconds?: number | null;
     notes?: string | null;
-
-    // optional: if you compute them
-    total_volume?: number | null;
-    pr_count?: number | null;
   };
+
+  stats?: {
+    duration_seconds?: number | null;
+    sets_count?: number | null;
+    volume_kg?: number | null;
+    insight?: Insight;
+  };
+
+  prs?: Array<{
+    exercise_id: string;
+    exercise_name: string;
+    e1rm?: number | null;
+    weight_kg?: number | null;
+    reps?: number | null;
+    delta_abs?: number | null;
+    delta_pct?: number | null;
+  }>;
 
   exercises?: Array<{
     exercise_id: string;
     exercise_name: string;
-    summary?: string | null; // e.g. "4 sets · top 80×6"
-    is_pr?: boolean | null;
-
+    order_index?: number | null;
+    is_pr?: boolean | null; // ✅ exercise-level PR flag (if you return it)
     sets?: Array<{
+      set_id?: string;
       set_number: number;
       reps?: number | null;
-      weight?: number | null;
-      time_seconds?: number | null;
-      distance?: number | null;
+      weight_kg?: number | null;
       e1rm?: number | null;
-      is_pr?: boolean | null; // optional per-set PR marker
+      is_best?: boolean | null; // ✅ best set highlight
+      is_pr?: boolean | null;   // ✅ true PR set badge (NOT best)
     }>;
   }>;
 };
@@ -75,13 +85,17 @@ function n0(x?: number | null) {
   return String(Math.round(x));
 }
 
+function fmtKg(x?: number | null) {
+  if (x == null || !isFinite(x)) return "—";
+  return `${Math.round(x)}`;
+}
+
 export default function WorkoutHistoryDetailScreen({
   workoutHistoryId: workoutHistoryIdProp,
 }: {
   workoutHistoryId?: string;
 } = {}) {
   const { colors, typography, layout } = useAppTheme();
-
   const params = useLocalSearchParams<{ workoutHistoryId?: string }>();
 
   const workoutHistoryId = useMemo(
@@ -108,12 +122,9 @@ export default function WorkoutHistoryDetailScreen({
 
       setErr(null);
 
-      const { data: res, error } = await supabase.rpc(
-        RPC_WORKOUT_HISTORY_DETAIL,
-        {
-          p_workout_history_id: workoutHistoryId,
-        }
-      );
+      const { data: res, error } = await supabase.rpc(RPC_WORKOUT_HISTORY_DETAIL, {
+        p_workout_history_id: workoutHistoryId,
+      });
 
       if (error) {
         setErr(error.message);
@@ -134,19 +145,20 @@ export default function WorkoutHistoryDetailScreen({
 
   if (loading) return <LoadingScreen />;
   if (err) return <ErrorState title="Workout detail failed" message={err} />;
-  if (!data?.session)
-    return <ErrorState title="No session" message="Try another workout." />;
+  if (!data?.header) return <ErrorState title="No session" message="Try another workout." />;
 
-  const s = data.session;
+  const header = data.header;
+  const stats = data.stats;
+  const insight = stats?.insight ?? null;
+
   const exercises = data.exercises ?? [];
+  const prsCount = data.prs?.length ?? 0;
 
   return (
     <Screen>
       <ScreenHeader
         title="Workout"
-        right={
-          <Icon name="bar-chart-outline" size={20} color={colors.textMuted} />
-        }
+        right={<Icon name="share-outline" size={20} color={colors.textMuted} />}
       />
 
       <ScrollView
@@ -157,15 +169,12 @@ export default function WorkoutHistoryDetailScreen({
         }}
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={() => load("refresh")}
-          />
+          <RefreshControl refreshing={refreshing} onRefresh={() => load("refresh")} />
         }
       >
         <HistorySectionHeader
-          title={s.title}
-          subtitle={fmtDayTime(s.completed_at)}
+          title={header.title}
+          subtitle={fmtDayTime(header.completed_at)}
           right={
             <View
               style={{
@@ -178,18 +187,23 @@ export default function WorkoutHistoryDetailScreen({
               }}
             >
               <Text style={{ color: colors.text, fontSize: 12 }}>
-                {fmtMins(s.duration_seconds)}
+                {fmtMins(stats?.duration_seconds)}
               </Text>
             </View>
           }
         />
 
+        {/* ✅ Insight line (if available) */}
+        {insight?.label ? (
+          <Text style={{ color: colors.textMuted, marginTop: -6 }}>
+            {insight.label}
+          </Text>
+        ) : null}
+
         {/* Summary strip */}
         <View style={{ flexDirection: "row", gap: 10 }}>
           <Card style={{ flex: 1, padding: 12, borderRadius: 18 }}>
-            <Text style={{ color: colors.textMuted, fontSize: 12 }}>
-              VOLUME
-            </Text>
+            <Text style={{ color: colors.textMuted, fontSize: 12 }}>VOLUME</Text>
             <Text
               style={{
                 color: colors.text,
@@ -198,7 +212,7 @@ export default function WorkoutHistoryDetailScreen({
                 marginTop: 6,
               }}
             >
-              {n0(s.total_volume)}
+              {fmtKg(stats?.volume_kg)} kg
             </Text>
           </Card>
 
@@ -212,41 +226,29 @@ export default function WorkoutHistoryDetailScreen({
                 marginTop: 6,
               }}
             >
-              {n0(s.pr_count)}
+              {n0(prsCount)}
             </Text>
           </Card>
         </View>
 
-        {s.notes ? (
+        {header.notes ? (
           <Card style={{ padding: 12, borderRadius: 18 }}>
-            <Text
-              style={{
-                color: colors.textMuted,
-                fontSize: 12,
-                letterSpacing: 0.8,
-              }}
-            >
+            <Text style={{ color: colors.textMuted, fontSize: 12, letterSpacing: 0.8 }}>
               NOTES
             </Text>
             <Text style={{ color: colors.text, marginTop: 8, fontSize: 14 }}>
-              {s.notes}
+              {header.notes}
             </Text>
           </Card>
         ) : null}
 
         {/* Exercises */}
         <Card style={{ padding: 12, borderRadius: 18 }}>
-          <Text
-            style={{
-              color: colors.text,
-              fontFamily: typography.fontFamily.bold,
-              fontSize: 14,
-            }}
-          >
+          <Text style={{ color: colors.text, fontFamily: typography.fontFamily.bold, fontSize: 14 }}>
             Exercises
           </Text>
           <Text style={{ color: colors.textMuted, marginTop: 6 }}>
-            PRs in this session are highlighted.
+            Best sets are highlighted.
           </Text>
 
           <View style={{ marginTop: 12, gap: 14 }}>
@@ -264,30 +266,28 @@ export default function WorkoutHistoryDetailScreen({
                   >
                     {ex.exercise_name}
                   </Text>
+
+                  {/* ✅ Exercise-level PR badge (only if backend marks exercise as PR) */}
                   {ex.is_pr ? <PRBadge /> : null}
                 </View>
 
-                {ex.summary ? (
-                  <Text style={{ color: colors.textMuted, marginTop: 4 }}>
-                    {ex.summary}
-                  </Text>
-                ) : null}
-
-                {/* sets (simple table style) */}
                 {ex.sets?.length ? (
                   <View style={{ marginTop: 10, gap: 8 }}>
                     {ex.sets.map((st) => (
                       <WorkoutHistoryExerciseRow
-                        key={`${ex.exercise_id}-${st.set_number}`}
+                        key={`${ex.exercise_id}-${st.set_number}-${st.set_id ?? "x"}`}
                         name={`Set ${st.set_number}`}
                         summary={
-                          st.weight != null && st.reps != null
-                            ? `${st.weight} × ${st.reps}`
+                          st.weight_kg != null && st.reps != null
+                            ? `${st.weight_kg} × ${st.reps}`
                             : st.reps != null
                             ? `${st.reps} reps`
                             : "—"
                         }
+                        // ✅ PR pill only when it BROKE PR (set.is_pr)
+                        // Best highlighting should be a different style inside the row (see note below)
                         isPr={!!st.is_pr}
+                        isBest={!!st.is_best as any} // if your component supports it; otherwise remove this
                       />
                     ))}
                   </View>
@@ -296,6 +296,29 @@ export default function WorkoutHistoryDetailScreen({
             ))}
           </View>
         </Card>
+
+        {/* PR list */}
+        {prsCount > 0 ? (
+          <Card style={{ padding: 12, borderRadius: 18 }}>
+            <Text style={{ color: colors.text, fontFamily: typography.fontFamily.bold, fontSize: 14 }}>
+              PRs
+            </Text>
+            <Text style={{ color: colors.textMuted, marginTop: 6 }}>
+              New bests from this session.
+            </Text>
+
+            <View style={{ marginTop: 12, gap: 10 }}>
+              {(data.prs ?? []).slice(0, 12).map((p) => (
+                <View key={p.exercise_id} style={{ flexDirection: "row", alignItems: "center" }}>
+                  <Text style={{ flex: 1, color: colors.text }} numberOfLines={1}>
+                    {p.exercise_name}
+                  </Text>
+                  <PRBadge />
+                </View>
+              ))}
+            </View>
+          </Card>
+        ) : null}
       </ScrollView>
     </Screen>
   );

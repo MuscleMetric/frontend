@@ -70,8 +70,8 @@ export default function ProgressScreen() {
             }
             onOpenWorkoutHistoryDetail={(id) =>
               router.push({
-                pathname: "/features/progress/screens/[workoutHistoryId]",
-                params: { id },
+                pathname: "/features/progress/screens/historyDetail",
+                params: { workoutHistoryId: id },
               } as any)
             }
           />

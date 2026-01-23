@@ -1,61 +1,44 @@
-// app/features/history/screens/WorkoutHistoryListScreen.tsx
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { View, Text, ScrollView, RefreshControl, TextInput } from "react-native";
+import {
+  View,
+  Text,
+  ScrollView,
+  RefreshControl,
+  TextInput,
+} from "react-native";
 import { router } from "expo-router";
 import { supabase } from "@/lib/supabase";
 import { useAppTheme } from "@/lib/useAppTheme";
 import {
   Screen,
   ScreenHeader,
-  Card,
   LoadingScreen,
   ErrorState,
   Button,
   Icon,
-  ListRow,
 } from "@/ui";
 
-import { HistorySectionHeader } from "../ui/HistorySectionHeader";
 import { HistoryEmptyState } from "../ui/HistoryEmptyState";
+import { WorkoutHistoryCard } from "../ui/WorkoutHistoryCard";
 
-/** ✅ Change these to your real RPC names if different */
-const RPC_WORKOUT_HISTORY_LIST = "get_workout_history_feed"; // returns grouped list
-// Expected: { groups: [{ key, title, items: [...] }], meta?: {...} }
+import { groupHistoryItems } from "../utils/history.grouping";
+import type { HistoryGroup } from "../utils/history.grouping";
 
-type HistoryListItem = {
-  workout_history_id: string;
-  workout_id?: string | null;
-  title: string;
-  completed_at: string;
-  duration_seconds?: number | null;
-  workout_image_key?: string | null;
+import type { HistoryListItem } from "../data/history.types";
 
-  // optional, if you return it
-  insight?: { label: string; trend?: "up" | "down" | "flat" } | null;
-};
+/** RPC */
+const RPC_WORKOUT_HISTORY_LIST = "get_workout_history_feed";
 
-type HistoryGroup = {
-  key: string; // e.g. "2026-01" or "2026-W03" or "2026-01-23"
-  title: string; // e.g. "JAN 2026"
-  items: HistoryListItem[];
-};
+/**
+ * IMPORTANT:
+ * Your RPC returns: { meta: {...}, items: [...] }
+ * not { groups: [...] }
+ */
 
 type HistoryListPayload = {
-  groups: HistoryGroup[];
-  meta?: { timezone?: string; generated_at?: string };
+  meta?: { timezone?: string; generated_at?: string; unit?: "kg" };
+  items: HistoryListItem[];
 };
-
-function fmtDay(iso?: string | null) {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
-}
-
-function fmtMins(sec?: number | null) {
-  if (!sec || !isFinite(sec)) return undefined;
-  return `${Math.max(1, Math.round(sec / 60))}m`;
-}
 
 export default function WorkoutHistoryListScreen() {
   const { colors, typography, layout } = useAppTheme();
@@ -73,7 +56,13 @@ export default function WorkoutHistoryListScreen() {
 
     setErr(null);
 
-    const { data: res, error } = await supabase.rpc(RPC_WORKOUT_HISTORY_LIST);
+    // If you want search server-side later, pass p_query: q
+    const { data: res, error } = await supabase.rpc(RPC_WORKOUT_HISTORY_LIST, {
+      p_limit: 50,
+      p_cursor_completed_at: null,
+      p_cursor_id: null,
+      p_query: null,
+    });
 
     if (error) {
       setErr(error.message);
@@ -90,19 +79,27 @@ export default function WorkoutHistoryListScreen() {
     load("initial");
   }, [load]);
 
-  const groups: HistoryGroup[] = (data?.groups ?? []) as any;
+  const items: HistoryListItem[] = useMemo(() => {
+    return (data?.items ?? []) as HistoryListItem[];
+  }, [data?.items]);
 
-  const filteredGroups = useMemo(() => {
+  // client-side search (matches your design UX)
+  const filteredItems = useMemo(() => {
     const s = q.trim().toLowerCase();
-    if (!s) return groups;
+    if (!s) return items;
 
-    return groups
-      .map((g) => ({
-        ...g,
-        items: g.items.filter((it) => it.title.toLowerCase().includes(s)),
-      }))
-      .filter((g) => g.items.length > 0);
-  }, [groups, q]);
+    return items.filter((it) => {
+      const inTitle = it.title.toLowerCase().includes(s);
+      const inExercises = (it.top_items ?? []).some((x) =>
+        x.exercise_name.toLowerCase().includes(s)
+      );
+      return inTitle || inExercises;
+    });
+  }, [items, q]);
+
+  const groups: HistoryGroup[] = useMemo(() => {
+    return groupHistoryItems(filteredItems);
+  }, [filteredItems]);
 
   if (loading) return <LoadingScreen />;
   if (err) return <ErrorState title="History failed" message={err} />;
@@ -113,34 +110,27 @@ export default function WorkoutHistoryListScreen() {
     <Screen>
       <ScreenHeader
         title="History"
-        right={<Icon name="stats-chart-outline" size={20} color={colors.textMuted} />}
+        right={<Icon name="time-outline" size={20} color={colors.textMuted} />}
       />
 
       <ScrollView
-        contentContainerStyle={{ padding: layout.space.lg, paddingBottom: 24, gap: 12 }}
+        contentContainerStyle={{
+          padding: layout.space.lg,
+          paddingBottom: 24,
+          gap: 12,
+        }}
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={() => load("refresh")} />
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => load("refresh")}
+          />
         }
       >
-        {/* header + search */}
-        <HistorySectionHeader
-          title="Workout history"
-          subtitle="Review sessions, spot PRs, and track consistency."
-          right={
-            <Button
-              title="Back"
-              variant="secondary"
-              fullWidth={false}
-              onPress={() => router.back()}
-            />
-          }
-        />
-
         <TextInput
           value={q}
           onChangeText={setQ}
-          placeholder="Search workouts"
+          placeholder="Search workouts or exercises"
           placeholderTextColor={colors.textMuted}
           style={{
             borderWidth: 1,
@@ -155,14 +145,11 @@ export default function WorkoutHistoryListScreen() {
 
         {!hasAny ? (
           <HistoryEmptyState
-            onStartWorkout={() => {
-              // tweak this route to your start-workout entry
-              router.push("/(tabs)/workout");
-            }}
+            onStartWorkout={() => router.push("/(tabs)/workout")}
           />
         ) : (
-          filteredGroups.map((g) => (
-            <View key={g.key} style={{ marginTop: 2 }}>
+          groups.map((g) => (
+            <View key={g.key} style={{ marginTop: 6 }}>
               <Text
                 style={{
                   color: colors.textMuted,
@@ -175,23 +162,30 @@ export default function WorkoutHistoryListScreen() {
                 {g.title}
               </Text>
 
-              <Card style={{ padding: 8, borderRadius: 18 }}>
+              {/* one card per workout (matches design) */}
+              <View style={{ gap: 12 }}>
                 {g.items.map((it) => (
-                  <View key={it.workout_history_id}>
-                    <ListRow
-                      title={it.title}
-                      subtitle={fmtDay(it.completed_at)}
-                      rightText={fmtMins(it.duration_seconds)}
-                      onPress={() =>
-                        router.push({
-                          pathname: "/history/screens/WorkoutHistoryDetailScreen",
-                          params: { workoutHistoryId: it.workout_history_id },
-                        } as any)
-                      }
-                    />
-                  </View>
+                  <WorkoutHistoryCard
+                    key={it.workout_history_id}
+                    w={{
+                      workout_history_id: it.workout_history_id,
+                      title: it.title,
+                      completed_at: it.completed_at,
+                      duration_seconds: it.duration_seconds,
+                      pr_count: it.pr_count,
+                      volume_kg: it.volume_kg,
+                      top_items: it.top_items,
+                      insight: it.insight as any,
+                    }}
+                    onPress={() =>
+                      router.push({
+                        pathname: "/features/progress/screens/historyDetail",
+                        params: { workoutHistoryId: it.workout_history_id },
+                      } as any)
+                    }
+                  />
                 ))}
-              </Card>
+              </View>
             </View>
           ))
         )}
