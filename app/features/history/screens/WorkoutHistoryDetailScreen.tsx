@@ -4,7 +4,14 @@ import { View, Text, ScrollView, RefreshControl } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import { supabase } from "@/lib/supabase";
 import { useAppTheme } from "@/lib/useAppTheme";
-import { Screen, ScreenHeader, Card, LoadingScreen, ErrorState, Icon } from "@/ui";
+import {
+  Screen,
+  ScreenHeader,
+  Card,
+  LoadingScreen,
+  ErrorState,
+  Icon,
+} from "@/ui";
 
 import { HistorySectionHeader } from "../ui/HistorySectionHeader";
 import { PRBadge } from "../ui/PRBadge";
@@ -68,13 +75,18 @@ function n0(x?: number | null) {
   return String(Math.round(x));
 }
 
-export default function WorkoutHistoryDetailScreen() {
+export default function WorkoutHistoryDetailScreen({
+  workoutHistoryId: workoutHistoryIdProp,
+}: {
+  workoutHistoryId?: string;
+} = {}) {
   const { colors, typography, layout } = useAppTheme();
 
   const params = useLocalSearchParams<{ workoutHistoryId?: string }>();
+
   const workoutHistoryId = useMemo(
-    () => (params.workoutHistoryId ?? "").toString(),
-    [params.workoutHistoryId]
+    () => (workoutHistoryIdProp ?? params.workoutHistoryId ?? "").toString(),
+    [workoutHistoryIdProp, params.workoutHistoryId]
   );
 
   const [data, setData] = useState<DetailPayload | null>(null);
@@ -96,9 +108,12 @@ export default function WorkoutHistoryDetailScreen() {
 
       setErr(null);
 
-      const { data: res, error } = await supabase.rpc(RPC_WORKOUT_HISTORY_DETAIL, {
-        p_workout_history_id: workoutHistoryId,
-      });
+      const { data: res, error } = await supabase.rpc(
+        RPC_WORKOUT_HISTORY_DETAIL,
+        {
+          p_workout_history_id: workoutHistoryId,
+        }
+      );
 
       if (error) {
         setErr(error.message);
@@ -119,7 +134,8 @@ export default function WorkoutHistoryDetailScreen() {
 
   if (loading) return <LoadingScreen />;
   if (err) return <ErrorState title="Workout detail failed" message={err} />;
-  if (!data?.session) return <ErrorState title="No session" message="Try another workout." />;
+  if (!data?.session)
+    return <ErrorState title="No session" message="Try another workout." />;
 
   const s = data.session;
   const exercises = data.exercises ?? [];
@@ -128,13 +144,24 @@ export default function WorkoutHistoryDetailScreen() {
     <Screen>
       <ScreenHeader
         title="Workout"
-        right={<Icon name="bar-chart-outline" size={20} color={colors.textMuted} />}
+        right={
+          <Icon name="bar-chart-outline" size={20} color={colors.textMuted} />
+        }
       />
 
       <ScrollView
-        contentContainerStyle={{ padding: layout.space.lg, paddingBottom: 24, gap: 12 }}
+        contentContainerStyle={{
+          padding: layout.space.lg,
+          paddingBottom: 24,
+          gap: 12,
+        }}
         showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load("refresh")} />}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => load("refresh")}
+          />
+        }
       >
         <HistorySectionHeader
           title={s.title}
@@ -160,7 +187,9 @@ export default function WorkoutHistoryDetailScreen() {
         {/* Summary strip */}
         <View style={{ flexDirection: "row", gap: 10 }}>
           <Card style={{ flex: 1, padding: 12, borderRadius: 18 }}>
-            <Text style={{ color: colors.textMuted, fontSize: 12 }}>VOLUME</Text>
+            <Text style={{ color: colors.textMuted, fontSize: 12 }}>
+              VOLUME
+            </Text>
             <Text
               style={{
                 color: colors.text,
@@ -190,7 +219,13 @@ export default function WorkoutHistoryDetailScreen() {
 
         {s.notes ? (
           <Card style={{ padding: 12, borderRadius: 18 }}>
-            <Text style={{ color: colors.textMuted, fontSize: 12, letterSpacing: 0.8 }}>
+            <Text
+              style={{
+                color: colors.textMuted,
+                fontSize: 12,
+                letterSpacing: 0.8,
+              }}
+            >
               NOTES
             </Text>
             <Text style={{ color: colors.text, marginTop: 8, fontSize: 14 }}>
@@ -201,7 +236,13 @@ export default function WorkoutHistoryDetailScreen() {
 
         {/* Exercises */}
         <Card style={{ padding: 12, borderRadius: 18 }}>
-          <Text style={{ color: colors.text, fontFamily: typography.fontFamily.bold, fontSize: 14 }}>
+          <Text
+            style={{
+              color: colors.text,
+              fontFamily: typography.fontFamily.bold,
+              fontSize: 14,
+            }}
+          >
             Exercises
           </Text>
           <Text style={{ color: colors.textMuted, marginTop: 6 }}>

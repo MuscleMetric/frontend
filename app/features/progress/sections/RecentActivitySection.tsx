@@ -227,7 +227,7 @@ export default function RecentActivitySection({
 
         {/* IMPORTANT: stop Button being full width */}
         <Button
-          title="History"
+          title="View History"
           variant="secondary"
           fullWidth={false}
           onPress={onOpenHistory}

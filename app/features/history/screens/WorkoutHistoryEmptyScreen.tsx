@@ -16,7 +16,7 @@ export default function WorkoutHistoryEmptyScreen() {
       <ScrollView contentContainerStyle={{ padding: layout.space.lg, gap: 12 }}>
         <HistoryEmptyState
           onStartWorkout={() => {
-            router.push("/(tabs)/workouts");
+            router.push("/(tabs)/workout");
           }}
         />
       </ScrollView>

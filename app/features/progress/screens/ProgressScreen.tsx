@@ -66,11 +66,11 @@ export default function ProgressScreen() {
           <RecentActivitySection
             recent={vm.recent}
             onOpenHistory={() =>
-              router.push("/features/workouts/history" as any)
+              router.push("/features/progress/screens/workoutHistory")
             }
             onOpenWorkoutHistoryDetail={(id) =>
               router.push({
-                pathname: "/features/workouts/history/detail",
+                pathname: "/features/progress/screens/[workoutHistoryId]",
                 params: { id },
               } as any)
             }

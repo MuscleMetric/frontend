@@ -19,7 +19,7 @@ import { HistorySectionHeader } from "../ui/HistorySectionHeader";
 import { HistoryEmptyState } from "../ui/HistoryEmptyState";
 
 /** ✅ Change these to your real RPC names if different */
-const RPC_WORKOUT_HISTORY_LIST = "get_workout_history_list"; // returns grouped list
+const RPC_WORKOUT_HISTORY_LIST = "get_workout_history_feed"; // returns grouped list
 // Expected: { groups: [{ key, title, items: [...] }], meta?: {...} }
 
 type HistoryListItem = {
@@ -157,7 +157,7 @@ export default function WorkoutHistoryListScreen() {
           <HistoryEmptyState
             onStartWorkout={() => {
               // tweak this route to your start-workout entry
-              router.push("/(tabs)/workouts");
+              router.push("/(tabs)/workout");
             }}
           />
         ) : (
@@ -184,7 +184,7 @@ export default function WorkoutHistoryListScreen() {
                       rightText={fmtMins(it.duration_seconds)}
                       onPress={() =>
                         router.push({
-                          pathname: "/history/detail",
+                          pathname: "/history/screens/WorkoutHistoryDetailScreen",
                           params: { workoutHistoryId: it.workout_history_id },
                         } as any)
                       }
