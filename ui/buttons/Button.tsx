@@ -27,7 +27,7 @@ export type ButtonTone =
 export type ButtonProps = {
   title: string;
   onPress: () => void;
-  variant?: ButtonVariant; 
+  variant?: ButtonVariant;
   tone?: ButtonTone;
   fullWidth?: boolean;
   disabled?: boolean;
@@ -56,7 +56,7 @@ export function Button({
   onPress,
   variant = "primary",
   tone = "primary",
-  fullWidth = true,
+  fullWidth = variant === "primary",
   disabled,
   loading,
   leftIcon,

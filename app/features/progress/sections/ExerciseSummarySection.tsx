@@ -70,6 +70,7 @@ export default function ExerciseSummarySection({
             title="See all"
             variant="secondary"
             onPress={() => setOpen(true)}
+            fullWidth={false}
           />
         ) : null}
       </View>
@@ -127,17 +128,19 @@ export default function ExerciseSummarySection({
 
           <View style={{ marginTop: 12 }}>
             {filtered.map((x) => (
-              <ListRow
-                key={x.exercise_id}
-                title={x.exercise_name}
-                subtitle={`${
-                  x.sessions_30d
-                } sessions (30d) · last ${fmtDateShort(x.last_done_at)}`}
-                onPress={() => {
-                  setOpen(false);
-                  onOpenExercise(x.exercise_id);
-                }}
-              />
+              <View key={x.exercise_id} style={{ marginTop: 10 }}>
+                <ListRow
+                  key={x.exercise_id}
+                  title={x.exercise_name}
+                  subtitle={`${
+                    x.sessions_30d
+                  } sessions (30d) · last ${fmtDateShort(x.last_done_at)}`}
+                  onPress={() => {
+                    setOpen(false);
+                    onOpenExercise(x.exercise_id);
+                  }}
+                />
+              </View>
             ))}
 
             {!filtered.length ? (
