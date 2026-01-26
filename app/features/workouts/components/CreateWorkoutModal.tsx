@@ -35,7 +35,7 @@ export function CreateWorkoutModal({
               backgroundColor: colors.surface,
               borderColor: colors.border,
               borderRadius: layout.radius.lg,
-              padding: layout.space.lg,
+              padding: layout.space.md,
             },
           ]}
           onPress={(e) => e.stopPropagation()}
@@ -47,7 +47,7 @@ export function CreateWorkoutModal({
                 onClose();
                 router.push("/features/workouts/create/auto-create");
               }}
-              variant="primary"
+              variant="secondary"
             />
 
             <Button
