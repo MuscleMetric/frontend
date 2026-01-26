@@ -15,10 +15,10 @@ import { router } from "expo-router";
 import { supabase } from "../../../lib/supabase";
 import { useAuth } from "../../../lib/authContext";
 import { useAppTheme } from "../../../lib/useAppTheme";
+
 import PlanGoalsCard from "./components/PlansGoalsCard";
 
 /* ---------- helpers ---------- */
-
 function weekKeySundayLocal(d: Date) {
   const copy = new Date(d);
   const dow = copy.getDay(); // 0=Sun
@@ -30,14 +30,17 @@ function weekKeySundayLocal(d: Date) {
   return `${y}-${m}-${day}`;
 }
 
-/* ---------- component ---------- */
+function clampInt(n: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, Math.round(n)));
+}
 
+/* ---------- component ---------- */
 export default function GoalsScreen() {
   const { session } = useAuth();
   const userId = session?.user?.id;
 
-  const { colors } = useAppTheme();
-  const styles = useMemo(() => makeStyles(colors), [colors]);
+  const { colors, typography } = useAppTheme();
+  const styles = useMemo(() => makeStyles(colors, typography), [colors, typography]);
 
   // steps goal state
   const [stepsLoading, setStepsLoading] = useState(true);
@@ -48,7 +51,7 @@ export default function GoalsScreen() {
 
   // weekly workout goal state
   const [weeklyLoading, setWeeklyLoading] = useState(true);
-  const [weeklyGoal, setWeeklyGoal] = useState<number>(1);
+  const [weeklyGoal, setWeeklyGoal] = useState<number>(3);
   const [editingWeekly, setEditingWeekly] = useState(false);
   const [weeklyDraft, setWeeklyDraft] = useState<string>("3");
   const [savingWeekly, setSavingWeekly] = useState(false);
@@ -65,13 +68,14 @@ export default function GoalsScreen() {
           .select("steps_goal")
           .eq("id", userId)
           .maybeSingle();
+
         const goal =
           !error && data?.steps_goal != null ? Number(data.steps_goal) : 10000;
-        if (alive) {
-          const safe = Math.max(0, Math.min(50000, Math.round(goal)));
-          setStepsGoal(safe);
-          setStepsDraft(String(safe));
-        }
+
+        if (!alive) return;
+        const safe = clampInt(goal, 0, 50000);
+        setStepsGoal(safe);
+        setStepsDraft(String(safe));
       } finally {
         if (alive) setStepsLoading(false);
       }
@@ -83,7 +87,7 @@ export default function GoalsScreen() {
 
   async function saveStepsGoal() {
     if (!userId) return;
-    const n = Math.max(0, Math.min(50000, Math.round(Number(stepsDraft) || 0)));
+    const n = clampInt(Number(stepsDraft) || 0, 0, 50000);
     try {
       setSavingSteps(true);
       const { error } = await supabase
@@ -91,6 +95,7 @@ export default function GoalsScreen() {
         .update({ steps_goal: n })
         .eq("id", userId);
       if (error) throw error;
+
       setStepsGoal(n);
       setEditingSteps(false);
     } catch (e: any) {
@@ -112,15 +117,16 @@ export default function GoalsScreen() {
           .select("weekly_workout_goal")
           .eq("id", userId)
           .maybeSingle();
+
         const goal =
           !error && data?.weekly_workout_goal != null
             ? Number(data.weekly_workout_goal)
             : 3;
-        if (alive) {
-          const safe = Math.max(1, Math.min(14, Math.round(goal)));
-          setWeeklyGoal(safe);
-          setWeeklyDraft(String(safe));
-        }
+
+        if (!alive) return;
+        const safe = clampInt(goal, 1, 14);
+        setWeeklyGoal(safe);
+        setWeeklyDraft(String(safe));
       } finally {
         if (alive) setWeeklyLoading(false);
       }
@@ -132,7 +138,8 @@ export default function GoalsScreen() {
 
   async function saveWeeklyGoal() {
     if (!userId) return;
-    const n = Math.max(1, Math.min(14, Math.round(Number(weeklyDraft) || 0)));
+    const n = clampInt(Number(weeklyDraft) || 0, 1, 14);
+
     try {
       setSavingWeekly(true);
 
@@ -146,7 +153,6 @@ export default function GoalsScreen() {
       // 2) Sync the *current week* row
       const nowKey = weekKeySundayLocal(new Date());
 
-      // read existing completed (if any)
       const { data: existing, error: readErr } = await supabase
         .from("user_weekly_workout_stats")
         .select("completed")
@@ -158,7 +164,6 @@ export default function GoalsScreen() {
       const completed = Number(existing?.completed ?? 0);
       const met = completed >= n;
 
-      // upsert current week with new goal
       const { error: upsertErr } = await supabase
         .from("user_weekly_workout_stats")
         .upsert(
@@ -183,235 +188,317 @@ export default function GoalsScreen() {
     }
   }
 
-  /* ---------- render ---------- */
+  const Header = (
+    <View style={styles.header}>
+      <Pressable onPress={() => router.back()} style={styles.backBtn} hitSlop={12}>
+        <Text style={styles.backText}>Back</Text>
+      </Pressable>
+
+      <View style={{ flex: 1, alignItems: "center" }}>
+        <Text style={styles.title}>Goals</Text>
+      </View>
+
+      {/* Right spacer to keep title centered */}
+      <View style={styles.backBtn} />
+    </View>
+  );
 
   return (
     <SafeAreaView edges={["top", "left", "right"]} style={styles.safe}>
-      {/* Header */}
-      <View style={styles.headerRow}>
-        <Pressable onPress={() => router.back()}>
-          <Text style={styles.link}>← Back</Text>
-        </Pressable>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.h1}>Goals</Text>
-          {/* Plan context is shown inside PlanGoalsCard */}
-        </View>
-        <View style={{ width: 52 }} />
-      </View>
+      {Header}
 
       <ScrollView
         style={{ flex: 1 }}
-        contentContainerStyle={{ gap: 12, paddingVertical: 16 }}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
       >
-        {/* Weekly Workout Goal card */}
+        {/* Weekly Workout Goal */}
         <View style={styles.card}>
-          <Text style={styles.h3}>Weekly Workout Goal</Text>
-
-          {weeklyLoading ? (
-            <ActivityIndicator style={{ marginTop: 6 }} />
-          ) : !editingWeekly ? (
-            <View
-              style={{
-                flexDirection: "row",
-                justifyContent: "space-between",
-                alignItems: "center",
-                marginTop: 6,
-              }}
-            >
-              <Text style={styles.big}>{weeklyGoal} workouts/week</Text>
+          <Text style={styles.sectionLabel}>Weekly</Text>
+          <View style={styles.cardTopRow}>
+            <Text style={styles.cardTitle}>Workout Goal</Text>
+            {!weeklyLoading && !editingWeekly && (
               <Pressable
-                style={[styles.btn, styles.primary]}
+                style={[styles.pillBtn, { borderColor: colors.border }]}
                 onPress={() => setEditingWeekly(true)}
               >
-                <Text style={styles.btnPrimaryText}>Edit</Text>
+                <Text style={styles.pillBtnText}>Edit</Text>
               </Pressable>
-            </View>
+            )}
+          </View>
+
+          {weeklyLoading ? (
+            <ActivityIndicator style={{ marginTop: 10 }} />
+          ) : !editingWeekly ? (
+            <>
+              <Text style={styles.bigValue}>{weeklyGoal}</Text>
+              <Text style={styles.bigSuffix}>workouts / week</Text>
+              <Text style={styles.helper}>
+                This goal drives your weekly streak and progress ring.
+              </Text>
+            </>
           ) : (
-            <View
-              style={{
-                flexDirection: "row",
-                gap: 8,
-                alignItems: "center",
-                marginTop: 8,
-              }}
-            >
-              <TextInput
-                style={[styles.input, { flex: 1 }]}
-                value={weeklyDraft}
-                onChangeText={setWeeklyDraft}
-                keyboardType="number-pad"
-                placeholder="e.g. 3"
-                placeholderTextColor={colors.subtle}
-              />
+            <>
+              <View style={styles.editRow}>
+                <TextInput
+                  style={[styles.input, { flex: 1 }]}
+                  value={weeklyDraft}
+                  onChangeText={setWeeklyDraft}
+                  keyboardType="number-pad"
+                  placeholder="e.g. 3"
+                  placeholderTextColor={colors.textMuted}
+                />
+                <Pressable
+                  style={[
+                    styles.primaryBtn,
+                    { opacity: savingWeekly ? 0.7 : 1 },
+                  ]}
+                  disabled={savingWeekly}
+                  onPress={saveWeeklyGoal}
+                >
+                  <Text style={styles.primaryBtnText}>
+                    {savingWeekly ? "Saving…" : "Save"}
+                  </Text>
+                </Pressable>
+              </View>
+
               <Pressable
-                style={[
-                  styles.btn,
-                  styles.primary,
-                  { opacity: savingWeekly ? 0.7 : 1 },
-                ]}
-                disabled={savingWeekly}
-                onPress={saveWeeklyGoal}
-              >
-                <Text style={styles.btnPrimaryText}>
-                  {savingWeekly ? "Saving…" : "Save"}
-                </Text>
-              </Pressable>
-              <Pressable
-                style={styles.btn}
+                style={styles.ghostBtn}
                 onPress={() => {
                   setWeeklyDraft(String(weeklyGoal));
                   setEditingWeekly(false);
                 }}
               >
-                <Text style={styles.btnText}>Cancel</Text>
+                <Text style={styles.ghostBtnText}>Cancel</Text>
               </Pressable>
-            </View>
+
+              <Text style={styles.helper}>
+                Pick 1–14. Keep it realistic so you can actually hit streaks.
+              </Text>
+            </>
           )}
-          <Text style={[styles.subtle, { marginTop: 6 }]}>
-            This goal determines your weekly progress streak.
-          </Text>
         </View>
 
-        {/* Steps Goal card */}
+        {/* Steps Goal */}
         <View style={styles.card}>
-          <Text style={styles.h3}>Daily Steps Goal</Text>
-
-          {stepsLoading ? (
-            <ActivityIndicator style={{ marginTop: 6 }} />
-          ) : !editingSteps ? (
-            <View
-              style={{
-                flexDirection: "row",
-                justifyContent: "space-between",
-                alignItems: "center",
-                marginTop: 6,
-              }}
-            >
-              <Text style={styles.big}>{stepsGoal.toLocaleString()} steps</Text>
+          <Text style={styles.sectionLabel}>Daily</Text>
+          <View style={styles.cardTopRow}>
+            <Text style={styles.cardTitle}>Steps Goal</Text>
+            {!stepsLoading && !editingSteps && (
               <Pressable
-                style={[styles.btn, styles.primary]}
+                style={[styles.pillBtn, { borderColor: colors.border }]}
                 onPress={() => setEditingSteps(true)}
               >
-                <Text style={styles.btnPrimaryText}>Edit</Text>
+                <Text style={styles.pillBtnText}>Edit</Text>
               </Pressable>
-            </View>
+            )}
+          </View>
+
+          {stepsLoading ? (
+            <ActivityIndicator style={{ marginTop: 10 }} />
+          ) : !editingSteps ? (
+            <>
+              <Text style={styles.bigValue}>{stepsGoal.toLocaleString()}</Text>
+              <Text style={styles.bigSuffix}>steps / day</Text>
+              <Text style={styles.helper}>
+                This powers your daily summary, streaks, and steps achievements.
+              </Text>
+            </>
           ) : (
-            <View
-              style={{
-                flexDirection: "row",
-                gap: 8,
-                alignItems: "center",
-                marginTop: 8,
-              }}
-            >
-              <TextInput
-                style={[styles.input, { flex: 1 }]}
-                value={stepsDraft}
-                onChangeText={setStepsDraft}
-                keyboardType="number-pad"
-                placeholder="e.g. 10000"
-                placeholderTextColor={colors.subtle}
-              />
+            <>
+              <View style={styles.editRow}>
+                <TextInput
+                  style={[styles.input, { flex: 1 }]}
+                  value={stepsDraft}
+                  onChangeText={setStepsDraft}
+                  keyboardType="number-pad"
+                  placeholder="e.g. 10000"
+                  placeholderTextColor={colors.textMuted}
+                />
+                <Pressable
+                  style={[
+                    styles.primaryBtn,
+                    { opacity: savingSteps ? 0.7 : 1 },
+                  ]}
+                  disabled={savingSteps}
+                  onPress={saveStepsGoal}
+                >
+                  <Text style={styles.primaryBtnText}>
+                    {savingSteps ? "Saving…" : "Save"}
+                  </Text>
+                </Pressable>
+              </View>
+
               <Pressable
-                style={[
-                  styles.btn,
-                  styles.primary,
-                  { opacity: savingSteps ? 0.7 : 1 },
-                ]}
-                disabled={savingSteps}
-                onPress={saveStepsGoal}
-              >
-                <Text style={styles.btnPrimaryText}>
-                  {savingSteps ? "Saving…" : "Save"}
-                </Text>
-              </Pressable>
-              <Pressable
-                style={styles.btn}
+                style={styles.ghostBtn}
                 onPress={() => {
                   setStepsDraft(String(stepsGoal));
                   setEditingSteps(false);
                 }}
               >
-                <Text style={styles.btnText}>Cancel</Text>
+                <Text style={styles.ghostBtnText}>Cancel</Text>
               </Pressable>
-            </View>
+
+              <Text style={styles.helper}>Pick 0–50,000.</Text>
+            </>
           )}
-          <Text style={[styles.subtle, { marginTop: 6 }]}>
-            This goal powers your daily summary and streaks.
-          </Text>
         </View>
 
-        {/* Plan Goals (self-contained: handles its own fetching + UI + future graph) */}
-        <PlanGoalsCard userId={userId} colors={colors} />
+        {/* Plan Goals (graph + selector) */}
+        <PlanGoalsCard userId={userId} />
       </ScrollView>
     </SafeAreaView>
   );
 }
 
 /* ---- themed styles ---- */
-const makeStyles = (colors: any) =>
+const makeStyles = (colors: any, typography: any) =>
   StyleSheet.create({
     safe: {
       flex: 1,
       backgroundColor: colors.background,
       paddingHorizontal: 16,
-      paddingBottom: 8,
     },
-    link: { color: colors.primaryText, fontWeight: "700", width: 52 },
-    headerRow: {
-      paddingBottom: 8,
-      paddingTop: 12,
+    header: {
+      paddingTop: 8,
+      paddingBottom: 10,
       flexDirection: "row",
+      alignItems: "center",
       justifyContent: "space-between",
-      alignItems: "flex-start",
+    },
+    backBtn: {
+      width: 56,
+      height: 36,
+      justifyContent: "center",
+    },
+    backText: {
+      color: colors.text,
+      fontFamily: typography?.fontFamily?.semibold ?? undefined,
+      fontSize: 14,
+    },
+    title: {
+      color: colors.text,
+      fontFamily: typography?.fontFamily?.bold ?? undefined,
+      fontSize: 16,
+      letterSpacing: -0.2,
+    },
+
+    content: {
+      paddingBottom: 18,
+      paddingTop: 6,
       gap: 12,
     },
-    h1: { fontSize: 18, fontWeight: "800", color: colors.text },
-    h2: { color: colors.subtle },
-    h3: { fontSize: 16, fontWeight: "800", color: colors.text },
-    big: { fontSize: 20, fontWeight: "800", color: colors.text },
-
-    body: { flex: 1, paddingVertical: 16 },
-
-    subtle: { color: colors.subtle },
-    title: { fontWeight: "800", color: colors.text },
-    deadline: { color: colors.subtle, marginTop: 4 },
 
     card: {
       backgroundColor: colors.card,
-      borderRadius: 16,
+      borderRadius: 18,
       padding: 16,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.border,
     },
-    goalRow: {
-      backgroundColor: colors.surface,
-      borderRadius: 12,
-      padding: 12,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: colors.border,
+
+    sectionLabel: {
+      color: colors.subtle,
+      fontSize: 12,
+      letterSpacing: 0.8,
+      textTransform: "uppercase",
+      fontFamily: typography?.fontFamily?.semibold ?? undefined,
+      marginBottom: 8,
+    },
+    cardTopRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: 12,
+    },
+    cardTitle: {
+      color: colors.text,
+      fontFamily: typography?.fontFamily?.bold ?? undefined,
+      fontSize: 16,
+      letterSpacing: -0.2,
     },
 
+    bigValue: {
+      marginTop: 10,
+      color: colors.text,
+      fontFamily: typography?.fontFamily?.bold ?? undefined,
+      fontSize: 34,
+      letterSpacing: -0.8,
+      lineHeight: 38,
+    },
+    bigSuffix: {
+      color: colors.subtle,
+      marginTop: 2,
+      fontSize: 13,
+      fontFamily: typography?.fontFamily?.medium ?? undefined,
+    },
+    helper: {
+      marginTop: 10,
+      color: colors.subtle,
+      fontSize: 13,
+      lineHeight: 18,
+    },
+
+    pillBtn: {
+      paddingVertical: 8,
+      paddingHorizontal: 12,
+      borderRadius: 999,
+      borderWidth: StyleSheet.hairlineWidth,
+      backgroundColor: colors.surface,
+    },
+    pillBtnText: {
+      color: colors.text,
+      fontFamily: typography?.fontFamily?.semibold ?? undefined,
+      fontSize: 13,
+    },
+
+    editRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
+      marginTop: 12,
+    },
     input: {
-      backgroundColor: colors.card,
+      backgroundColor: colors.surface,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.border,
       color: colors.text,
-      borderRadius: 10,
-      paddingHorizontal: 12,
-      paddingVertical: 10,
+      borderRadius: 14,
+      paddingHorizontal: 14,
+      paddingVertical: 12,
+      fontSize: 15,
+      fontFamily: typography?.fontFamily?.semibold ?? undefined,
     },
 
-    btn: {
-      backgroundColor: colors.surface,
-      paddingVertical: 10,
-      paddingHorizontal: 12,
-      borderRadius: 10,
+    primaryBtn: {
+      backgroundColor: colors.primary,
+      borderRadius: 14,
+      paddingHorizontal: 14,
+      paddingVertical: 12,
       alignItems: "center",
+      justifyContent: "center",
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.primary,
+    },
+    primaryBtnText: {
+      color: colors.onPrimary ?? "#fff",
+      fontFamily: typography?.fontFamily?.bold ?? undefined,
+      fontSize: 14,
+    },
+
+    ghostBtn: {
+      marginTop: 10,
+      paddingVertical: 10,
+      alignItems: "center",
+      justifyContent: "center",
+      borderRadius: 14,
+      backgroundColor: colors.surface,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.border,
     },
-    btnText: { fontWeight: "800", color: colors.text },
-    primary: { backgroundColor: colors.primary, borderColor: colors.primary },
-    btnPrimaryText: { fontWeight: "800", color: colors.onPrimary ?? "#fff" },
+    ghostBtnText: {
+      color: colors.text,
+      fontFamily: typography?.fontFamily?.semibold ?? undefined,
+      fontSize: 14,
+    },
   });

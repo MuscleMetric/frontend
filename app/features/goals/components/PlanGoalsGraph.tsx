@@ -10,6 +10,7 @@ import {
   VictoryLabel,
 } from "victory-native";
 import { supabase } from "../../../../lib/supabase";
+import { useAppTheme } from "../../../../lib/useAppTheme";
 
 export type Plan = {
   id: string;
@@ -36,9 +37,15 @@ type ViewMode = "twoWeeks" | "overall";
 type Props = {
   plan: Plan;
   goal: GoalRow;
-  colors: any;
   viewMode: ViewMode;
   userId?: string | null;
+
+  /**
+   * Optional: allows parent to pass colors explicitly.
+   * If omitted, we fall back to useAppTheme().
+   */
+  colors?: any;
+
   onPointPress?: (info: {
     date: Date;
     goalValue: number;
@@ -116,11 +123,14 @@ type SessionPoint = {
 export default function PlanGoalsGraph({
   plan,
   goal,
-  colors,
   viewMode,
   userId,
   onPointPress,
+  colors: colorsProp,
 }: Props) {
+  const theme = useAppTheme();
+  const colors = colorsProp ?? theme.colors;
+
   const [loading, setLoading] = useState(true);
   const [planWorkouts, setPlanWorkouts] = useState<
     { id: string; title: string | null; workout_id: string | null }[]
@@ -270,6 +280,7 @@ export default function PlanGoalsGraph({
             (h: any) => h.exercise_id === exId
           );
           if (!eh) return;
+
           const sets = eh.workout_set_history ?? [];
           if (!sets.length) return;
 
@@ -277,16 +288,13 @@ export default function PlanGoalsGraph({
 
           switch (goal.type) {
             case "exercise_weight": {
-              // Use best weight in this session (what the user actually sees).
               rawVal = Math.max(...sets.map((s: any) => Number(s.weight ?? 0)));
               break;
             }
-
             case "exercise_reps": {
               rawVal = Math.max(...sets.map((s: any) => Number(s.reps ?? 0)));
               break;
             }
-
             case "distance": {
               rawVal = sets.reduce(
                 (sum: number, s: any) => sum + Number(s.distance ?? 0),
@@ -294,7 +302,6 @@ export default function PlanGoalsGraph({
               );
               break;
             }
-
             case "time": {
               rawVal = sets.reduce(
                 (sum: number, s: any) => sum + Number(s.time_seconds ?? 0),
@@ -302,7 +309,6 @@ export default function PlanGoalsGraph({
               );
               break;
             }
-
             default: {
               rawVal = 0;
             }
@@ -352,12 +358,12 @@ export default function PlanGoalsGraph({
     const endDate = new Date(plan.end_date);
     const totalMs = endDate.getTime() - startDate.getTime();
 
-    // helper: ideal Y at any date (continuous)
     const startVal = (() => {
       const s = parseStart(goal.notes);
       return typeof s === "number" ? s : 0;
     })();
     const targetVal = goal.target_number;
+
     const idealYAt = (d: Date) => {
       if (
         isNaN(startDate.getTime()) ||
@@ -378,7 +384,6 @@ export default function PlanGoalsGraph({
 
     const dates = buildEvenDates(plan.start_date, plan.end_date, sessions);
 
-    // ideal points along goal curve (evenly spaced by session)
     const allIdeal: SessionPoint[] = dates.map((d, i) => {
       const y = idealYAt(d);
       const w = exerciseWorkouts[i % exerciseWorkouts.length];
@@ -386,12 +391,9 @@ export default function PlanGoalsGraph({
       return { x: d, y, workoutTitle };
     });
 
-    // actual points (from history) as-is
     const allActual: SessionPoint[] = actualRaw.slice();
 
     const now = new Date();
-
-    // "month" view = 2 weeks before and 2 weeks into the future
     const TWO_WEEKS_MS = 14 * 24 * 60 * 60 * 1000;
     const windowStart = new Date(now.getTime() - TWO_WEEKS_MS);
     const windowEnd = new Date(now.getTime() + TWO_WEEKS_MS);
@@ -417,7 +419,7 @@ export default function PlanGoalsGraph({
     const yActual = actualPoints.map((p) => p.y);
 
     const xAll = xIdeal.concat(xActual);
-    let yAll = yIdeal.concat(yActual);
+    const yAll = yIdeal.concat(yActual);
 
     const fallbackXDomain: [number, number] = [
       startDate.getTime(),
@@ -478,6 +480,7 @@ export default function PlanGoalsGraph({
       </View>
     );
   }
+
   if (!graph) {
     return (
       <View style={{ padding: 8 }}>
@@ -493,14 +496,13 @@ export default function PlanGoalsGraph({
     graph;
 
   // COLORS
-  const goalColor = "#38bdf8"; // light blue
-  const actualColor = colors.text; // black/white
+  const goalColor = colors.primary ?? "#38bdf8";
+  const actualColor = colors.text;
   const axis = colors.subtle;
 
   const goalLineData = idealPoints.map((p) => ({ x: +p.x, y: p.y }));
   const actualLineData = actualPoints.map((p) => ({ x: +p.x, y: p.y }));
 
-  // helper to find the closest actual point to a given date (for goal dots)
   const findClosestActual = (d: Date): SessionPoint | null => {
     if (!actualPoints.length) return null;
     let best: SessionPoint | null = null;
@@ -551,7 +553,7 @@ export default function PlanGoalsGraph({
           axisLabelComponent={<VictoryLabel dy={-28} />}
         />
 
-        {/* dotted ideal goal trajectory (light blue) */}
+        {/* dotted ideal goal trajectory */}
         <VictoryLine
           data={goalLineData}
           style={{
@@ -563,7 +565,7 @@ export default function PlanGoalsGraph({
           }}
         />
 
-        {/* solid actual trajectory (black) */}
+        {/* solid actual trajectory */}
         {actualLineData.length > 0 && (
           <VictoryLine
             data={actualLineData}
@@ -585,9 +587,7 @@ export default function PlanGoalsGraph({
               i,
             }))}
             size={5}
-            style={{
-              data: { fill: goalColor },
-            }}
+            style={{ data: { fill: goalColor } }}
             events={[
               {
                 target: "data",
@@ -607,6 +607,7 @@ export default function PlanGoalsGraph({
                       workoutTitle: p.workoutTitle,
                       kind: "goal",
                     });
+
                     return [];
                   },
                 },
@@ -624,9 +625,7 @@ export default function PlanGoalsGraph({
               i,
             }))}
             size={5}
-            style={{
-              data: { fill: actualColor },
-            }}
+            style={{ data: { fill: actualColor } }}
             events={[
               {
                 target: "data",
@@ -645,6 +644,7 @@ export default function PlanGoalsGraph({
                       workoutTitle: p.workoutTitle,
                       kind: "actual",
                     });
+
                     return [];
                   },
                 },
@@ -654,7 +654,7 @@ export default function PlanGoalsGraph({
         )}
       </VictoryChart>
 
-      {/* Tiny legend under the chart */}
+      {/* Legend */}
       <View
         style={{
           flexDirection: "row",
