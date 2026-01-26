@@ -64,7 +64,7 @@ export function PlanScheduleSection({
         <View style={{ flexDirection: "row", gap: layout.space.sm }}>
           {schedule.actions.viewAll && onViewAll ? (
             <Button
-              title="View all"
+              title="View"
               variant="ghost"
               fullWidth={false}
               onPress={onViewAll}

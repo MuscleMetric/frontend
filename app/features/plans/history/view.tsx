@@ -1,3 +1,4 @@
+// app/features/plans/history/view.tsx  (or wherever this screen lives)
 import React, { useEffect, useMemo, useState, useRef } from "react";
 import {
   View,
@@ -12,9 +13,9 @@ import { useLocalSearchParams, router } from "expo-router";
 import { supabase } from "../../../../lib/supabase";
 import { useAuth } from "../../../../lib/authContext";
 import { useAppTheme } from "../../../../lib/useAppTheme";
-import { SectionCard } from "../../../_components";
 import Svg, { Rect } from "react-native-svg";
-import { SafeAreaView } from "react-native-safe-area-context";
+
+import { Screen, ScreenHeader, Card, Button, Pill, MiniRing } from "@/ui";
 
 type PlanRow = {
   id: string;
@@ -82,39 +83,33 @@ type Stats = {
 
   weeklySessions: { week: string; count: number }[];
 
-  // Best set overall
   bestSet: BestSet | null;
-
-  // Top exercise by SETS (not volume)
   topExerciseBySets: { exerciseId: string; name: string; sets: number } | null;
 
-  // Strength improvement details (first -> best + %)
   mostImproved: {
     exerciseId: string;
     name: string;
     from: { weight: number; reps: number; completed_at: string } | null;
     to: { weight: number; reps: number; completed_at: string } | null;
-    pct: number; // 0..1
+    pct: number;
   } | null;
 
-  // Consistency most/least completed workout in plan
   workoutCounts: {
     most: { workoutId: string; title: string; count: number } | null;
     least: { workoutId: string; title: string; count: number } | null;
   };
 
-  // Biggest volume session
   biggestSession: { workoutId: string; title: string; volume: number } | null;
 
   goalSummaries: Array<{
     id: string;
     name: string;
     type: string;
-    progress: number; // 0..1
+    progress: number;
     label: string;
   }>;
 
-  consistencyPct: number; // 0..1
+  consistencyPct: number;
   avgVolumePerSession: number;
 };
 
@@ -141,7 +136,7 @@ function formatLongDate(iso?: string | null) {
   if (!iso) return "—";
   try {
     const d = new Date(iso);
-    return d.toLocaleDateString("en-US", {
+    return d.toLocaleDateString("en-GB", {
       weekday: "short",
       month: "short",
       day: "numeric",
@@ -178,7 +173,7 @@ function daysBetweenInclusive(aIso: string, bIso: string) {
   a.setHours(0, 0, 0, 0);
   b.setHours(0, 0, 0, 0);
   const ms = b.getTime() - a.getTime();
-  const days = Math.floor(ms / 86400000) + 1; // inclusive
+  const days = Math.floor(ms / 86400000) + 1;
   return Math.max(1, days);
 }
 
@@ -243,7 +238,6 @@ function formatLastSet(
   const time = set.time_seconds ?? null;
   const dist = set.distance ?? null;
 
-  // weights/reps
   if ((reps != null && reps > 0) || (weight != null && weight > 0)) {
     const w = weight != null ? Math.round(weight) : 0;
     const r = reps != null ? Math.round(reps) : 0;
@@ -252,7 +246,6 @@ function formatLastSet(
     if (r > 0) return `${r} reps`;
   }
 
-  // cardio-ish
   if (dist != null && dist > 0) return `${dist.toFixed(1)} km`;
   if (time != null && time > 0) return secondsToHhMm(time);
 
@@ -264,8 +257,11 @@ export default function PlanHistoryViewScreen() {
   const { session } = useAuth();
   const userId = session?.user?.id ?? null;
 
-  const { colors } = useAppTheme();
-  const styles = useMemo(() => makeStyles(colors), [colors]);
+  const { colors, typography, layout } = useAppTheme();
+  const styles = useMemo(
+    () => makeStyles(colors, typography, layout),
+    [colors, typography, layout]
+  );
 
   const [loading, setLoading] = useState(true);
   const [plan, setPlan] = useState<PlanRow | null>(null);
@@ -277,20 +273,14 @@ export default function PlanHistoryViewScreen() {
   const [stats, setStats] = useState<Stats | null>(null);
 
   const [chartWidth, setChartWidth] = useState(0);
-
-  // extra for active view
   const [workoutsWithExercises, setWorkoutsWithExercises] = useState<
     WorkoutWithExercises[]
   >([]);
-
-  // CTA rule: only show “Start a new plan” if user has NO active plan now
   const [hasActivePlanNow, setHasActivePlanNow] = useState<boolean>(false);
 
   const ctaScale = useRef(new Animated.Value(1)).current;
-
   const pressIn = () =>
     Animated.spring(ctaScale, { toValue: 0.96, useNativeDriver: true }).start();
-
   const pressOut = () =>
     Animated.spring(ctaScale, { toValue: 1, useNativeDriver: true }).start();
 
@@ -304,7 +294,7 @@ export default function PlanHistoryViewScreen() {
     return !!plan && !isActivePlan && !hasActivePlanNow;
   }, [plan, isActivePlan, hasActivePlanNow]);
 
-  // Map: exerciseId -> last set from the most recent session that included the exercise
+  // last set per exercise (for active view)
   const lastSetByExercise = useMemo(() => {
     const out: Record<
       string,
@@ -319,44 +309,37 @@ export default function PlanHistoryViewScreen() {
       }
     > = {};
 
-    // sessions are fetched ascending currently; easiest is iterate from end (most recent)
     for (let i = timeSessions.length - 1; i >= 0; i--) {
       const sess = timeSessions[i];
       for (const eh of sess.workout_exercise_history ?? []) {
         const exId = eh.exercise_id;
-        if (out[exId]) continue; // already have the most recent occurrence
+        if (out[exId]) continue;
         const sets = eh.workout_set_history ?? [];
         const lastSet = sets.length ? sets[sets.length - 1] : null;
-        out[exId] = {
-          completed_at: sess.completed_at,
-          set: lastSet,
-        };
+        out[exId] = { completed_at: sess.completed_at, set: lastSet };
       }
     }
     return out;
   }, [timeSessions]);
 
-  // For the active plan “where you’re at” goals section (simple summary)
+  // ACTIVE “quick goals” summaries
   const activeGoalSummaries = useMemo(() => {
-    // only show exercise-linked goals in active view (keeps it clean)
     const exerciseGoals = goals.filter((g) => g?.exercises?.id).slice(0, 6);
-
     if (!exerciseGoals.length) return [];
 
     const byExercise: Record<string, number> = {};
 
-    // compute latest value per exercise based on most recent session (so it feels “current”)
     for (let i = timeSessions.length - 1; i >= 0; i--) {
       const sess = timeSessions[i];
       for (const eh of sess.workout_exercise_history ?? []) {
         const exId = eh.exercise_id;
-        if (byExercise[exId] != null) continue; // already got newest
-        const sets = eh.workout_set_history ?? [];
-        if (!sets.length) continue;
+        if (byExercise[exId] != null) continue;
 
-        // choose goal type for this exercise if exists
         const g = exerciseGoals.find((x) => String(x.exercises?.id) === exId);
         if (!g) continue;
+
+        const sets = eh.workout_set_history ?? [];
+        if (!sets.length) continue;
 
         let rawVal = 0;
         switch (g.type) {
@@ -409,31 +392,23 @@ export default function PlanHistoryViewScreen() {
           ? `${Math.round(actual)}s / ${Math.round(target)}s`
           : `${actual} / ${target}`;
 
-      return {
-        id: g.id,
-        name,
-        type: g.type,
-        progress,
-        label,
-      };
+      return { id: g.id, name, type: g.type, progress, label };
     });
-  }, [goals, planSessions]);
+  }, [goals, timeSessions]);
 
   useEffect(() => {
     if (!userId || !planId) return;
-
     let cancelled = false;
 
     async function load() {
       setLoading(true);
       try {
-        // reset screen-specific state every load
         if (!cancelled) {
           setWorkoutsWithExercises([]);
           setStats(null);
         }
 
-        // 0) check if user currently has an active plan (new plan already started)
+        // active plan exists now?
         const { data: activeNow, error: activeErr } = await supabase
           .from("plans")
           .select("id")
@@ -444,7 +419,7 @@ export default function PlanHistoryViewScreen() {
 
         if (!cancelled) setHasActivePlanNow(!!activeNow && !activeErr);
 
-        // 1) plan
+        // plan
         const { data: planData, error: pErr } = await supabase
           .from("plans")
           .select(
@@ -459,16 +434,6 @@ export default function PlanHistoryViewScreen() {
 
         const p = planData as any as PlanRow | null;
         setPlan(p);
-
-        console.log("[PlanHistory] plan", {
-          id: p?.id,
-          title: p?.title,
-          start_date: p?.start_date,
-          end_date: p?.end_date,
-          completed_at: p?.completed_at,
-          is_completed: p?.is_completed,
-          weekly_target_sessions: p?.weekly_target_sessions,
-        });
 
         if (!p?.id) {
           if (!cancelled) {
@@ -503,27 +468,14 @@ export default function PlanHistoryViewScreen() {
           p?.is_completed === false || (p?.completed_at == null && p != null);
 
         const visiblePw = isPlanActive
-          ? pwRows.filter((r) => !r.is_archived) // active plan: hide archived
-          : pwRows; // completed plan: include everything
-
+          ? pwRows.filter((r) => !r.is_archived)
+          : pwRows;
         setPlanWorkouts(visiblePw);
-
-        const workoutTitleById: Record<string, string> = {};
-        visiblePw.forEach((w) => {
-          workoutTitleById[w.workout_id] = String(w.title ?? "Workout");
-        });
 
         const workoutIds = visiblePw.map((r) => r.workout_id).filter(Boolean);
         const plannedWorkouts = workoutIds.length;
 
-        console.log("[PlanHistory] pw visibility", {
-          isPlanActive,
-          total: pwRows.length,
-          visible: visiblePw.length,
-          workoutIds,
-        });
-
-        // read weekly goal fallback if needed
+        // weekly goal fallback
         const { data: prof } = await supabase
           .from("profiles")
           .select("weekly_workout_goal")
@@ -537,36 +489,13 @@ export default function PlanHistoryViewScreen() {
             ? Number(prof.weekly_workout_goal)
             : 3;
 
-        // plan boundaries
-        const lower = p.start_date ?? null;
-        // For active plans, allow up to "now" so sessions load even if end_date is in the future
-        const upperExclusive = (() => {
-          if (p.completed_at) return null; // we’ll use lte with completed_at timestamp
-          if (p.is_completed && p.end_date) {
-            const d = new Date(p.end_date + "T00:00:00.000Z");
-            d.setUTCDate(d.getUTCDate() + 1); // next day
-            return d.toISOString(); // use .lt()
-          }
-          return null;
-        })();
-
-        const start = lower ?? "1970-01-01";
+        // time bounds
+        const start = p.start_date ?? "1970-01-01";
         const endTs = p.completed_at
           ? p.completed_at
-          : upperExclusive
-          ? upperExclusive
           : new Date().toISOString();
 
-        console.log("[PlanHistory] bounds", {
-          lower,
-          completed_at: p.completed_at,
-          end_date: p.end_date,
-          is_completed: p.is_completed,
-          upperExclusive,
-          now: new Date().toISOString(),
-        });
-
-        // 2) goals linked to this plan
+        // goals
         const { data: gData, error: gErr } = await supabase
           .from("goals")
           .select(
@@ -577,10 +506,7 @@ export default function PlanHistoryViewScreen() {
           .order("created_at", { ascending: true })
           .limit(24);
 
-        if (gErr) {
-          // not fatal; still show workouts etc
-          console.warn("goals load error:", gErr);
-        }
+        if (gErr) console.warn("goals load error:", gErr);
 
         if (!cancelled) {
           setGoals(
@@ -601,23 +527,22 @@ export default function PlanHistoryViewScreen() {
           );
         }
 
-        // 3) sessions with nested set data
+        // sessions (plan-only)
         let planSessRows: SessionRow[] = [];
-
         if (workoutIds.length) {
-          let qPlan = supabase
+          const { data: sData, error: sErr } = await supabase
             .from("workout_history")
             .select(
               `
-    id,
-    workout_id,
-    completed_at,
-    duration_seconds,
-    workout_exercise_history(
-      exercise_id,
-      workout_set_history(reps, weight, time_seconds, distance)
-    )
-  `
+              id,
+              workout_id,
+              completed_at,
+              duration_seconds,
+              workout_exercise_history(
+                exercise_id,
+                workout_set_history(reps, weight, time_seconds, distance)
+              )
+            `
             )
             .eq("user_id", userId)
             .in("workout_id", workoutIds)
@@ -625,28 +550,26 @@ export default function PlanHistoryViewScreen() {
             .lte("completed_at", endTs)
             .order("completed_at", { ascending: true });
 
-          const { data: sData, error: sErr } = await qPlan;
           if (sErr) throw sErr;
-
           planSessRows = Array.isArray(sData) ? mapSessions(sData) : [];
         }
 
+        // sessions (timeSessions: all workouts in time range)
         let timeSessRows: SessionRow[] = [];
-
         {
           const { data: tData, error: tErr } = await supabase
             .from("workout_history")
             .select(
               `
-    id,
-    workout_id,
-    completed_at,
-    duration_seconds,
-    workout_exercise_history(
-      exercise_id,
-      workout_set_history(reps, weight, time_seconds, distance)
-    )
-  `
+              id,
+              workout_id,
+              completed_at,
+              duration_seconds,
+              workout_exercise_history(
+                exercise_id,
+                workout_set_history(reps, weight, time_seconds, distance)
+              )
+            `
             )
             .eq("user_id", userId)
             .gte("completed_at", start)
@@ -654,7 +577,6 @@ export default function PlanHistoryViewScreen() {
             .order("completed_at", { ascending: true });
 
           if (tErr) throw tErr;
-
           timeSessRows = Array.isArray(tData) ? mapSessions(tData) : [];
         }
 
@@ -690,8 +612,7 @@ export default function PlanHistoryViewScreen() {
           setTimeSessions(timeSessRows);
         }
 
-        // 3b) For ACTIVE plan: also fetch workout -> exercises to show list
-        // (we do this for completed too, but you mainly asked for active)
+        // workout -> exercises (for active list)
         if (workoutIds.length) {
           const { data: wData, error: wErr } = await supabase
             .from("workouts")
@@ -732,7 +653,6 @@ export default function PlanHistoryViewScreen() {
               };
             });
 
-            // Keep same order as plan_workouts
             const orderIndex: Record<string, number> = {};
             workoutIds.forEach((id, idx) => (orderIndex[id] = idx));
             mapped.sort(
@@ -743,14 +663,11 @@ export default function PlanHistoryViewScreen() {
           }
         }
 
-        // 4) compute stats (still useful for completed; lightweight for active)
+        // stats (completed view)
         const sessionsCompleted = planSessRows.length;
 
-        // sessions planned = weeks * workoutsPerWeek (only meaningful if end_date exists)
-        const startForWeeks = p.start_date ?? lower ?? "1970-01-01";
-        const endForWeeks = (p.end_date ??
-          (p.is_completed ? upperExclusive : null)) as string | null;
-
+        const startForWeeks = p.start_date ?? start;
+        const endForWeeks = p.end_date ?? p.completed_at ?? null;
         const weeks =
           startForWeeks && endForWeeks
             ? weeksCeilInclusive(startForWeeks, endForWeeks)
@@ -766,7 +683,6 @@ export default function PlanHistoryViewScreen() {
             ? clamp01(sessionsCompleted / sessionsPlanned)
             : 0;
 
-        // unique workouts hit
         let uniqueWorkoutsHit = 0;
         if (workoutIds.length) {
           const { data: uniq } = await supabase
@@ -774,8 +690,8 @@ export default function PlanHistoryViewScreen() {
             .select("workout_id")
             .eq("user_id", userId)
             .in("workout_id", workoutIds)
-            .gte("completed_at", lower ?? "1970-01-01")
-            .lte("completed_at", upperExclusive);
+            .gte("completed_at", start)
+            .lte("completed_at", endTs);
 
           if (Array.isArray(uniq)) {
             const set = new Set(uniq.map((r: any) => String(r.workout_id)));
@@ -790,17 +706,11 @@ export default function PlanHistoryViewScreen() {
         let totalVolume = 0;
         let totalTimeSeconds = 0;
 
-        const volumeByExercise: Record<string, number> = {};
-
-        const firstBestWeightByExercise: Record<string, number> = {};
-        const lastBestWeightByExercise: Record<string, number> = {};
-
         const setsByExercise: Record<string, number> = {};
         const bestSetByExercise: Record<
           string,
           { weight: number; reps: number; completed_at: string }
         > = {};
-
         const firstBestSetByExercise: Record<
           string,
           { weight: number; reps: number; completed_at: string }
@@ -820,7 +730,6 @@ export default function PlanHistoryViewScreen() {
 
             sets.forEach((s) => {
               totalSets += 1;
-
               const reps = Number(s.reps ?? 0);
               const weight = Number(s.weight ?? 0);
 
@@ -832,7 +741,6 @@ export default function PlanHistoryViewScreen() {
 
               setsByExercise[exId] = (setsByExercise[exId] ?? 0) + 1;
 
-              // best set per exercise across plan (by weight)
               const existing = bestSetByExercise[exId];
               if (!existing || weight > existing.weight) {
                 bestSetByExercise[exId] = {
@@ -843,7 +751,6 @@ export default function PlanHistoryViewScreen() {
               }
             });
 
-            // first "best set we saw for this exercise" (uses the best set in this session)
             if (firstBestSetByExercise[exId] == null && sets.length) {
               let bestW = 0;
               let bestR = 0;
@@ -868,23 +775,10 @@ export default function PlanHistoryViewScreen() {
           }
         });
 
-        // Best single set across all exercises (force correct typing)
-        type BestByExercise = {
-          weight: number;
-          reps: number;
-          completed_at: string;
-        };
-
-        const entries = Object.entries(bestSetByExercise) as Array<
-          [string, BestByExercise]
-        >;
-
+        // Best set across all exercises
         let bestSet: BestSet | null = null;
-
-        for (const [exId, br] of entries) {
-          const currentBest = bestSet ? bestSet.weight : -1;
-
-          if (!bestSet || br.weight > currentBest) {
+        for (const [exId, br] of Object.entries(bestSetByExercise)) {
+          if (!bestSet || br.weight > bestSet.weight) {
             bestSet = {
               exerciseId: exId,
               weight: br.weight,
@@ -896,32 +790,9 @@ export default function PlanHistoryViewScreen() {
           }
         }
 
-        // Top exercise by volume
-        let topExerciseId: string | null = null;
-        let topVol = 0;
-        Object.entries(volumeByExercise).forEach(([exId, vol]) => {
-          if (vol > topVol) {
-            topVol = vol;
-            topExerciseId = exId;
-          }
-        });
-
-        // Most improved by best weight delta
-        let bestDelta = 0;
-        let bestDeltaExerciseId: string | null = null;
-        Object.keys(lastBestWeightByExercise).forEach((exId) => {
-          const a = Number(firstBestWeightByExercise[exId] ?? 0);
-          const b = Number(lastBestWeightByExercise[exId] ?? 0);
-          const delta = b - a;
-          if (delta > bestDelta) {
-            bestDelta = delta;
-            bestDeltaExerciseId = exId;
-          }
-        });
-
+        // Top exercise by sets
         let topExerciseSetsId: string | null = null;
         let topSets = 0;
-
         Object.entries(setsByExercise).forEach(([exId, c]) => {
           if (c > topSets) {
             topSets = c;
@@ -929,32 +800,30 @@ export default function PlanHistoryViewScreen() {
           }
         });
 
+        // Most improved by weight %
         let bestPct = 0;
         let bestImprovedId: string | null = null;
-
         Object.keys(bestSetByExercise).forEach((exId) => {
           const from = firstBestSetByExercise[exId];
           const to = bestSetByExercise[exId];
           if (!from || !to) return;
-
           const denom = Math.max(1, from.weight);
           const pct = (to.weight - from.weight) / denom;
-
           if (pct > bestPct && to.weight > from.weight) {
             bestPct = pct;
             bestImprovedId = exId;
           }
         });
 
-        // Resolve names for only the IDs we need
+        // Resolve names we need
         const needIds: string[] = [];
         if (bestSet) needIds.push(bestSet.exerciseId);
         if (topExerciseSetsId) needIds.push(topExerciseSetsId);
         if (bestImprovedId) needIds.push(bestImprovedId);
 
         const uniqueNeedIds = Array.from(new Set(needIds));
+        const nameById: Record<string, string> = {};
 
-        let nameById: Record<string, string> = {};
         if (uniqueNeedIds.length) {
           const { data: exData } = await supabase
             .from("exercises")
@@ -988,14 +857,18 @@ export default function PlanHistoryViewScreen() {
               }
             : null;
 
+        // Workout consistency most/least
+        const workoutTitleById: Record<string, string> = {};
+        visiblePw.forEach((w) => {
+          workoutTitleById[w.workout_id] = String(w.title ?? "Workout");
+        });
+
         const workoutCounts: Record<string, number> = {};
         planSessRows.forEach((s) => {
           const wid = s.workout_id;
           if (!wid) return;
           workoutCounts[wid] = (workoutCounts[wid] ?? 0) + 1;
         });
-
-        // ensure we consider workouts that were in plan but maybe never completed
         workoutIds.forEach((wid) => {
           if (workoutCounts[wid] == null) workoutCounts[wid] = 0;
         });
@@ -1004,7 +877,6 @@ export default function PlanHistoryViewScreen() {
           null;
         let least: { workoutId: string; title: string; count: number } | null =
           null;
-
         Object.entries(workoutCounts).forEach(([wid, count]) => {
           const title = workoutTitleById[wid] ?? "Workout";
           if (!most || count > most.count)
@@ -1033,7 +905,7 @@ export default function PlanHistoryViewScreen() {
           .sort((a, b) => a.localeCompare(b))
           .map((wk) => ({ week: wk, count: weeklyCounts[wk] }));
 
-        // Goal summaries (completed-plan section)
+        // Goal summaries (completed view)
         const goalSummaries: Stats["goalSummaries"] = [];
         const exerciseGoals = (gData ?? [])
           .filter((g: any) => g?.exercises?.id)
@@ -1172,716 +1044,801 @@ export default function PlanHistoryViewScreen() {
         if (!cancelled) setLoading(false);
       }
     }
+
     load();
     return () => {
       cancelled = true;
     };
   }, [userId, planId]);
 
+  // --- Weekly completion state for ACTIVE plan ---
+  // If you already have a backend signal, swap this condition to use it.
+  const weeklyTarget = Number(plan?.weekly_target_sessions ?? 0);
+  const sessionsThisWeek = useMemo(() => {
+    // Count plan sessions in current (Sunday-start) week.
+    // (Keeps behaviour consistent with your weekStartKeySunday helper.)
+    const now = new Date();
+    const todayIso = now.toISOString();
+    const wk = weekStartKeySunday(todayIso);
+
+    let count = 0;
+    for (const s of planSessions) {
+      if (weekStartKeySunday(s.completed_at) === wk) count += 1;
+    }
+    return count;
+  }, [planSessions]);
+
+  const weekCompleteActive =
+    isActivePlan && weeklyTarget > 0 && sessionsThisWeek >= weeklyTarget;
+
+  const planProgressPct = useMemo(() => {
+    // Lightweight overall progress for the header ring in both states:
+    // sessions completed vs sessions planned (fallback).
+    const denom = Math.max(1, stats?.sessionsPlanned ?? 0);
+    const pct = (stats?.sessionsCompleted ?? planSessions.length) / denom;
+    return clamp01(pct) * 100;
+  }, [stats, planSessions.length]);
+
+  function pickGoalExtremes(goals: Stats["goalSummaries"] | null | undefined): {
+    closest: Stats["goalSummaries"][number] | null;
+    furthest: Stats["goalSummaries"][number] | null;
+  } {
+    const list = (goals ?? []).filter((g) => Number.isFinite(g.progress));
+    if (!list.length) return { closest: null, furthest: null };
+
+    const sorted = [...list].sort((a, b) => b.progress - a.progress);
+    return {
+      closest: sorted[0] ?? null,
+      furthest: sorted[sorted.length - 1] ?? null,
+    };
+  }
+
+  function suggestGoalTweakLabel(goal: Stats["goalSummaries"][number] | null) {
+    if (!goal) return null;
+
+    const p = clamp01(goal.progress);
+    // Heuristic: if they’re close, bump next target; if far, shrink the jump.
+    if (p >= 0.85) {
+      if (goal.type === "exercise_weight") return "Next target: +2.5–5 kg";
+      if (goal.type === "exercise_reps") return "Next target: +1–2 reps";
+      if (goal.type === "distance") return "Next target: +0.5–1.0 km";
+      if (goal.type === "time") return "Next target: +30–60s";
+      return "Next target: small increase";
+    }
+
+    if (p <= 0.35) {
+      if (goal.type === "exercise_weight")
+        return "Tip: smaller jump (+1–2.5 kg)";
+      if (goal.type === "exercise_reps") return "Tip: smaller jump (+1 rep)";
+      if (goal.type === "distance") return "Tip: build in smaller steps";
+      if (goal.type === "time") return "Tip: build in smaller steps";
+      return "Tip: reduce the jump";
+    }
+
+    return "Keep pushing — steady progress";
+  }
+
+  const personalisedInsights = useMemo(() => {
+    if (!stats) return null;
+
+    // ---- A (3): verdict + keep + fix ----
+    const completed = stats.sessionsCompleted ?? 0;
+    const planned = Math.max(1, stats.sessionsPlanned ?? 0);
+    const pct = clamp01(completed / planned);
+    const pctLabel = `${Math.round(pct * 100)}%`;
+
+    // Verdict copy — short and punchy
+    let verdictTitle = "Consistency";
+    let verdictBody = `${completed}/${planned} sessions (${pctLabel})`;
+
+    if (pct >= 0.9)
+      verdictBody = `${completed}/${planned} sessions (${pctLabel}) — elite consistency`;
+    else if (pct >= 0.75)
+      verdictBody = `${completed}/${planned} sessions (${pctLabel}) — strong`;
+    else if (pct >= 0.5)
+      verdictBody = `${completed}/${planned} sessions (${pctLabel}) — decent, room to improve`;
+    else
+      verdictBody = `${completed}/${planned} sessions (${pctLabel}) — next plan should be easier to stick to`;
+
+    const keep =
+      stats.workoutCounts?.most && stats.workoutCounts.most.count > 0
+        ? `Keep: ${stats.workoutCounts.most.title} (${stats.workoutCounts.most.count}×)`
+        : null;
+
+    const fix = stats.workoutCounts?.least
+      ? `Fix: ${stats.workoutCounts.least.title} (${stats.workoutCounts.least.count}×) — shorten it or move it earlier in the week`
+      : null;
+
+    // ---- B (2): biggest session implication ----
+    const biggest =
+      stats.biggestSession && stats.biggestSession.volume > 0
+        ? {
+            title: `Biggest session: ${stats.biggestSession.title}`,
+            body: `${Math.round(
+              stats.biggestSession.volume
+            )} kg volume — this is where you pushed hardest, ensure this continues.`,
+          }
+        : null;
+
+    // ---- C (3): goal extremes + suggestion ----
+    const { closest, furthest } = pickGoalExtremes(stats.goalSummaries);
+    const closestLine = closest
+      ? `Closest goal: ${closest.name} (${Math.round(
+          clamp01(closest.progress) * 100
+        )}%)`
+      : null;
+
+    const furthestLine = furthest
+      ? `Furthest goal: ${furthest.name} (${Math.round(
+          clamp01(furthest.progress) * 100
+        )}%)`
+      : null;
+
+    const tweakLine = suggestGoalTweakLabel(closest ?? furthest);
+
+    // We’ll return three grouped “rows” so the UI can render cleanly.
+    return {
+      a: {
+        title: verdictTitle,
+        body: verdictBody,
+        keep,
+        fix,
+      },
+      b: biggest,
+      c: {
+        closestLine,
+        furthestLine,
+        tweakLine,
+      },
+    };
+  }, [stats]);
+
   return (
-    <SafeAreaView
-      style={{ flex: 1, backgroundColor: colors.background }}
-      edges={["top", "left", "right"]}
-    >
+    <Screen>
+      <ScreenHeader
+        title={isActivePlan ? "Active plan" : "Plan history"}
+        showBack={true}
+      />
+
       <ScrollView
-        style={{ flex: 1, backgroundColor: colors.background }}
         contentContainerStyle={{
-          paddingTop: 10,
-          paddingHorizontal: 16,
-          paddingBottom: 32,
-          gap: 12,
+          paddingHorizontal: layout.space.md,
+          paddingBottom: layout.space.xl,
+          gap: layout.space.md,
         }}
       >
-        {/* Header: back left + centered title */}
-        <View style={styles.topBar}>
-          <Pressable
-            onPress={() => router.back()}
-            style={styles.backBtn}
-            hitSlop={12}
-          >
-            <Text style={styles.backIcon}>←</Text>
-          </Pressable>
-
-          <Text style={styles.heading} numberOfLines={1}>
-            {isActivePlan ? "Active plan" : "Plan history"}
-          </Text>
-
-          {/* right spacer so title stays centered */}
-          <View style={styles.rightSpacer} />
-        </View>
-
-        <SectionCard>
+        <Card>
           {loading ? (
-            <View style={{ paddingVertical: 14 }}>
+            <View
+              style={{ paddingVertical: layout.space.md, alignItems: "center" }}
+            >
               <ActivityIndicator />
             </View>
           ) : !plan ? (
-            <Text style={styles.subtle}>Plan not found.</Text>
+            <Text style={styles.muted}>Plan not found.</Text>
           ) : (
-            <View style={{ gap: 10 }}>
-              <View style={styles.titleRow}>
-                <Text style={styles.title}>{plan.title ?? "Plan"}</Text>
-                <View
-                  style={[
-                    styles.statusPill,
-                    isActivePlan
-                      ? styles.statusPillActive
-                      : styles.statusPillDone,
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.statusText,
-                      isActivePlan
-                        ? styles.statusTextActive
-                        : styles.statusTextDone,
-                    ]}
-                  >
-                    {isActivePlan ? "Active" : "Completed"}
+            <View style={{ gap: layout.space.sm }}>
+              {/* Title + status */}
+              <View style={styles.headerRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.title} numberOfLines={2}>
+                    {plan.title ?? "Plan"}
                   </Text>
+
+                  <Text style={styles.muted}>
+                    {plan.start_date ?? "—"} → {plan.end_date ?? "—"}
+                  </Text>
+
+                  {!isActivePlan ? (
+                    <Text style={styles.muted}>
+                      Completed: {formatLongDate(plan.completed_at)}
+                    </Text>
+                  ) : null}
+                </View>
+
+                <View style={{ alignItems: "flex-end", gap: layout.space.xs }}>
+                  <MiniRing valuePct={planProgressPct} size={44} stroke={6} />
                 </View>
               </View>
 
-              <Text style={styles.subtle}>
-                {plan.start_date ?? "—"} → {plan.end_date ?? "—"}
-              </Text>
-
-              {!isActivePlan && (
-                <Text style={styles.subtle}>
-                  Completed: {formatLongDate(plan.completed_at)}
-                </Text>
-              )}
-
-              {/* ACTIVE PLAN VIEW */}
-              {isActivePlan ? (
-                <View style={{ gap: 12 }}>
-                  <View style={styles.infoBox}>
-                    <Text style={styles.infoTitle}>Where you’re at</Text>
-                    <Text style={styles.subtle}>
-                      Keep logging sessions — this screen will become the full
-                      plan breakdown once the plan is completed.
-                    </Text>
-
-                    <View style={{ marginTop: 10, gap: 6 }}>
-                      <Text style={styles.kpiLine}>
-                        Workouts in plan:{" "}
-                        <Text style={styles.kpiStrong}>
-                          {planWorkouts.length}
-                        </Text>
-                      </Text>
-                      <Text style={styles.kpiLine}>
-                        Sessions logged so far:{" "}
-                        <Text style={styles.kpiStrong}>
-                          {planSessions.length}
-                        </Text>
-                      </Text>
-                    </View>
-                  </View>
-
-                  {/* Active goals */}
-                  <View style={styles.sectionBox}>
-                    <Text style={styles.sectionTitle}>Goals</Text>
-
-                    {activeGoalSummaries.length ? (
-                      <View style={{ gap: 10 }}>
-                        {activeGoalSummaries.map((g) => (
-                          <View key={g.id} style={styles.goalRow}>
-                            <View style={{ flex: 1 }}>
-                              <Text style={styles.goalName} numberOfLines={1}>
-                                {g.name}
-                              </Text>
-                              <Text style={styles.subtle}>{g.label}</Text>
-                            </View>
-                            <View style={styles.goalPill}>
-                              <Text style={styles.goalPillText}>
-                                {Math.round(clamp01(g.progress) * 100)}%
-                              </Text>
-                            </View>
-                          </View>
-                        ))}
-                      </View>
-                    ) : (
-                      <Text style={styles.subtle}>
-                        No goals added to this plan yet.
-                      </Text>
-                    )}
-                  </View>
-
-                  {/* Workouts + exercises + last set */}
-                  <View style={styles.sectionBox}>
-                    <Text style={styles.sectionTitle}>Workouts</Text>
-
-                    {workoutsWithExercises.length ? (
-                      <View style={{ gap: 12 }}>
-                        {workoutsWithExercises.map((w) => (
-                          <View key={w.id} style={styles.workoutBlock}>
-                            <Text style={styles.workoutTitle} numberOfLines={1}>
-                              {w.title}
-                            </Text>
-
-                            {w.exercises.length ? (
-                              <View style={{ gap: 8 }}>
-                                {w.exercises.map((ex) => {
-                                  const last = lastSetByExercise[ex.id];
-                                  return (
-                                    <View
-                                      key={ex.id}
-                                      style={styles.exerciseRow}
-                                    >
-                                      <View style={{ flex: 1 }}>
-                                        <Text
-                                          style={styles.exerciseName}
-                                          numberOfLines={1}
-                                        >
-                                          {ex.name}
-                                        </Text>
-                                        <Text
-                                          style={styles.subtle}
-                                          numberOfLines={1}
-                                        >
-                                          Last set:{" "}
-                                          <Text style={styles.strong}>
-                                            {formatLastSet(last?.set)}
-                                          </Text>
-                                          {last?.completed_at
-                                            ? ` · ${formatLongDate(
-                                                last.completed_at
-                                              )}`
-                                            : ""}
-                                        </Text>
-                                      </View>
-                                    </View>
-                                  );
-                                })}
-                              </View>
-                            ) : (
-                              <Text style={styles.subtle}>
-                                No exercises in this workout yet.
-                              </Text>
-                            )}
-                          </View>
-                        ))}
-                      </View>
-                    ) : (
-                      <Text style={styles.subtle}>
-                        No workouts found for this plan.
-                      </Text>
-                    )}
-                  </View>
+              {/* ACTIVE PLAN — week complete message */}
+              {weekCompleteActive ? (
+                <View style={styles.restBox}>
+                  <Text style={styles.restTitle}>
+                    You’ve completed your workouts for the week
+                  </Text>
+                  <Text style={styles.muted}>
+                    Time to rest and recover — come back fresh for the next
+                    week.
+                  </Text>
                 </View>
-              ) : (
-                /* COMPLETED PLAN VIEW */
-                <View style={{ gap: 12 }}>
-                  {/* KPI row: sessions planned/completed/missed */}
-                  <View style={styles.kpiGrid}>
-                    <View style={styles.kpiCard}>
-                      <Text style={styles.kpiLabel}>Sessions planned</Text>
-                      <Text style={styles.kpiValue}>
-                        {stats?.sessionsPlanned ?? 0}
-                      </Text>
-                    </View>
-
-                    <View style={styles.kpiCard}>
-                      <Text style={styles.kpiLabel}>Sessions completed</Text>
-                      <Text style={styles.kpiValue}>
-                        {stats?.sessionsCompleted ?? 0}
-                      </Text>
-                    </View>
-                  </View>
-
-                  <View style={styles.kpiGrid}>
-                    <View style={styles.kpiCard}>
-                      <Text style={styles.kpiLabel}>Sessions missed</Text>
-                      <Text style={styles.kpiValue}>
-                        {stats?.sessionsMissed ?? 0}
-                      </Text>
-                    </View>
-
-                    <View style={styles.kpiCard}>
-                      <Text style={styles.kpiLabel}>Consistency</Text>
-                      <Text style={styles.kpiValue}>
-                        {Math.round((stats?.consistencyPct ?? 0) * 100)}%
-                      </Text>
-                    </View>
-                  </View>
-
-                  {showStartNewPlanCta && (
-                    <View style={styles.ctaWrap}>
-                      <Animated.View
-                        style={{ transform: [{ scale: ctaScale }] }}
-                      >
-                        <Pressable
-                          onPress={() =>
-                            router.push("/features/plans/create/planInfo")
-                          }
-                          onPressIn={pressIn}
-                          onPressOut={pressOut}
-                          style={styles.startPlanCtaBig}
-                        >
-                          <Text style={styles.startPlanCtaBigText}>
-                            Start a new plan →
-                          </Text>
-                        </Pressable>
-                      </Animated.View>
-                    </View>
-                  )}
-
-                  {/* “You improved most in…” 3-card section */}
-                  <View style={styles.sectionBox}>
-                    <Text style={styles.sectionTitle}>
-                      You improved most in
-                    </Text>
-
-                    <View style={styles.improvedStack}>
-                      <View style={styles.improvedRowCard}>
-                        <Text style={styles.improvedLabel}>Strength</Text>
-                        <Text style={styles.improvedValue} numberOfLines={2}>
-                          {stats?.mostImproved?.name ?? "—"}
-                        </Text>
-                        <Text style={styles.subtle}>
-                          {stats?.mostImproved?.from && stats?.mostImproved?.to
-                            ? `${Math.round(
-                                stats.mostImproved.from.weight
-                              )} × ${Math.round(
-                                stats.mostImproved.from.reps
-                              )} → ${Math.round(
-                                stats.mostImproved.to.weight
-                              )} × ${Math.round(
-                                stats.mostImproved.to.reps
-                              )} (+${Math.round(
-                                (stats.mostImproved.pct ?? 0) * 100
-                              )}%)`
-                            : "No improvement data yet."}
-                        </Text>
-                      </View>
-
-                      <View style={styles.improvedRowCard}>
-                        <Text style={styles.improvedLabel}>Consistency</Text>
-                        <Text style={styles.improvedValue}>
-                          {Math.round((stats?.consistencyPct ?? 0) * 100)}%
-                        </Text>
-                        <Text style={styles.subtle}>
-                          {stats?.sessionsCompleted ?? 0} /{" "}
-                          {stats?.sessionsPlanned ?? 0} sessions
-                        </Text>
-                        <Text style={styles.subtle}>
-                          Most:{" "}
-                          <Text style={styles.strong}>
-                            {stats?.workoutCounts?.most
-                              ? `${stats.workoutCounts.most.title} (${stats.workoutCounts.most.count})`
-                              : "—"}
-                          </Text>
-                        </Text>
-                        <Text style={styles.subtle}>
-                          Least:{" "}
-                          <Text style={styles.strong}>
-                            {stats?.workoutCounts?.least
-                              ? `${stats.workoutCounts.least.title} (${stats.workoutCounts.least.count})`
-                              : "—"}
-                          </Text>
-                        </Text>
-                      </View>
-
-                      <View style={styles.improvedRowCard}>
-                        <Text style={styles.improvedLabel}>Volume</Text>
-                        <Text style={styles.improvedValue}>
-                          {stats
-                            ? `${Math.round(stats.totalVolume)} kg`
-                            : "0 kg"}
-                        </Text>
-                        <Text style={styles.subtle}>
-                          Avg{" "}
-                          {stats
-                            ? `${Math.round(stats.avgVolumePerSession)} kg`
-                            : "0 kg"}{" "}
-                          / session
-                        </Text>
-                        <Text style={styles.subtle}>
-                          Biggest session:{" "}
-                          <Text style={styles.strong}>
-                            {stats?.biggestSession
-                              ? `${stats.biggestSession.title} · ${Math.round(
-                                  stats.biggestSession.volume
-                                )} kg`
-                              : "—"}
-                          </Text>
-                        </Text>
-                      </View>
-                    </View>
-                  </View>
-
-                  {/* Totals */}
-                  <View style={styles.kpiGrid}>
-                    <View style={styles.kpiCard}>
-                      <Text style={styles.kpiLabel}>Total volume</Text>
-                      <Text style={styles.kpiValue}>
-                        {Math.round(stats?.totalVolume ?? 0)} kg
-                      </Text>
-                    </View>
-
-                    <View style={styles.kpiCard}>
-                      <Text style={styles.kpiLabel}>Total time</Text>
-                      <Text style={styles.kpiValue}>
-                        {secondsToHhMm(stats?.totalTimeSeconds ?? 0)}
-                      </Text>
-                    </View>
-                  </View>
-
-                  <View style={styles.kpiGrid}>
-                    <View style={styles.kpiCard}>
-                      <Text style={styles.kpiLabel}>Total sets</Text>
-                      <Text style={styles.kpiValue}>
-                        {stats?.totalSets ?? 0}
-                      </Text>
-                    </View>
-
-                    <View style={styles.kpiCard}>
-                      <Text style={styles.kpiLabel}>Total reps</Text>
-                      <Text style={styles.kpiValue}>
-                        {stats?.totalReps ?? 0}
-                      </Text>
-                    </View>
-                  </View>
-
-                  {/* Weekly consistency chart */}
-                  <View style={styles.sectionBox}>
-                    <Text style={styles.sectionTitle}>Weekly consistency</Text>
-                    {stats?.weeklySessions?.length ? (
-                      <View
-                        onLayout={(e) =>
-                          setChartWidth(e.nativeEvent.layout.width)
-                        }
-                        style={{ width: "100%" }}
-                      >
-                        {chartWidth > 0 && (
-                          <MiniBarChart
-                            width={chartWidth}
-                            values={stats.weeklySessions.map((w) => w.count)}
-                            fill={colors.primaryText ?? colors.text}
-                          />
-                        )}
-
-                        <Text style={styles.subtle}>
-                          {stats.weeklySessions.length} training week
-                          {stats.weeklySessions.length === 1 ? "" : "s"} logged
-                          during this plan.
-                        </Text>
-                      </View>
-                    ) : (
-                      <Text style={styles.subtle}>No sessions recorded.</Text>
-                    )}
-                  </View>
-
-                  {/* Goals mini */}
-                  <View style={styles.sectionBox}>
-                    <Text style={styles.sectionTitle}>Goal progress</Text>
-
-                    {stats?.goalSummaries?.length ? (
-                      <View style={{ gap: 10 }}>
-                        {stats.goalSummaries.map((g) => (
-                          <View key={g.id} style={styles.goalRow}>
-                            <View style={{ flex: 1 }}>
-                              <Text style={styles.goalName} numberOfLines={1}>
-                                {g.name}
-                              </Text>
-                              <Text style={styles.subtle}>{g.label}</Text>
-                            </View>
-                            <View style={styles.goalPill}>
-                              <Text style={styles.goalPillText}>
-                                {Math.round(clamp01(g.progress) * 100)}%
-                              </Text>
-                            </View>
-                          </View>
-                        ))}
-                      </View>
-                    ) : (
-                      <Text style={styles.subtle}>
-                        No plan goals found for this plan.
-                      </Text>
-                    )}
-                  </View>
-                </View>
-              )}
+              ) : null}
             </View>
           )}
-        </SectionCard>
+        </Card>
 
-        {/* Next step should NOT show on active plan */}
-        {!isActivePlan && !loading && !!plan && (
-          <SectionCard>
-            <View style={{ gap: 6 }}>
-              <Text style={styles.sectionTitle}>Next step</Text>
-              <Text style={styles.subtle}>
-                Next we can add: PRs hit during plan, exercise-by-exercise
-                progression graphs, and a proper “plan score” plus
-                recommendations for your next plan.
-              </Text>
-            </View>
-          </SectionCard>
-        )}
+        {/* ACTIVE PLAN VIEW */}
+        {!loading && plan && isActivePlan ? (
+          <>
+            <Card>
+              <View style={{ gap: layout.space.sm }}>
+                <Text style={styles.sectionLabel}>Where you’re at</Text>
+                <Text style={styles.muted}>
+                  Keep logging sessions — this screen becomes the full breakdown
+                  once the plan is completed.
+                </Text>
+
+                <View
+                  style={{
+                    flexDirection: "row",
+                    gap: layout.space.sm,
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <Pill
+                    label={`Workouts: ${planWorkouts.length}`}
+                    tone="neutral"
+                  />
+                  <Pill
+                    label={`Sessions logged: ${planSessions.length}`}
+                    tone="neutral"
+                  />
+                  {weeklyTarget > 0 ? (
+                    <Pill
+                      label={`This week: ${sessionsThisWeek}/${weeklyTarget}`}
+                      tone={weekCompleteActive ? "success" : "neutral"}
+                    />
+                  ) : null}
+                </View>
+              </View>
+            </Card>
+
+            <Card>
+              <View style={{ gap: layout.space.sm }}>
+                <Text style={styles.sectionLabel}>Goals</Text>
+
+                {activeGoalSummaries.length ? (
+                  <View style={{ gap: layout.space.sm }}>
+                    {activeGoalSummaries.map((g) => (
+                      <View key={g.id} style={styles.row}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.rowTitle} numberOfLines={1}>
+                            {g.name}
+                          </Text>
+                          <Text style={styles.muted}>{g.label}</Text>
+                        </View>
+                        <Pill
+                          label={`${Math.round(clamp01(g.progress) * 100)}%`}
+                          tone="neutral"
+                        />
+                      </View>
+                    ))}
+                  </View>
+                ) : (
+                  <Text style={styles.muted}>
+                    No goals added to this plan yet.
+                  </Text>
+                )}
+              </View>
+            </Card>
+
+            <Card>
+              <View style={{ gap: layout.space.sm }}>
+                <Text style={styles.sectionLabel}>Workouts</Text>
+
+                {workoutsWithExercises.length ? (
+                  <View style={{ gap: layout.space.md }}>
+                    {workoutsWithExercises.map((w) => (
+                      <View key={w.id} style={styles.block}>
+                        <Text style={styles.headerRow} numberOfLines={1}>
+                          {w.title}
+                        </Text>
+
+                        {w.exercises.length ? (
+                          <View style={{ gap: layout.space.sm }}>
+                            {w.exercises.map((ex) => {
+                              const last = lastSetByExercise[ex.id];
+                              return (
+                                <View key={ex.id} style={styles.row}>
+                                  <View style={{ flex: 1 }}>
+                                    <Text
+                                      style={styles.rowTitle}
+                                      numberOfLines={1}
+                                    >
+                                      {ex.name}
+                                    </Text>
+                                    <Text
+                                      style={styles.muted}
+                                      numberOfLines={1}
+                                    >
+                                      Last set:{" "}
+                                      <Text style={styles.strong}>
+                                        {formatLastSet(last?.set)}
+                                      </Text>
+                                      {last?.completed_at
+                                        ? ` · ${formatLongDate(
+                                            last.completed_at
+                                          )}`
+                                        : ""}
+                                    </Text>
+                                  </View>
+                                </View>
+                              );
+                            })}
+                          </View>
+                        ) : (
+                          <Text style={styles.muted}>
+                            No exercises in this workout yet.
+                          </Text>
+                        )}
+                      </View>
+                    ))}
+                  </View>
+                ) : (
+                  <Text style={styles.muted}>
+                    No workouts found for this plan.
+                  </Text>
+                )}
+              </View>
+            </Card>
+
+            {/* Optional: if weekCompleteActive, hide the “start next” CTA elsewhere in your app */}
+          </>
+        ) : null}
+
+        {/* COMPLETED PLAN VIEW */}
+        {!loading && plan && !isActivePlan ? (
+          <>
+            <Card>
+              <View style={{ gap: layout.space.md }}>
+                <Text style={styles.sectionLabel}>Overview</Text>
+
+                <View style={{ flexDirection: "row", gap: layout.space.sm }}>
+                  <View style={styles.kpi}>
+                    <Text style={styles.kpiLabel}>Planned</Text>
+                    <Text style={styles.kpiValue}>
+                      {stats?.sessionsPlanned ?? 0}
+                    </Text>
+                  </View>
+                  <View style={styles.kpi}>
+                    <Text style={styles.kpiLabel}>Completed</Text>
+                    <Text style={styles.kpiValue}>
+                      {stats?.sessionsCompleted ?? 0}
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={{ flexDirection: "row", gap: layout.space.sm }}>
+                  <View style={styles.kpi}>
+                    <Text style={styles.kpiLabel}>Missed</Text>
+                    <Text style={styles.kpiValue}>
+                      {stats?.sessionsMissed ?? 0}
+                    </Text>
+                  </View>
+                  <View style={styles.kpi}>
+                    <Text style={styles.kpiLabel}>Consistency</Text>
+                    <Text style={styles.kpiValue}>
+                      {Math.round((stats?.consistencyPct ?? 0) * 100)}%
+                    </Text>
+                  </View>
+                </View>
+
+                {showStartNewPlanCta ? (
+                  <View style={{ alignItems: "center" }}>
+                    <Animated.View
+                      style={{
+                        transform: [{ scale: ctaScale }],
+                        width: "100%",
+                      }}
+                    >
+                      <Pressable
+                        onPress={() =>
+                          router.push("/features/plans/create/planInfo")
+                        }
+                        onPressIn={pressIn}
+                        onPressOut={pressOut}
+                        style={styles.primaryCta}
+                      >
+                        <Text style={styles.primaryCtaText}>
+                          Start a new plan
+                        </Text>
+                      </Pressable>
+                    </Animated.View>
+                  </View>
+                ) : null}
+              </View>
+            </Card>
+
+            <Card>
+              <View style={{ gap: layout.space.sm }}>
+                <Text style={styles.sectionLabel}>You improved most in</Text>
+
+                <View style={styles.block}>
+                  <Text style={styles.kpiLabel}>Strength</Text>
+                  <Text style={styles.bigValue} numberOfLines={2}>
+                    {stats?.mostImproved?.name ?? "—"}
+                  </Text>
+                  <Text style={styles.muted}>
+                    {stats?.mostImproved?.from && stats?.mostImproved?.to
+                      ? `${Math.round(
+                          stats.mostImproved.from.weight
+                        )} × ${Math.round(
+                          stats.mostImproved.from.reps
+                        )} → ${Math.round(
+                          stats.mostImproved.to.weight
+                        )} × ${Math.round(
+                          stats.mostImproved.to.reps
+                        )} (+${Math.round(
+                          (stats.mostImproved.pct ?? 0) * 100
+                        )}%)`
+                      : "No improvement data yet."}
+                  </Text>
+                </View>
+
+                <View style={styles.block}>
+                  <Text style={styles.kpiLabel}>Consistency</Text>
+                  <Text style={styles.bigValue}>
+                    {Math.round((stats?.consistencyPct ?? 0) * 100)}%
+                  </Text>
+                  <Text style={styles.muted}>
+                    {stats?.sessionsCompleted ?? 0} /{" "}
+                    {stats?.sessionsPlanned ?? 0} sessions
+                  </Text>
+                  <Text style={styles.muted}>
+                    Most:{" "}
+                    <Text style={styles.strong}>
+                      {stats?.workoutCounts?.most
+                        ? `${stats.workoutCounts.most.title} (${stats.workoutCounts.most.count})`
+                        : "—"}
+                    </Text>
+                  </Text>
+                  <Text style={styles.muted}>
+                    Least:{" "}
+                    <Text style={styles.strong}>
+                      {stats?.workoutCounts?.least
+                        ? `${stats.workoutCounts.least.title} (${stats.workoutCounts.least.count})`
+                        : "—"}
+                    </Text>
+                  </Text>
+                </View>
+
+                <View style={styles.block}>
+                  <Text style={styles.kpiLabel}>Volume</Text>
+                  <Text style={styles.bigValue}>
+                    {stats ? `${Math.round(stats.totalVolume)} kg` : "0 kg"}
+                  </Text>
+                  <Text style={styles.muted}>
+                    Avg{" "}
+                    {stats
+                      ? `${Math.round(stats.avgVolumePerSession)} kg`
+                      : "0 kg"}{" "}
+                    / session
+                  </Text>
+                  <Text style={styles.muted}>
+                    Biggest session:{" "}
+                    <Text style={styles.strong}>
+                      {stats?.biggestSession
+                        ? `${stats.biggestSession.title} · ${Math.round(
+                            stats.biggestSession.volume
+                          )} kg`
+                        : "—"}
+                    </Text>
+                  </Text>
+                </View>
+              </View>
+            </Card>
+
+            <Card>
+              <View style={{ gap: layout.space.md }}>
+                <Text style={styles.sectionLabel}>Totals</Text>
+
+                <View style={{ flexDirection: "row", gap: layout.space.sm }}>
+                  <View style={styles.kpi}>
+                    <Text style={styles.kpiLabel}>Total volume</Text>
+                    <Text style={styles.kpiValue}>
+                      {Math.round(stats?.totalVolume ?? 0)} kg
+                    </Text>
+                  </View>
+                  <View style={styles.kpi}>
+                    <Text style={styles.kpiLabel}>Total time</Text>
+                    <Text style={styles.kpiValue}>
+                      {secondsToHhMm(stats?.totalTimeSeconds ?? 0)}
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={{ flexDirection: "row", gap: layout.space.sm }}>
+                  <View style={styles.kpi}>
+                    <Text style={styles.kpiLabel}>Total sets</Text>
+                    <Text style={styles.kpiValue}>{stats?.totalSets ?? 0}</Text>
+                  </View>
+                  <View style={styles.kpi}>
+                    <Text style={styles.kpiLabel}>Total reps</Text>
+                    <Text style={styles.kpiValue}>{stats?.totalReps ?? 0}</Text>
+                  </View>
+                </View>
+              </View>
+            </Card>
+
+            <Card>
+              <View style={{ gap: layout.space.sm }}>
+                <Text style={styles.sectionLabel}>Weekly consistency</Text>
+
+                {stats?.weeklySessions?.length ? (
+                  <View
+                    onLayout={(e) => setChartWidth(e.nativeEvent.layout.width)}
+                    style={{ width: "100%" }}
+                  >
+                    {chartWidth > 0 ? (
+                      <MiniBarChart
+                        width={chartWidth}
+                        values={stats.weeklySessions.map((w) => w.count)}
+                        fill={colors.text ?? colors.text}
+                      />
+                    ) : null}
+
+                    <Text style={styles.muted}>
+                      {stats.weeklySessions.length} training week
+                      {stats.weeklySessions.length === 1 ? "" : "s"} logged
+                      during this plan.
+                    </Text>
+                  </View>
+                ) : (
+                  <Text style={styles.muted}>No sessions recorded.</Text>
+                )}
+              </View>
+            </Card>
+
+            <Card>
+              <View style={{ gap: layout.space.sm }}>
+                <Text style={styles.sectionLabel}>Goal progress</Text>
+
+                {stats?.goalSummaries?.length ? (
+                  <View style={{ gap: layout.space.sm }}>
+                    {stats.goalSummaries.map((g) => (
+                      <View key={g.id} style={styles.row}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.rowTitle} numberOfLines={1}>
+                            {g.name}
+                          </Text>
+                          <Text style={styles.muted}>{g.label}</Text>
+                        </View>
+                        <Pill
+                          label={`${Math.round(clamp01(g.progress) * 100)}%`}
+                          tone="neutral"
+                        />
+                      </View>
+                    ))}
+                  </View>
+                ) : (
+                  <Text style={styles.muted}>
+                    No plan goals found for this plan.
+                  </Text>
+                )}
+              </View>
+            </Card>
+
+            <Card>
+              <View style={{ gap: layout.space.sm }}>
+                <Text style={styles.sectionLabel}>Personalised insights</Text>
+
+                {!personalisedInsights ? (
+                  <Text style={styles.muted}>No insights available yet.</Text>
+                ) : (
+                  <View style={{ gap: layout.space.sm }}>
+                    {/* A (3): Consistency verdict + Keep + Fix */}
+                    <View style={styles.block}>
+                      <Text style={styles.rowTitle}>Consistency</Text>
+                      <Text style={styles.muted}>
+                        {personalisedInsights.a.body}
+                      </Text>
+
+                      {personalisedInsights.a.keep ? (
+                        <Text style={styles.muted}>
+                          <Text style={styles.strong}>
+                            {personalisedInsights.a.keep}
+                          </Text>
+                        </Text>
+                      ) : null}
+
+                      {personalisedInsights.a.fix ? (
+                        <Text style={styles.muted}>
+                          <Text style={styles.strong}>
+                            {personalisedInsights.a.fix}
+                          </Text>
+                        </Text>
+                      ) : null}
+                    </View>
+
+                    {/* B (2): Biggest session + implication */}
+                    {personalisedInsights.b ? (
+                      <View style={styles.block}>
+                        <Text style={styles.rowTitle}>
+                          {personalisedInsights.b.title}
+                        </Text>
+                        <Text style={styles.muted}>
+                          {personalisedInsights.b.body}
+                        </Text>
+                      </View>
+                    ) : null}
+
+                    {/* C (3): Closest + Furthest + Suggested tweak */}
+                    <View style={styles.block}>
+                      <Text style={styles.rowTitle}>Goals</Text>
+
+                      {personalisedInsights.c.closestLine ? (
+                        <Text style={styles.muted}>
+                          <Text style={styles.strong}>
+                            {personalisedInsights.c.closestLine}
+                          </Text>
+                        </Text>
+                      ) : (
+                        <Text style={styles.muted}>
+                          No goals were tracked in this plan.
+                        </Text>
+                      )}
+
+                      {personalisedInsights.c.furthestLine &&
+                      personalisedInsights.c.furthestLine !==
+                        personalisedInsights.c.closestLine ? (
+                        <Text style={styles.muted}>
+                          {personalisedInsights.c.furthestLine}
+                        </Text>
+                      ) : null}
+
+                      {personalisedInsights.c.tweakLine ? (
+                        <View style={{ marginTop: 4 }}>
+                          <Pill
+                            label={personalisedInsights.c.tweakLine}
+                            tone="neutral"
+                          />
+                        </View>
+                      ) : null}
+                    </View>
+
+                    {/* Optional CTA (only when you already show it elsewhere, keep it minimal) */}
+                    {showStartNewPlanCta ? (
+                      <View style={{ marginTop: 2 }}>
+                        <Text style={styles.muted}>
+                          Use these insights to make your next plan easier to
+                          stick to.
+                        </Text>
+                      </View>
+                    ) : null}
+                  </View>
+                )}
+              </View>
+            </Card>
+          </>
+        ) : null}
       </ScrollView>
-    </SafeAreaView>
+    </Screen>
   );
 }
 
-const makeStyles = (colors: any) =>
+const makeStyles = (colors: any, typography: any, layout: any) =>
   StyleSheet.create({
-    topBar: {
+    headerRow: {
       flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "space-between",
-      minHeight: 40,
-    },
-
-    backBtn: {
-      width: 44,
-      height: 40,
+      gap: layout.space.md,
       alignItems: "flex-start",
-      justifyContent: "center",
-    },
-    backIcon: {
-      fontSize: 22,
-      fontWeight: "900",
-      color: colors.text,
-    },
-
-    rightSpacer: {
-      width: 44,
-      height: 40,
-    },
-
-    heading: {
-      fontSize: 18,
-      fontWeight: "800",
-      color: colors.text,
-      textAlign: "center",
-      flex: 1,
-    },
-
-    startPlanCta: {
-      alignSelf: "flex-start",
-      paddingHorizontal: 12,
-      paddingVertical: 8,
-      borderRadius: 999,
-      backgroundColor: colors.primaryBg ?? colors.card,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: colors.border,
-    },
-    startPlanCtaText: {
-      fontSize: 12,
-      fontWeight: "900",
-      color: colors.text,
-    },
-
-    titleRow: {
-      flexDirection: "row",
-      alignItems: "center",
       justifyContent: "space-between",
-      gap: 10,
     },
 
     title: {
-      fontSize: 16,
-      fontWeight: "900",
+      fontFamily: typography.fontFamily.bold,
+      fontSize: typography.size.h2,
+      lineHeight: typography.lineHeight.h2,
       color: colors.text,
-      flex: 1,
+      letterSpacing: -0.2,
     },
 
-    subtle: {
-      color: colors.subtle,
-      fontSize: 13,
-      lineHeight: 18,
+    sectionLabel: {
+      fontFamily: typography.fontFamily.semibold,
+      fontSize: 12,
+      letterSpacing: 0.8,
+      color: colors.textMuted,
+      textTransform: "uppercase",
+    },
+
+    muted: {
+      fontFamily: typography.fontFamily.medium,
+      fontSize: typography.size.sub,
+      lineHeight: typography.lineHeight.sub,
+      color: colors.textMuted,
     },
 
     strong: {
       color: colors.text,
-      fontWeight: "900",
+      fontFamily: typography.fontFamily.semibold,
     },
 
-    statusPill: {
-      paddingHorizontal: 10,
-      paddingVertical: 5,
-      borderRadius: 999,
+    restBox: {
+      marginTop: layout.space.sm,
+      padding: layout.space.md,
+      borderRadius: layout.radius.lg,
+      backgroundColor: colors.surface,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.border,
-    },
-    statusText: {
-      fontSize: 11,
-      fontWeight: "900",
-    },
-    statusPillActive: {
-      backgroundColor: "rgba(59,130,246,0.12)",
-    },
-    statusTextActive: {
-      color: colors.primary ?? "#3b82f6",
-    },
-    statusPillDone: {
-      backgroundColor: colors.successBg ?? "rgba(34,197,94,0.12)",
-    },
-    statusTextDone: {
-      color: colors.successText ?? "#16a34a",
-    },
-
-    kpiGrid: {
-      flexDirection: "row",
-      gap: 10,
-    },
-    kpiCard: {
-      flex: 1,
-      borderRadius: 12,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: colors.border,
-      backgroundColor: colors.surface ?? colors.card,
-      padding: 10,
       gap: 6,
     },
+
+    restTitle: {
+      fontFamily: typography.fontFamily.semibold,
+      fontSize: typography.size.body,
+      lineHeight: typography.lineHeight.body,
+      color: colors.text,
+    },
+
+    kpi: {
+      flex: 1,
+      borderRadius: layout.radius.lg,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+      padding: layout.space.md,
+      gap: 6,
+    },
+
     kpiLabel: {
-      fontSize: 12,
-      fontWeight: "700",
-      color: colors.subtle,
+      fontFamily: typography.fontFamily.medium,
+      fontSize: typography.size.sub,
+      lineHeight: typography.lineHeight.sub,
+      color: colors.textMuted,
     },
+
     kpiValue: {
-      fontSize: 18,
-      fontWeight: "900",
+      fontFamily: typography.fontFamily.bold,
+      fontSize: typography.size.h2,
+      lineHeight: typography.lineHeight.h2,
       color: colors.text,
-    },
-    kpiLine: {
-      fontSize: 13,
-      color: colors.subtle,
-    },
-    kpiStrong: {
-      color: colors.text,
-      fontWeight: "900",
+      letterSpacing: -0.2,
     },
 
-    sectionBox: {
-      borderRadius: 12,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: colors.border,
-      backgroundColor: colors.surface ?? colors.card,
-      padding: 12,
-      gap: 10,
-    },
-    sectionTitle: {
-      fontSize: 13,
-      fontWeight: "900",
+    bigValue: {
+      fontFamily: typography.fontFamily.bold,
+      fontSize: typography.size.h2,
+      lineHeight: typography.lineHeight.h2,
       color: colors.text,
     },
 
-    improvedRow: {
-      flexDirection: "row",
-      gap: 10,
-    },
-    improvedCard: {
-      flex: 1,
-      borderRadius: 12,
+    block: {
+      borderRadius: layout.radius.lg,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.border,
-      backgroundColor: colors.surface ?? colors.card,
-      padding: 10,
+      backgroundColor: colors.surface,
+      padding: layout.space.md,
       gap: 6,
     },
-    improvedLabel: {
-      fontSize: 12,
-      fontWeight: "800",
-      color: colors.subtle,
-    },
-    improvedValue: {
-      fontSize: 18,
-      fontWeight: "900",
-      color: colors.text,
-    },
 
-    goalRow: {
+    row: {
       flexDirection: "row",
       alignItems: "center",
-      gap: 10,
+      gap: layout.space.sm,
     },
-    goalName: {
-      fontSize: 13,
-      fontWeight: "800",
-      color: colors.text,
-    },
-    goalPill: {
-      paddingHorizontal: 10,
-      paddingVertical: 6,
-      borderRadius: 999,
-      backgroundColor: colors.primaryBg ?? "rgba(59,130,246,0.10)",
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: colors.border,
-    },
-    goalPillText: {
-      fontSize: 12,
-      fontWeight: "900",
+
+    rowTitle: {
+      fontFamily: typography.fontFamily.semibold,
+      fontSize: typography.size.body,
+      lineHeight: typography.lineHeight.body,
       color: colors.text,
     },
 
-    infoBox: {
-      marginTop: 2,
-      padding: 12,
-      borderRadius: 12,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: colors.border,
-      backgroundColor: colors.surface ?? colors.card,
-      gap: 6,
-    },
-    infoTitle: {
-      fontSize: 13,
-      fontWeight: "900",
-      color: colors.text,
-    },
-
-    workoutBlock: {
-      borderRadius: 12,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: colors.border,
-      backgroundColor: colors.surface ?? colors.card,
-      padding: 10,
-      gap: 10,
-    },
-    workoutTitle: {
-      fontSize: 13,
-      fontWeight: "900",
-      color: colors.text,
-    },
-    exerciseRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 10,
-    },
-    exerciseName: {
-      fontSize: 13,
-      fontWeight: "800",
-      color: colors.text,
-    },
-
-    ctaWrap: { alignItems: "center" },
-
-    startPlanCtaBig: {
+    primaryCta: {
       width: "100%",
-      maxWidth: 360,
       paddingVertical: 14,
-      paddingHorizontal: 18,
-      borderRadius: 16,
+      borderRadius: layout.radius.xl,
       alignItems: "center",
       justifyContent: "center",
       backgroundColor: colors.primaryBg ?? colors.card,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.border,
     },
-    startPlanCtaBigText: {
-      fontSize: 14,
-      fontWeight: "900",
-      color: colors.text,
-    },
 
-    improvedStack: { gap: 10 },
-    improvedRowCard: {
-      borderRadius: 12,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: colors.border,
-      backgroundColor: colors.surface ?? colors.card,
-      padding: 12,
-      gap: 6,
+    primaryCtaText: {
+      fontFamily: typography.fontFamily.bold,
+      fontSize: typography.size.body,
+      lineHeight: typography.lineHeight.body,
+      color: colors.text,
     },
   });

@@ -24,7 +24,7 @@ import { OptionalSessionsSection } from "../sections/OptionalSessionsSection";
 const ROUTES = {
   workoutPreview: "/features/workouts/screens/WorkoutOverview",
   workoutUse: "/features/workouts/screens/WorkoutOverview",
-  planView: "/features/workouts/screens/WorkoutOverview",
+  planView: "/features/plans/history/view",
   planEdit: "/features/workouts/screens/WorkoutOverview",
   planCreate: "/features/workouts/screens/WorkoutOverview",
 } as const;

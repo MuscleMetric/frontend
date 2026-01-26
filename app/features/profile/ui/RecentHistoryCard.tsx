@@ -77,7 +77,7 @@ export default function RecentHistoryCard({ data }: { data: ProfileOverview }) {
     [colors, typography, layout]
   );
 
-  const goAll = () => router.push("/features/workouts/history");
+  const goAll = () => router.push("/features/history/screens/WorkoutHistoryListScreen");
 
   return (
     <Card>
@@ -122,7 +122,7 @@ export default function RecentHistoryCard({ data }: { data: ProfileOverview }) {
                   rightText={rightTop}
                   onPress={() =>
                     router.push({
-                      pathname: "/features/workouts/review",
+                      pathname: "/features/history/screens/WorkoutHistoryDetailScreen",
                       params: { workoutHistoryId: r.workout_history_id },
                     })
                   }

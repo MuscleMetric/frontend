@@ -93,7 +93,7 @@ export default function RecentPlansCard({ data }: { data: ProfileOverview }) {
             <Button
               variant="secondary"
               title="View all plans"
-              onPress={() => router.push("/features/plans/history")}
+              onPress={() => router.push("/features/plans/history/all")}
             />
           </View>
         </>
