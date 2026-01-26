@@ -79,20 +79,23 @@ export function HeroCard({ card, summary }: { card: any; summary?: any }) {
   let showCover = true;
   let coverHeight = 170;
 
-  // 🟩 Week complete (celebratory, calm)
+  // 🟩 Week complete (celebratory, premium, single-CTA)
   if (weekComplete) {
-    heroTitle = "You nailed this week";
-    heroSubtitle = "Weekly target complete. Fancy a bonus session?";
+    heroTitle = "Week complete";
+    heroSubtitle = "Nice work — you hit your weekly target.";
     heroPrimary = {
-      label: "Log a Bonus Workout",
+      label: "Log a bonus session",
       cta: { action: "open_workouts_tab" },
     };
-    heroSecondary = {
-      label: "View Workouts",
-      cta: { action: "open_workouts_tab" },
-    };
+
+    // ✅ remove the messy double CTA (and it was duplicate anyway)
+    heroSecondary = null;
+
     heroBadge = "COMPLETED";
-    showCover = false;
+
+    // ✅ keep hero feeling (use WorkoutCover instead of text-only)
+    showCover = true;
+    coverHeight = 170;
   }
 
   // 🟦 New user with NO workouts
@@ -142,7 +145,7 @@ export function HeroCard({ card, summary }: { card: any; summary?: any }) {
     <Card variant="pressable" onPress={onPrimary} style={styles.card}>
       <View style={{ gap: layout.space.sm }}>
         {/* ---------------------------------
-         * COVER (most states)
+         * COVER (all states now, incl weekComplete)
          * --------------------------------- */}
         {showCover ? (
           <WorkoutCover
@@ -156,7 +159,7 @@ export function HeroCard({ card, summary }: { card: any; summary?: any }) {
           />
         ) : (
           <>
-            {/* Week complete text-only premium layout */}
+            {/* (no longer used for weekComplete, kept for compatibility) */}
             <View style={styles.titleRow}>
               <Text style={styles.title} numberOfLines={2}>
                 {heroTitle}
