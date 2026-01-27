@@ -1,6 +1,6 @@
 // app/features/workouts/create/index.tsx
 import React, { useCallback, useMemo, useState } from "react";
-import { View, Text, Alert } from "react-native";
+import { View, Text, Alert, ScrollView } from "react-native";
 import { useLocalSearchParams, router } from "expo-router";
 
 import { supabase } from "../../../../lib/supabase";
@@ -18,9 +18,16 @@ import WorkoutNotesCard from "./ui/WorkoutNotesCard";
 import ExerciseList from "./ui/ExerciseList";
 import EmptyExercisesState from "./ui/EmptyExercisesState";
 
-import { AddExercisesSheet, ExerciseNoteSheet, DiscardChangesSheet } from "./modals";
+import {
+  AddExercisesSheet,
+  ExerciseNoteSheet,
+  DiscardChangesSheet,
+  SupersetSheet,
+} from "./modals";
 
-type RouteParams = { draftId?: string };
+type RouteParams = {
+  draftId?: string;
+};
 
 export default function CreateWorkoutScreen() {
   const { draftId } = useLocalSearchParams<RouteParams>();
@@ -34,24 +41,38 @@ export default function CreateWorkoutScreen() {
     setTitle,
     setNote,
     addExercises,
+
+    // IMPORTANT: these now operate on exerciseKey (not exerciseId)
     removeExercise,
-    reorderExercises,
     toggleFavourite,
     setExerciseNote,
+
+    // NEW: you said you’re adding these into state
+    toggleDropset,
+    setSupersetGroup,
+
     markSavedNow,
-  } = useWorkoutDraft(String(draftId ?? "create_workout"));
+  } = useWorkoutDraft(String(draftId ?? "create_workout")) as any;
 
   const [saving, setSaving] = useState(false);
 
   // modals
   const [addOpen, setAddOpen] = useState(false);
+
   const [noteOpen, setNoteOpen] = useState(false);
-  const [noteExerciseId, setNoteExerciseId] = useState<string | null>(null);
+  const [noteExerciseKey, setNoteExerciseKey] = useState<string | null>(null);
+
+  const [supersetOpen, setSupersetOpen] = useState(false);
+  const [supersetExerciseKey, setSupersetExerciseKey] = useState<string | null>(
+    null
+  );
+
   const [discardOpen, setDiscardOpen] = useState(false);
 
   const isDirty = useMemo(() => {
-    const current = snapshotHash(draft as any);
+    const current = snapshotHash(draft);
     const saved =
+      (draft as any).lastSavedSnapshotHash ??
       (draft as any).savedSnapshotHash ??
       (draft as any).snapshot_hash ??
       (draft as any).snapshotHash ??
@@ -61,10 +82,10 @@ export default function CreateWorkoutScreen() {
   }, [draft]);
 
   const canSave = useMemo(() => {
-    const hasTitle = String((draft as any).title ?? "").trim().length > 0;
-    const hasExercises = Array.isArray((draft as any).exercises) && (draft as any).exercises.length > 0;
+    const hasTitle = String(draft.title ?? "").trim().length > 0;
+    const hasExercises = (draft.exercises ?? []).length > 0;
     return hasTitle && hasExercises && !saving;
-  }, [draft, saving]);
+  }, [draft.title, draft.exercises, saving]);
 
   const onBack = useCallback(() => {
     if (isDirty) setDiscardOpen(true);
@@ -76,27 +97,23 @@ export default function CreateWorkoutScreen() {
     router.back();
   }, []);
 
-  const openExerciseNote = useCallback((exerciseId: string) => {
-    setNoteExerciseId(exerciseId);
+  // --- helpers to locate the draft row by key ---
+  const findByKey = useCallback(
+    (exerciseKey: string) =>
+      (draft.exercises ?? []).find((x: any) => String(x.key) === exerciseKey) ??
+      null,
+    [draft.exercises]
+  );
+
+  const openExerciseNote = useCallback((exerciseKey: string) => {
+    setNoteExerciseKey(exerciseKey);
     setNoteOpen(true);
   }, []);
 
-  const noteExerciseName = useMemo(() => {
-    if (!noteExerciseId) return "";
-    const it = (draft as any).exercises?.find((x: any) => String(x.exerciseId) === String(noteExerciseId));
-    return String(it?.name ?? "Exercise");
-  }, [draft, noteExerciseId]);
-
-  const noteInitial = useMemo(() => {
-    if (!noteExerciseId) return "";
-    const it = (draft as any).exercises?.find((x: any) => String(x.exerciseId) === String(noteExerciseId));
-    return String(it?.note ?? "");
-  }, [draft, noteExerciseId]);
-
-  const selectedIds = useMemo(
-    () => ((draft as any).exercises ?? []).map((x: any) => String(x.exerciseId)),
-    [draft]
-  );
+  const openSuperset = useCallback((exerciseKey: string) => {
+    setSupersetExerciseKey(exerciseKey);
+    setSupersetOpen(true);
+  }, []);
 
   const saveWorkout = useCallback(
     async (mode: "save" | "save_start") => {
@@ -105,13 +122,13 @@ export default function CreateWorkoutScreen() {
         return;
       }
 
-      const title = String((draft as any).title ?? "").trim();
+      const title = String(draft.title ?? "").trim();
       if (!title) {
         Alert.alert("Workout name required", "Give your workout a name.");
         return;
       }
 
-      const exercises = Array.isArray((draft as any).exercises) ? (draft as any).exercises : [];
+      const exercises = Array.isArray(draft.exercises) ? draft.exercises : [];
       if (!exercises.length) {
         Alert.alert("Add exercises", "Add at least one exercise.");
         return;
@@ -119,7 +136,7 @@ export default function CreateWorkoutScreen() {
 
       setSaving(true);
       try {
-        const notes = String((draft as any).note ?? "").trim();
+        const notes = String(draft.note ?? "").trim();
 
         const { data: wIns, error: wErr } = await supabase
           .from("workouts")
@@ -141,9 +158,19 @@ export default function CreateWorkoutScreen() {
           order_index: idx,
           note: ex.note ? String(ex.note) : null,
           is_favourite: !!ex.isFavourite,
+
+          // NEW: carry these through now so your future save RPC can use them
+          is_dropset: !!ex.isDropset,
+          superset_group: ex.supersetGroup ? String(ex.supersetGroup) : null,
+          superset_index:
+            ex.supersetIndex === 0 || ex.supersetIndex
+              ? Number(ex.supersetIndex)
+              : null,
         }));
 
-        const { error: weErr } = await supabase.from("workout_exercises").insert(rows);
+        const { error: weErr } = await supabase
+          .from("workout_exercises")
+          .insert(rows);
         if (weErr) throw weErr;
 
         markSavedNow();
@@ -166,28 +193,56 @@ export default function CreateWorkoutScreen() {
     [userId, draft, markSavedNow]
   );
 
+  // IMPORTANT: selection should be based on exerciseId (for picker), but draft actions use key
+  const selectedExerciseIds = useMemo(
+    () => (draft.exercises ?? []).map((x: any) => String(x.exerciseId)),
+    [draft.exercises]
+  );
+
+  // For SupersetSheet label + current group
+  const supersetRow = useMemo(() => {
+    if (!supersetExerciseKey) return null;
+    return findByKey(supersetExerciseKey);
+  }, [supersetExerciseKey, findByKey]);
+
+  // For Note sheet label + initial note
+  const noteRow = useMemo(() => {
+    if (!noteExerciseKey) return null;
+    return findByKey(noteExerciseKey);
+  }, [noteExerciseKey, findByKey]);
+
   return (
     <Screen>
-      {/* IMPORTANT: wire back handler */}
+      {/* If your ScreenHeader supports onBack, wire it. If not, keep showBack={true}. */}
       <ScreenHeader title="Create workout" showBack={true} />
 
-      <View
-        style={{
+      {/* Whole screen scrolls */}
+      <ScrollView
+        style={{ flex: 1, backgroundColor: colors.bg }}
+        contentContainerStyle={{
           paddingHorizontal: layout.space.md,
-          paddingBottom: layout.space.xl,
+          paddingTop: layout.space.md,
+          paddingBottom: layout.space.xxl,
           gap: layout.space.md,
-          flex: 1,
-          backgroundColor: colors.bg,
         }}
+        keyboardShouldPersistTaps="handled"
       >
+        {/* Top */}
         <Card>
           <View style={{ gap: layout.space.md }}>
             <CreateWorkoutHeader />
-            <WorkoutNameInput value={String((draft as any).title ?? "")} onChange={setTitle} />
-            <WorkoutNotesCard value={String((draft as any).note ?? "")} onChange={setNote} />
+            <WorkoutNameInput
+              value={String(draft.title ?? "")}
+              onChange={setTitle}
+            />
+            <WorkoutNotesCard
+              value={String(draft.note ?? "")}
+              onChange={setNote}
+            />
           </View>
         </Card>
 
+        {/* Exercises */}
         <Card>
           <View style={{ gap: layout.space.sm }}>
             <View
@@ -209,19 +264,27 @@ export default function CreateWorkoutScreen() {
               </Text>
 
               <Text style={{ color: colors.textMuted, fontSize: 12 }}>
-                {((draft as any).exercises ?? []).length}
+                {(draft.exercises ?? []).length}
               </Text>
             </View>
 
-            {((draft as any).exercises ?? []).length ? (
+            {(draft.exercises ?? []).length ? (
               <ExerciseList
-                items={(draft as any).exercises}
+                items={draft.exercises as any}
                 onAdd={() => setAddOpen(true)}
-                onRemove={(exerciseId) => removeExercise(exerciseId)}
-                onToggleFavourite={(exerciseId) => toggleFavourite(exerciseId)}
-                onOpenNote={(exerciseId) => openExerciseNote(exerciseId)}
-                // drag handle wiring comes later when you add DnD library
-                renderDragHandle={undefined}
+                onRemove={(exerciseKey: string) => removeExercise(exerciseKey)}
+                onToggleFavourite={(exerciseKey: string) =>
+                  toggleFavourite(exerciseKey)
+                }
+                onToggleDropset={(exerciseKey: string) =>
+                  toggleDropset?.(exerciseKey)
+                }
+                onOpenSuperset={(exerciseKey: string) =>
+                  openSuperset(exerciseKey)
+                }
+                onOpenNote={(exerciseKey: string) =>
+                  openExerciseNote(exerciseKey)
+                }
               />
             ) : (
               <EmptyExercisesState onAdd={() => setAddOpen(true)} />
@@ -229,7 +292,8 @@ export default function CreateWorkoutScreen() {
           </View>
         </Card>
 
-        <View style={{ gap: layout.space.sm, marginTop: "auto" }}>
+        {/* Actions */}
+        <View style={{ gap: layout.space.sm }}>
           <Button
             title={saving ? "Saving..." : "Save & start"}
             onPress={() => saveWorkout("save_start")}
@@ -242,61 +306,55 @@ export default function CreateWorkoutScreen() {
             variant="secondary"
           />
         </View>
-      </View>
+      </ScrollView>
 
       {/* Modals */}
       <AddExercisesSheet
         visible={addOpen}
         userId={String(userId ?? "")}
-        selectedIds={selectedIds}
+        selectedIds={selectedExerciseIds}
         onClose={() => setAddOpen(false)}
-        onDone={(nextSelectedIds: string[]) => {
-          // Add only the newly selected exercises.
-          // NOTE: We only have IDs here. Either:
-          // 1) adjust AddExercisesSheet to return {id,name} objects, OR
-          // 2) fetch names by IDs here.
-          //
-          // Quick fix: fetch names by ids from `exercises` table.
-          (async () => {
-            const next = new Set(nextSelectedIds);
-            const prev = new Set(selectedIds);
-            const added = Array.from(next).filter((id) => !prev.has(id));
-
-            if (!added.length) return;
-
-            const { data, error } = await supabase
-              .from("exercises")
-              .select("id, name")
-              .in("id", added);
-
-            if (error) {
-              console.warn("load names for added exercises error:", error);
-              return;
-            }
-
-            const items = (data ?? []).map((r: any) => ({
-              exerciseId: String(r.id),
-              name: String(r.name ?? "Exercise"),
-            }));
-
-            addExercises(items);
-          })().catch((e) => console.warn(e));
+        onDone={(pickedIds: string[]) => {
+          // IMPORTANT: ensure names are present.
+          // Your AddExercisesSheet already has items (ExerciseListItem) internally.
+          // Best pattern: change AddExercisesSheet to call onDone(items: {id,name}[]) instead.
+          // For now, keep backward-compatible: we’ll fill names lazily if missing.
+          addExercises(pickedIds.map((id) => ({ exerciseId: id, name: "" })));
+          setAddOpen(false);
         }}
+        enableMuscleFilter
+        enableEquipmentFilter
       />
 
       <ExerciseNoteSheet
         visible={noteOpen}
-        exerciseName={noteExerciseName}
-        initialNote={noteInitial}
+        exerciseName={String(noteRow?.name ?? "Exercise")}
+        initialNote={noteRow?.note ?? ""}
         onClose={() => {
           setNoteOpen(false);
-          setNoteExerciseId(null);
+          setNoteExerciseKey(null);
         }}
         onApply={(note: string) => {
-          if (!noteExerciseId) return;
-          setExerciseNote(noteExerciseId, note);
+          if (!noteExerciseKey) return;
+          setExerciseNote(noteExerciseKey, note);
           setNoteOpen(false);
-          setNoteExerciseId(null);
+          setNoteExerciseKey(null);
+        }}
+      />
+
+      <SupersetSheet
+        visible={supersetOpen}
+        exerciseName={String(supersetRow?.name ?? "Exercise")}
+        currentGroup={(supersetRow?.supersetGroup as any) ?? null}
+        onClose={() => {
+          setSupersetOpen(false);
+          setSupersetExerciseKey(null);
+        }}
+        onPickGroup={(group: string | null) => {
+          if (!supersetExerciseKey) return;
+          setSupersetGroup?.(supersetExerciseKey, group);
+          setSupersetOpen(false);
+          setSupersetExerciseKey(null);
         }}
       />
 

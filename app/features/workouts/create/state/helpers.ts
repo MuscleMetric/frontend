@@ -1,34 +1,32 @@
-import type { WorkoutDraft } from "./types";
-
-export function moveArrayItem<T>(arr: T[], from: number, to: number): T[] {
-  const next = arr.slice();
-  const item = next.splice(from, 1)[0];
-  next.splice(to, 0, item);
-  return next;
-}
-
-// If you want favourites to "bubble up" but still allow manual order:
-// - we DO NOT auto-sort; user controls order.
-// - This helper is only for "pin to top" behaviour (optional)
-export function moveToTop<T>(arr: T[], index: number): T[] {
-  return moveArrayItem(arr, index, 0);
-}
-
-// cheap hash for dirty check (good enough for local UI)
-export function snapshotHash(d: WorkoutDraft): string {
-  const core = {
-    title: d.title,
-    note: d.note ?? "",
-    exercises: d.exercises.map((e) => ({
-      id: e.exerciseId,
-      name: e.name,
-      fav: e.isFavourite ? 1 : 0,
-      note: e.note ?? "",
-    })),
-  };
-  return JSON.stringify(core);
-}
+// app/features/workouts/create/state/helpers.ts
 
 export function nowIso() {
   return new Date().toISOString();
+}
+
+function randKey() {
+  return `ex_${Math.random().toString(16).slice(2)}_${Date.now().toString(16)}`;
+}
+
+export function makeExerciseKey() {
+  return randKey();
+}
+
+export function normalizeTitle(input: string) {
+  // keep trailing spaces while typing, but collapse internal whitespace
+  return input.replace(/\s+/g, " ").trimStart();
+}
+
+export function normalizeNote(s: string) {
+  return s.trim();
+}
+
+// Stable-ish snapshot for dirty check.
+// IMPORTANT: This must include all fields you care about (including superset/dropset).
+export function snapshotHash(draft: any) {
+  // cheap stable stringify (enough for UI dirty checks)
+  const json = JSON.stringify(draft, Object.keys(draft).sort());
+  let h = 0;
+  for (let i = 0; i < json.length; i++) h = (h * 31 + json.charCodeAt(i)) >>> 0;
+  return String(h);
 }

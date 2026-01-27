@@ -1,3 +1,4 @@
+// app/features/workouts/create/state/actions.ts
 import type { WorkoutDraftExercise } from "./types";
 
 export type WorkoutDraftAction =
@@ -8,22 +9,17 @@ export type WorkoutDraftAction =
       type: "draft/addExercises";
       payload: { exercises: Array<{ exerciseId: string; name: string }>; nowIso: string };
     }
-  | { type: "draft/removeExercise"; payload: { exerciseId: string; nowIso: string } }
+  | { type: "draft/removeExercise"; payload: { exerciseKey: string; nowIso: string } }
   | { type: "draft/reorderExercises"; payload: { from: number; to: number; nowIso: string } }
-  | { type: "draft/toggleFavourite"; payload: { exerciseId: string; nowIso: string } }
-  | { type: "draft/setExerciseNote"; payload: { exerciseId: string; note: string; nowIso: string } }
+  | { type: "draft/toggleFavourite"; payload: { exerciseKey: string; nowIso: string } }
+  | { type: "draft/setExerciseNote"; payload: { exerciseKey: string; note: string; nowIso: string } }
+  | { type: "draft/toggleDropset"; payload: { exerciseKey: string; nowIso: string } }
+  | {
+      type: "draft/setSupersetGroup";
+      payload: { exerciseKey: string; group: string | null; nowIso: string };
+    }
+  | { type: "draft/clearSupersetGroup"; payload: { group: string; nowIso: string } }
   | { type: "draft/markSaved"; payload: { snapshotHash: string; nowIso: string } }
   | { type: "draft/reset"; payload: { draftId: string; nowIso: string } };
 
-export function normalizeNote(s: string) {
-  return s.trim();
-}
-
-export function makeDraftExercise(input: { exerciseId: string; name: string }): WorkoutDraftExercise {
-  return {
-    exerciseId: input.exerciseId,
-    name: input.name,
-    note: null,
-    isFavourite: false,
-  };
-}
+export type DraftExercise = WorkoutDraftExercise;

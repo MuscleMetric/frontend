@@ -1,3 +1,4 @@
+// app/features/workouts/create/ui/ExerciseList.tsx
 import React from "react";
 import { View, Text, StyleSheet, Pressable } from "react-native";
 import { useAppTheme } from "@/lib/useAppTheme";
@@ -5,26 +6,41 @@ import { Card } from "@/ui";
 import ExerciseRow from "./ExerciseRow";
 
 export type CreateExerciseItem = {
+  key: string; // IMPORTANT: stable UI key
   exerciseId: string;
   name: string;
   note: string | null;
+
   isFavourite: boolean;
+
+  // NEW
+  isDropset: boolean;
+  supersetGroup: string | null;
+  supersetIndex: number | null;
 };
 
 export default function ExerciseList({
   items,
   onAdd,
+
   onRemove,
   onToggleFavourite,
+  onToggleDropset,
+  onOpenSuperset,
   onOpenNote,
+
   renderDragHandle,
 }: {
   items: CreateExerciseItem[];
   onAdd: () => void;
-  onRemove: (exerciseId: string) => void;
-  onToggleFavourite: (exerciseId: string) => void;
-  onOpenNote: (exerciseId: string) => void;
-  renderDragHandle?: (exerciseId: string) => React.ReactNode;
+
+  onRemove: (exerciseKey: string) => void;
+  onToggleFavourite: (exerciseKey: string) => void;
+  onToggleDropset: (exerciseKey: string) => void;
+  onOpenSuperset: (exerciseKey: string) => void;
+  onOpenNote: (exerciseKey: string) => void;
+
+  renderDragHandle?: (exerciseKey: string) => React.ReactNode;
 }) {
   const { colors, typography, layout } = useAppTheme();
   const styles = makeStyles(colors, typography, layout);
@@ -45,16 +61,18 @@ export default function ExerciseList({
           <View>
             {items.map((it) => (
               <ExerciseRow
-                key={it.exerciseId}
+                key={it.key}
                 name={it.name}
                 notePreview={it.note}
                 isFavourite={it.isFavourite}
-                onToggleFavourite={() => onToggleFavourite(it.exerciseId)}
-                onOpenNote={() => onOpenNote(it.exerciseId)}
-                onRemove={() => onRemove(it.exerciseId)}
-                dragHandle={
-                  renderDragHandle ? renderDragHandle(it.exerciseId) : undefined
-                }
+                isDropset={it.isDropset}
+                supersetGroup={it.supersetGroup}
+                onToggleFavourite={() => onToggleFavourite(it.key)}
+                onToggleDropset={() => onToggleDropset(it.key)}
+                onOpenSuperset={() => onOpenSuperset(it.key)}
+                onOpenNote={() => onOpenNote(it.key)}
+                onRemove={() => onRemove(it.key)}
+                dragHandle={renderDragHandle ? renderDragHandle(it.key) : undefined}
               />
             ))}
           </View>

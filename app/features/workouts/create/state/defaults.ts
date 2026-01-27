@@ -1,30 +1,30 @@
-import type { WorkoutDraft, DraftExercise } from "./types";
+// app/features/workouts/create/state/defaults.ts
+import type { WorkoutDraft, WorkoutDraftExercise } from "./types";
+import { makeExerciseKey } from "./helpers";
 
-function randKey() {
-  // fast + stable enough for UI keys
-  return `ex_${Math.random().toString(16).slice(2)}_${Date.now().toString(16)}`;
-}
-
-export function makeExerciseKey() {
-  return randKey();
-}
-
-export function createEmptyDraft(): WorkoutDraft {
+export function initialDraft(draftId: string, nowIso: string): WorkoutDraft {
   return {
+    id: draftId,
     title: "",
     note: null,
-    isFavourite: false,
     exercises: [],
-    updatedAt: Date.now(),
+    createdAtIso: nowIso,
+    updatedAtIso: nowIso,
+    lastSavedSnapshotHash: null,
   };
 }
 
-export function normalizeTitle(input: string) {
-  return input.replace(/\s+/g, " ").trimStart(); // keep trailing spaces while typing
-}
+export function makeDraftExercise(input: { exerciseId: string; name: string }): WorkoutDraftExercise {
+  return {
+    key: makeExerciseKey(),
+    exerciseId: input.exerciseId,
+    name: input.name ?? "",
+    note: null,
+    isFavourite: false,
 
-export function withKeys(
-  rows: Array<Omit<DraftExercise, "key">>
-): DraftExercise[] {
-  return rows.map((r) => ({ ...r, key: makeExerciseKey() }));
+    // NEW
+    isDropset: false,
+    supersetGroup: null,
+    supersetIndex: null,
+  };
 }

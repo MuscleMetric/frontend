@@ -3,21 +3,25 @@ import { supabase } from "../../../../../lib/supabase";
 export type ExerciseListItem = {
   id: string;
   name: string;
-  primaryMuscle?: string | null;
   equipment?: string | null;
-  isFavourite?: boolean; // derived (if you have the join table)
+
+  muscleNames?: string[]; // from rpc
+  isFavourite?: boolean; // from rpc (is_favorite)
+  sessionsCount?: number; // from rpc
+  setsCount?: number; // from rpc
+  lastUsedAt?: string | null; // from rpc
 };
 
 export type ExerciseFilters = {
-  query?: string; // search text
+  query?: string;
   muscle?: string | null; // e.g. "Chest"
-  equipment?: string | null; // e.g. "Dumbbells"
+  equipment?: string | null; // e.g. "barbell"
   favouritesOnly?: boolean;
-  limit?: number; // default 50
+  limit?: number; // default 80
 };
 
 type FetchExercisesArgs = {
-  userId: string;
+  userId: string; // kept for signature consistency, rpc uses auth.uid()
   filters?: ExerciseFilters;
 };
 
@@ -25,94 +29,59 @@ function norm(s?: string | null) {
   return String(s ?? "").trim();
 }
 
-/**
- * Fetch exercises for "Add Exercises" sheet.
- * - Search by name
- * - Filter by muscle/equipment (best-effort, depends on your schema)
- * - Optionally favourites-only
- * - Returns favourites first (if favourites table exists)
- */
+function includesCI(haystack: string, needle: string) {
+  return haystack.toLowerCase().includes(needle.toLowerCase());
+}
+
 export async function fetchExercises({
-  userId,
+  userId: _userId,
   filters,
 }: FetchExercisesArgs): Promise<ExerciseListItem[]> {
-  const limit = Math.max(1, Math.min(200, filters?.limit ?? 60));
+  const limit = Math.max(1, Math.min(200, filters?.limit ?? 80));
   const q = norm(filters?.query);
   const muscle = norm(filters?.muscle);
   const equipment = norm(filters?.equipment);
   const favouritesOnly = !!filters?.favouritesOnly;
 
-  // ---- Base query (exercises table) ----
-  // If you have different columns, tweak select below.
-  // "primary_muscle" might be derived from exercise_muscles; we handle a fallback later.
-  let base = supabase
-    .from("exercises")
-    .select("id, name, equipment, primary_muscle")
-    .order("name", { ascending: true })
-    .limit(limit);
+  const { data, error } = await supabase.rpc("get_exercise_picker_data", {
+    p_include_private: true,
+  });
 
-  // Search
-  if (q) {
-    // ilike name search
-    base = base.ilike("name", `%${q}%`);
-  }
+  if (error) throw error;
 
-  // Equipment filter (if your exercises table has equipment)
-  if (equipment) {
-    base = base.ilike("equipment", `%${equipment}%`);
-  }
+  const rows = Array.isArray(data) ? data : [];
 
-  // Muscle filter:
-  // If you have a join table (exercise_muscles -> muscles), you may want to replace this
-  // with an RPC or a view that exposes primary_muscle.
-  if (muscle) {
-    base = base.ilike("primary_muscle", `%${muscle}%`);
-  }
-
-  const { data: exRows, error: exErr } = await base;
-  if (exErr) throw exErr;
-
-  const exercises = (exRows ?? []).map((r: any) => ({
+  // map into UI shape
+  let items: ExerciseListItem[] = rows.map((r: any) => ({
     id: String(r.id),
     name: String(r.name ?? "Exercise"),
     equipment: r.equipment != null ? String(r.equipment) : null,
-    primaryMuscle: r.primary_muscle != null ? String(r.primary_muscle) : null,
+
+    muscleNames: Array.isArray(r.muscle_names) ? r.muscle_names.map(String) : [],
+    isFavourite: !!r.is_favorite,
+    sessionsCount: Number(r.sessions_count ?? 0) || 0,
+    setsCount: Number(r.sets_count ?? 0) || 0,
+    lastUsedAt: r.last_used_at != null ? String(r.last_used_at) : null,
   }));
 
-  if (!exercises.length) return [];
+  // filters (client-side)
+  if (q) items = items.filter((x) => includesCI(x.name, q));
+  if (equipment) items = items.filter((x) => includesCI(String(x.equipment ?? ""), equipment));
+  if (muscle) items = items.filter((x) => (x.muscleNames ?? []).some((m) => includesCI(m, muscle)));
+  if (favouritesOnly) items = items.filter((x) => !!x.isFavourite);
 
-  // ---- Favourite overlay (optional) ----
-  // If you DON'T have this table, you can remove this whole block and the UI still works.
-  const ids = exercises.map((e) => e.id);
+  // ordering: favourites first, then most-used, then alpha
+  items.sort((a, b) => {
+    const af = a.isFavourite ? 1 : 0;
+    const bf = b.isFavourite ? 1 : 0;
+    if (af !== bf) return bf - af;
 
-  const { data: favRows, error: favErr } = await supabase
-    .from("exercise_favourites")
-    .select("exercise_id")
-    .eq("user_id", userId)
-    .in("exercise_id", ids);
+    const au = a.sessionsCount ?? 0;
+    const bu = b.sessionsCount ?? 0;
+    if (au !== bu) return bu - au;
 
-  // If the table doesn't exist, supabase will return an error — we treat that as "no favourites".
-  const favSet = new Set<string>();
-  if (!favErr && Array.isArray(favRows)) {
-    favRows.forEach((r: any) => favSet.add(String(r.exercise_id)));
-  }
+    return a.name.localeCompare(b.name);
+  });
 
-  let merged: ExerciseListItem[] = exercises.map((e) => ({
-    ...e,
-    isFavourite: favSet.has(e.id),
-  }));
-
-  if (favouritesOnly) {
-    merged = merged.filter((e) => e.isFavourite);
-  } else {
-    // favourites-first ordering, then alpha
-    merged.sort((a, b) => {
-      const af = a.isFavourite ? 1 : 0;
-      const bf = b.isFavourite ? 1 : 0;
-      if (af !== bf) return bf - af;
-      return a.name.localeCompare(b.name);
-    });
-  }
-
-  return merged;
+  return items.slice(0, limit);
 }

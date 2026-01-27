@@ -1,104 +1,141 @@
+// app/features/workouts/create/state/reducers.ts
 import type { WorkoutDraft } from "./types";
 import type { WorkoutDraftAction } from "./actions";
-import { makeDraftExercise, normalizeNote } from "./actions";
-import { moveArrayItem, snapshotHash } from "./helpers";
+import { initialDraft as makeInitialDraft, makeDraftExercise } from "./defaults";
+import { normalizeNote, normalizeTitle } from "./helpers";
 
-export const initialDraft = (draftId: string, nowIso: string): WorkoutDraft => ({
-  id: draftId,
-  title: "",
-  note: null,
-  exercises: [],
-  createdAtIso: nowIso,
-  updatedAtIso: nowIso,
-  lastSavedSnapshotHash: null,
-});
+export const initialDraft = makeInitialDraft;
+
+function recomputeSupersetIndices(exercises: WorkoutDraft["exercises"]) {
+  const counts: Record<string, number> = {};
+  return exercises.map((ex) => {
+    if (!ex.supersetGroup) return { ...ex, supersetIndex: null };
+    const g = ex.supersetGroup;
+    const idx = counts[g] ?? 0;
+    counts[g] = idx + 1;
+    return { ...ex, supersetIndex: idx };
+  });
+}
+
+function move<T>(arr: T[], from: number, to: number) {
+  const next = arr.slice();
+  const [item] = next.splice(from, 1);
+  next.splice(to, 0, item);
+  return next;
+}
 
 export function workoutDraftReducer(state: WorkoutDraft, action: WorkoutDraftAction): WorkoutDraft {
   switch (action.type) {
     case "draft/init": {
-      return initialDraft(action.payload.draftId, action.payload.nowIso);
+      return makeInitialDraft(action.payload.draftId, action.payload.nowIso);
     }
 
     case "draft/reset": {
-      return initialDraft(action.payload.draftId, action.payload.nowIso);
+      return makeInitialDraft(action.payload.draftId, action.payload.nowIso);
     }
 
     case "draft/setTitle": {
-      const title = action.payload.title;
-      if (title === state.title) return state;
-      return { ...state, title, updatedAtIso: action.payload.nowIso };
+      return {
+        ...state,
+        title: normalizeTitle(action.payload.title),
+        updatedAtIso: action.payload.nowIso,
+      };
     }
 
     case "draft/setNote": {
-      const note = normalizeNote(action.payload.note);
-      const nextNote = note.length ? note : null;
-      if ((state.note ?? "") === (nextNote ?? "")) return state;
-      return { ...state, note: nextNote, updatedAtIso: action.payload.nowIso };
+      return {
+        ...state,
+        note: normalizeNote(action.payload.note) || null,
+        updatedAtIso: action.payload.nowIso,
+      };
     }
 
     case "draft/addExercises": {
-      const existing = new Set(state.exercises.map((e) => e.exerciseId));
-      const toAdd = action.payload.exercises
-        .filter((x) => !existing.has(x.exerciseId))
-        .map(makeDraftExercise);
-
-      if (!toAdd.length) return state;
+      const added = action.payload.exercises.map(makeDraftExercise);
+      const next = recomputeSupersetIndices([...state.exercises, ...added]);
 
       return {
         ...state,
-        exercises: [...state.exercises, ...toAdd],
+        exercises: next,
         updatedAtIso: action.payload.nowIso,
       };
     }
 
     case "draft/removeExercise": {
-      const before = state.exercises.length;
-      const exercises = state.exercises.filter((e) => e.exerciseId !== action.payload.exerciseId);
-      if (exercises.length === before) return state;
-      return { ...state, exercises, updatedAtIso: action.payload.nowIso };
-    }
-
-    case "draft/reorderExercises": {
-      const { from, to } = action.payload;
-      if (from === to) return state;
-      if (from < 0 || to < 0) return state;
-      if (from >= state.exercises.length || to >= state.exercises.length) return state;
-
+      const next = state.exercises.filter((ex) => ex.key !== action.payload.exerciseKey);
       return {
         ...state,
-        exercises: moveArrayItem(state.exercises, from, to),
+        exercises: recomputeSupersetIndices(next),
         updatedAtIso: action.payload.nowIso,
       };
     }
 
+    case "draft/reorderExercises": {
+      const { from, to, nowIso } = action.payload;
+      if (from === to) return state;
+      if (from < 0 || to < 0) return state;
+      if (from >= state.exercises.length || to >= state.exercises.length) return state;
+
+      const next = recomputeSupersetIndices(move(state.exercises, from, to));
+      return { ...state, exercises: next, updatedAtIso: nowIso };
+    }
+
     case "draft/toggleFavourite": {
-      const idx = state.exercises.findIndex((e) => e.exerciseId === action.payload.exerciseId);
-      if (idx < 0) return state;
+      const next = state.exercises.map((ex) =>
+        ex.key === action.payload.exerciseKey ? { ...ex, isFavourite: !ex.isFavourite } : ex
+      );
 
-      const ex = state.exercises[idx];
-      const next = state.exercises.slice();
-      next[idx] = { ...ex, isFavourite: !ex.isFavourite };
-
-      // Important: do NOT auto-reorder here. Favourite is a “quick sort hint”
-      // but you said it helps ordering — user stays in control.
-
-      return { ...state, exercises: next, updatedAtIso: action.payload.nowIso };
+      return {
+        ...state,
+        exercises: recomputeSupersetIndices(next),
+        updatedAtIso: action.payload.nowIso,
+      };
     }
 
     case "draft/setExerciseNote": {
-      const idx = state.exercises.findIndex((e) => e.exerciseId === action.payload.exerciseId);
-      if (idx < 0) return state;
+      const note = normalizeNote(action.payload.note) || null;
+      const next = state.exercises.map((ex) =>
+        ex.key === action.payload.exerciseKey ? { ...ex, note } : ex
+      );
 
-      const ex = state.exercises[idx];
-      const note = normalizeNote(action.payload.note);
-      const nextNote = note.length ? note : null;
+      return {
+        ...state,
+        exercises: recomputeSupersetIndices(next),
+        updatedAtIso: action.payload.nowIso,
+      };
+    }
 
-      if ((ex.note ?? "") === (nextNote ?? "")) return state;
+    case "draft/toggleDropset": {
+      const next = state.exercises.map((ex) =>
+        ex.key === action.payload.exerciseKey ? { ...ex, isDropset: !ex.isDropset } : ex
+      );
 
-      const next = state.exercises.slice();
-      next[idx] = { ...ex, note: nextNote };
+      return {
+        ...state,
+        exercises: recomputeSupersetIndices(next),
+        updatedAtIso: action.payload.nowIso,
+      };
+    }
 
-      return { ...state, exercises: next, updatedAtIso: action.payload.nowIso };
+    case "draft/setSupersetGroup": {
+      const { exerciseKey, group, nowIso } = action.payload;
+
+      const next = state.exercises.map((ex) =>
+        ex.key === exerciseKey
+          ? { ...ex, supersetGroup: group ? String(group) : null }
+          : ex
+      );
+
+      return { ...state, exercises: recomputeSupersetIndices(next), updatedAtIso: nowIso };
+    }
+
+    case "draft/clearSupersetGroup": {
+      const { group, nowIso } = action.payload;
+      const next = state.exercises.map((ex) =>
+        ex.supersetGroup === group ? { ...ex, supersetGroup: null, supersetIndex: null } : ex
+      );
+
+      return { ...state, exercises: recomputeSupersetIndices(next), updatedAtIso: nowIso };
     }
 
     case "draft/markSaved": {
@@ -112,10 +149,4 @@ export function workoutDraftReducer(state: WorkoutDraft, action: WorkoutDraftAct
     default:
       return state;
   }
-}
-
-// convenience: if you ever want reducer-local dirty check
-export function isDirtyDraft(draft: WorkoutDraft): boolean {
-  if (!draft.lastSavedSnapshotHash) return true;
-  return snapshotHash(draft) !== draft.lastSavedSnapshotHash;
 }

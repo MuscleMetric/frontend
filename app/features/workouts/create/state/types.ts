@@ -1,10 +1,18 @@
+// app/features/workouts/create/state/types.ts
+
 export type WorkoutDraftExercise = {
+  key: string; // stable UI key (allows duplicates)
   exerciseId: string;
-  name: string; // denormalised for fast UI (from exercises table at add-time)
+  name: string; // denormalised at add-time
   note: string | null;
 
-  // favourites affect ordering (you said you use it to help order)
+  // affects ordering + quick pick logic
   isFavourite: boolean;
+
+  // NEW
+  isDropset: boolean;
+  supersetGroup: string | null; // "A", "B", ...
+  supersetIndex: number | null; // 0..n inside group
 };
 
 export type WorkoutDraft = {
