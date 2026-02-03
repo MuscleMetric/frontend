@@ -325,6 +325,15 @@ export function workoutDraftReducer(
       };
     }
 
+    // inside workoutDraftReducer switch...
+    case "draft/hydrate": {
+      // Trust payload draft as canonical (already shaped correctly)
+      return {
+        ...action.payload.draft,
+        updatedAtIso: action.payload.nowIso,
+      };
+    }
+
     default:
       return state;
   }

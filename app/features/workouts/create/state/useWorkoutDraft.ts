@@ -14,6 +14,9 @@ export default function useWorkoutDraft(draftId: string) {
     return {
       dispatch,
 
+      hydrateDraft: (next: WorkoutDraft) =>
+        dispatch({ type: "draft/hydrate", payload: { draft: next, nowIso: nowIso() } }),
+
       setTitle: (title: string) =>
         dispatch({ type: "draft/setTitle", payload: { title, nowIso: nowIso() } }),
 
@@ -38,18 +41,15 @@ export default function useWorkoutDraft(draftId: string) {
       setExerciseNote: (exerciseKey: string, note: string) =>
         dispatch({ type: "draft/setExerciseNote", payload: { exerciseKey, note, nowIso: nowIso() } }),
 
-      // NEW
       toggleDropset: (exerciseKey: string) =>
         dispatch({ type: "draft/toggleDropset", payload: { exerciseKey, nowIso: nowIso() } }),
 
-      // NEW
       setSupersetGroup: (exerciseKey: string, group: string | null) =>
         dispatch({
           type: "draft/setSupersetGroup",
           payload: { exerciseKey, group, nowIso: nowIso() },
         }),
 
-      // optional helper
       clearSupersetGroup: (group: string) =>
         dispatch({ type: "draft/clearSupersetGroup", payload: { group, nowIso: nowIso() } }),
 
