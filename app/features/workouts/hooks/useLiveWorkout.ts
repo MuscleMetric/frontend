@@ -69,24 +69,18 @@ type Bootstrap = {
 };
 
 export type LiveDraft = {
-  // identifies which workout this draft belongs to
   workoutId: string;
   planWorkoutId: string | null;
 
-  // app-level session identity (client only)
   startedAtIso: string;
 
-  // the user can reorder / complete exercises etc.
-  // keep it minimal for now; expand as you implement live logging
   completedExerciseIds: string[];
-  exerciseOrder: string[]; // array of exerciseId in desired order
+  exerciseOrder: string[];
 
-  // per-exercise in-progress notes or set entries (future-proof shape)
   perExercise: Record<
     string,
     {
       notes?: string;
-      // later: sets[], currentSetIndex, etc.
     }
   >;
 };
@@ -103,7 +97,6 @@ function draftKey(
 function secondsToRangeLabel(sec: number | null | undefined) {
   if (!sec || sec <= 0) return null;
   const min = Math.round(sec / 60);
-  // simple +-10% range
   const lo = Math.max(1, Math.round(min * 0.9));
   const hi = Math.max(lo, Math.round(min * 1.1));
   return `${lo}–${hi} min`;
@@ -138,6 +131,7 @@ export function useLiveWorkout(args: {
 
   const load = React.useCallback(async () => {
     if (!userId || !workoutId) return;
+
     setLoading(true);
     setError(null);
 
@@ -164,7 +158,6 @@ export function useLiveWorkout(args: {
             setDraft(parsed);
             setHadSavedDraft(true);
           } catch {
-            // corrupted draft -> remove
             await AsyncStorage.removeItem(key);
             setDraft(null);
             setHadSavedDraft(false);
@@ -213,7 +206,6 @@ export function useLiveWorkout(args: {
       setDraft((prev) => {
         if (!prev) return prev;
         const next = patch(prev);
-        // fire-and-forget save (still awaited outside if you want)
         AsyncStorage.setItem(key, JSON.stringify(next)).catch(() => {});
         return next;
       });
@@ -239,7 +231,8 @@ export function useLiveWorkout(args: {
     const vol = formatKg(s.avgTotalVolume);
     if (vol) out.push({ label: "Avg volume", value: vol });
 
-    const last = (s.lastCompletedAt);
+    // NOTE: leaving as-is (ISO string). Your screen later formats “Last Completed” anyway.
+    const last = s.lastCompletedAt;
     if (last) out.push({ label: "Last Completed", value: last });
 
     return out;
@@ -254,7 +247,10 @@ export function useLiveWorkout(args: {
     draft,
     hadSavedDraft,
 
+    // ✅ Option A: expose refetch (and keep reload for backwards compatibility)
+    refetch: load,
     reload: load,
+
     createDraft,
     updateDraft,
     discardDraft,

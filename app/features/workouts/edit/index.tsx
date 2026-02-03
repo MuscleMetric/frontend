@@ -1,5 +1,11 @@
 // app/features/workouts/edit/index.tsx
-import React, { useEffect, useMemo, useCallback, useState } from "react";
+import React, {
+  useEffect,
+  useMemo,
+  useCallback,
+  useState,
+  useRef,
+} from "react";
 import { Alert } from "react-native";
 import { useLocalSearchParams, router } from "expo-router";
 
@@ -17,6 +23,7 @@ export default function EditWorkoutRoute() {
   const { workoutId } = useLocalSearchParams<RouteParams>();
   const { session } = useAuth();
   const userId = session?.user?.id ?? null;
+  const didHydrateRef = useRef(false);
 
   const draftId = useMemo(
     () => `edit_workout_${String(workoutId ?? "")}`,
@@ -45,20 +52,22 @@ export default function EditWorkoutRoute() {
   const [hydrating, setHydrating] = useState(true);
 
   useEffect(() => {
+    didHydrateRef.current = false;
+  }, [workoutId]);
+
+  useEffect(() => {
     if (!workoutId) return;
+    if (!userId) return;
+
+    // ✅ prevent overwriting local edits on rerender
+    if (didHydrateRef.current) return;
 
     let cancelled = false;
 
     async function load() {
-      if (!userId) {
-        Alert.alert("Not signed in", "Please sign in to edit workouts.");
-        return;
-      }
-
       setHydrating(true);
 
       try {
-        // 1) workouts row
         const { data: w, error: wErr } = await supabase
           .from("workouts")
           .select("id,title,notes,workout_image_key")
@@ -67,8 +76,6 @@ export default function EditWorkoutRoute() {
 
         if (wErr) throw wErr;
 
-        // 2) workout_exercises + exercise name
-        // NOTE: if your relationship name is not `exercises`, swap to `exercise:exercises(name)`
         const { data: we, error: weErr } = await supabase
           .from("workout_exercises")
           .select(
@@ -89,8 +96,6 @@ export default function EditWorkoutRoute() {
           updatedAtIso: now,
           lastSavedSnapshotHash: null,
           exercises: (we ?? []).map((row: any) => ({
-            // IMPORTANT: key must be stable within the editor.
-            // Using workout_exercises.id works (duplicates of same exercise_id still unique).
             key: String(row.id),
             exerciseId: String(row.exercise_id),
             name: String(
@@ -113,6 +118,7 @@ export default function EditWorkoutRoute() {
         nextDraft.lastSavedSnapshotHash = snapshotHash(nextDraft);
 
         if (!cancelled) {
+          didHydrateRef.current = true; // ✅ lock before hydrate
           hydrateDraft(nextDraft);
         }
       } catch (e: any) {
@@ -145,7 +151,7 @@ export default function EditWorkoutRoute() {
         title: String(draftToSave.title ?? "").trim(),
         notes: draftToSave.note ? String(draftToSave.note).trim() : null,
         exercises: (draftToSave.exercises ?? []).map((ex, idx) => ({
-          id: isUuid(ex.key) ? ex.key : null, // ✅ IMPORTANT (preserves existing workout_exercises rows)
+          id: isUuid(ex.key) ? ex.key : null,
           exercise_id: ex.exerciseId,
           order_index: idx,
           notes: ex.note ?? null,
@@ -176,7 +182,9 @@ export default function EditWorkoutRoute() {
 
     if (error) throw error;
 
-    router.back();
+    router.replace({
+      pathname: "/features/workouts",
+    } as any);
   }, [userId, workoutId]);
 
   if (!userId) return null;
@@ -207,7 +215,9 @@ export default function EditWorkoutRoute() {
               params: { workoutId },
             } as any);
           } else {
-            router.back();
+            router.replace({
+              pathname: "/features/workouts",
+            } as any);
           }
         }}
       />

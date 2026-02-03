@@ -5,6 +5,7 @@ import {
   useSafeAreaInsets,
 } from "react-native-safe-area-context";
 import { router, useLocalSearchParams } from "expo-router";
+import { useFocusEffect } from "@react-navigation/native"; // ✅ NEW
 
 import { useAuth } from "@/lib/authContext";
 import { useAppTheme } from "@/lib/useAppTheme";
@@ -172,7 +173,7 @@ function supersetPillLabel(group: any, items: any[]) {
   const uniq = Array.from(new Set(idxs)).sort((a, b) => a - b);
 
   const detail = uniq.length
-    ? `${letter}${uniq.join(`/${letter}`)}` // A1/A2/A3
+    ? `${letter}${uniq.join(`/${letter}`)}`
     : `${letter}1/${letter}2`;
 
   return `Superset ${letter}`;
@@ -194,8 +195,22 @@ export default function WorkoutOverviewScreen() {
   const insets = useSafeAreaInsets();
   const { colors, typography, layout } = useAppTheme();
 
-  const { loading, error, bootstrap, headerChips, hadSavedDraft, createDraft } =
-    useLiveWorkout({ userId, workoutId, planWorkoutId });
+  const {
+    loading,
+    error,
+    bootstrap,
+    headerChips,
+    hadSavedDraft,
+    createDraft,
+    refetch,
+  } = useLiveWorkout({ userId, workoutId, planWorkoutId } as any);
+
+  // ✅ NEW: refetch whenever this screen becomes active again
+  useFocusEffect(
+    React.useCallback(() => {
+      refetch?.();
+    }, [refetch])
+  );
 
   const [exerciseModalOpen, setExerciseModalOpen] = React.useState(false);
   const [activeExerciseId, setActiveExerciseId] = React.useState<string | null>(
@@ -293,7 +308,7 @@ export default function WorkoutOverviewScreen() {
   const lastLabel = formatLastDone(lastIso);
 
   const statItems = [
-    ...headerChips, // duration + avg volume
+    ...headerChips,
     ...(lastLabel ? [{ label: "Last Completed", value: lastLabel }] : []),
   ];
 
@@ -362,7 +377,7 @@ export default function WorkoutOverviewScreen() {
                 }
               />
 
-              {/* Title (no subtitle) */}
+              {/* Title */}
               <Text
                 style={{
                   fontFamily: typography.fontFamily.bold,
@@ -376,7 +391,7 @@ export default function WorkoutOverviewScreen() {
                 {bootstrap.workout.title}
               </Text>
 
-              {/* Optional notes */}
+              {/* Notes */}
               {bootstrap.workout.notes ? (
                 <Text
                   style={{
@@ -391,7 +406,7 @@ export default function WorkoutOverviewScreen() {
                 </Text>
               ) : null}
 
-              {/* Stats: borderless */}
+              {/* Stats */}
               {statItems.length ? (
                 <StatPillRow items={statItems} borderless />
               ) : null}
@@ -455,7 +470,6 @@ export default function WorkoutOverviewScreen() {
                   const e = g.ex;
                   runningIndex += 1;
 
-                  const last = formatLastDone(e.lastSession.completedAt);
                   const vol = formatKg(e.totalVolumeAllTime);
 
                   const subtitleParts = [
@@ -477,9 +491,7 @@ export default function WorkoutOverviewScreen() {
                       title={e.name}
                       subtitle={subtitleParts.join(" • ")}
                       leftBadge={
-                        isDropset ? (
-                          <Pill label="Dropset" tone="neutral" />
-                        ) : null
+                        isDropset ? <Pill label="Dropset" tone="neutral" /> : null
                       }
                       rightNode={
                         vol ? (
@@ -502,7 +514,7 @@ export default function WorkoutOverviewScreen() {
                   );
                 }
 
-                // Superset group block
+                // Superset block
                 const borderColor = colors.primary;
                 const pillText = supersetPillLabel(g.letter, g.items);
 
@@ -517,13 +529,12 @@ export default function WorkoutOverviewScreen() {
                       backgroundColor: colors.surface,
                     }}
                   >
-                    {/* Superset header pill */}
                     <View
                       style={{
                         paddingHorizontal: layout.space.md,
                         paddingTop: layout.space.md,
                         paddingBottom: layout.space.sm,
-                        backgroundColor: "rgba(37,99,235,0.08)", // subtle tint behind pill (works in both modes)
+                        backgroundColor: "rgba(37,99,235,0.08)",
                       }}
                     >
                       <Pill label={pillText} tone="primary" />
@@ -532,7 +543,6 @@ export default function WorkoutOverviewScreen() {
                     {g.items.map((e, idxInGroup) => {
                       runningIndex += 1;
 
-                      const last = formatLastDone(e.lastSession.completedAt);
                       const vol = formatKg(e.totalVolumeAllTime);
 
                       const subtitleParts = [
@@ -544,8 +554,6 @@ export default function WorkoutOverviewScreen() {
                           ? `${e.prescription.targetReps} reps`
                           : null,
                       ].filter(Boolean);
-
-                      const meta = last ? `Last: ${last}` : undefined;
 
                       const isDropset = !!e?.prescription?.isDropset;
 
@@ -562,11 +570,8 @@ export default function WorkoutOverviewScreen() {
                           index={runningIndex}
                           title={e.name}
                           subtitle={subtitleParts.join(" • ")}
-                          meta={meta}
                           leftBadge={
-                            isDropset ? (
-                              <Pill label="Dropset" tone="neutral" />
-                            ) : null
+                            isDropset ? <Pill label="Dropset" tone="neutral" /> : null
                           }
                           rightNode={
                             vol ? (
@@ -634,36 +639,6 @@ export default function WorkoutOverviewScreen() {
                         )}`
                       : "No history yet"}
                   </Text>
-
-                  {activeExercise.lastSession.sets?.length ? (
-                    <View style={{ gap: 8 }}>
-                      {activeExercise.lastSession.sets.slice(0, 4).map((s) => (
-                        <View
-                          key={`${s.setNumber}-${s.dropIndex}`}
-                          style={{
-                            flexDirection: "row",
-                            justifyContent: "space-between",
-                            paddingVertical: 8,
-                            borderBottomWidth: 1,
-                            borderBottomColor: colors.border,
-                          }}
-                        >
-                          <Text
-                            style={{ color: colors.text }}
-                          >{`Set ${s.setNumber}`}</Text>
-                          <Text style={{ color: colors.textMuted }}>
-                            {s.weight != null && s.reps != null
-                              ? `${s.weight} × ${s.reps}`
-                              : s.timeSeconds != null
-                              ? `${s.timeSeconds}s`
-                              : s.distance != null
-                              ? `${s.distance}`
-                              : "—"}
-                          </Text>
-                        </View>
-                      ))}
-                    </View>
-                  ) : null}
                 </View>
               </Card>
 
