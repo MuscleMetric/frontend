@@ -183,7 +183,7 @@ export default function EditWorkoutRoute() {
     if (error) throw error;
 
     router.replace({
-      pathname: "/features/workouts",
+      pathname: "/(tabs)/workout",
     } as any);
   }, [userId, workoutId]);
 
