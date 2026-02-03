@@ -10,14 +10,14 @@ export default function EditPlanLayout() {
       screenOptions={{
         headerTitleAlign: "center",
         headerShadowVisible: false,
-        headerStyle: { backgroundColor: colors.background },
+        headerStyle: { backgroundColor: colors.bg },
         headerTintColor: colors.text,
         headerTitleStyle: {
           fontWeight: "800",
           color: colors.text,
         },
         contentStyle: {
-          backgroundColor: colors.background,
+          backgroundColor: colors.bg,
         },
       }}
     >

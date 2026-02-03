@@ -433,9 +433,9 @@ export default function WorkoutPage() {
   /* ---------- render ---------- */
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }}>
       <ScrollView
-        style={{ flex: 1, backgroundColor: colors.background }}
+        style={{ flex: 1, backgroundColor: colors.bg }}
         contentContainerStyle={{ padding: 16 }}
         keyboardShouldPersistTaps="handled"
       >
@@ -449,7 +449,7 @@ export default function WorkoutPage() {
           value={draft.title}
           onChangeText={(t) => setWorkout(index, { ...draft, title: t })}
           placeholder="e.g. Push, Pull, Legs…"
-          placeholderTextColor={colors.subtle}
+          placeholderTextColor={colors.textMuted}
         />
 
         <Text style={s.label}>Exercises</Text>
@@ -576,14 +576,14 @@ export default function WorkoutPage() {
                               }}
                             >
                               {!!item.exercise.type && (
-                                <Text style={{ color: colors.subtle }}>
+                                <Text style={{ color: colors.textMuted }}>
                                   {item.exercise.type}
                                 </Text>
                               )}
                               {item.isDropset && (
                                 <Text
                                   style={{
-                                    color: colors.primaryText,
+                                    color: colors.text,
                                     fontWeight: "700",
                                   }}
                                 >
@@ -593,7 +593,7 @@ export default function WorkoutPage() {
                             </View>
 
                             <Text
-                              style={{ color: colors.subtle, marginTop: 4 }}
+                              style={{ color: colors.textMuted, marginTop: 4 }}
                             >
                               Exercise selected
                             </Text>

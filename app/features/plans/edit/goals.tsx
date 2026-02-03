@@ -159,7 +159,7 @@ export default function Goals() {
 
   return (
     <ScrollView
-      style={{ flex: 1, backgroundColor: colors.background }}
+      style={{ flex: 1, backgroundColor: colors.bg }}
       contentContainerStyle={{ padding: 16 }}
     >
       <Text style={s.h2}>Set Your Plan Goals</Text>
@@ -229,7 +229,7 @@ export default function Goals() {
                     <TextInput
                       style={s.input}
                       placeholder="Start"
-                      placeholderTextColor={colors.subtle}
+                      placeholderTextColor={colors.textMuted}
                       keyboardType="numeric"
                       value={g.start != null ? String(g.start) : ""}
                       onChangeText={(v) => {
@@ -261,7 +261,7 @@ export default function Goals() {
                     <TextInput
                       style={s.input}
                       placeholder="Target"
-                      placeholderTextColor={colors.subtle}
+                      placeholderTextColor={colors.textMuted}
                       keyboardType="numeric"
                       value={g.target != null ? String(g.target) : ""}
                       onChangeText={(v) => {
@@ -278,7 +278,7 @@ export default function Goals() {
 
                 {/* Recommended range */}
                 {g.start != null && planWeeks > 0 && (
-                  <Text style={{ color: colors.primaryText, marginTop: 4 }}>
+                  <Text style={{ color: colors.text, marginTop: 4 }}>
                     {(() => {
                       const { min, max } = calcRangeForMode(
                         g.mode,

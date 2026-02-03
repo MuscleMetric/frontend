@@ -218,7 +218,7 @@ export default function EditPlan() {
 
   return (
     <ScrollView
-      style={{ flex: 1, backgroundColor: colors.background }}
+      style={{ flex: 1, backgroundColor: colors.bg }}
       contentContainerStyle={{ padding: 16, gap: 12 }}
     >
       {/* Meta card */}
@@ -230,7 +230,7 @@ export default function EditPlan() {
           onChangeText={(t) => setMeta({ title: t })}
           placeholder="Plan title"
           style={s.input}
-          placeholderTextColor={colors.subtle}
+          placeholderTextColor={colors.textMuted}
         />
 
         <Text style={[s.label, { marginTop: 12 }]}>End date</Text>

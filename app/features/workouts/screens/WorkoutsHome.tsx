@@ -25,7 +25,7 @@ const ROUTES = {
   workoutPreview: "/features/workouts/screens/WorkoutOverview",
   workoutUse: "/features/workouts/screens/WorkoutOverview",
   planView: "/features/plans/history/view",
-  planEdit: "/features/workouts/screens/WorkoutOverview",
+  planEdit: "/features/plans/edit",
   planCreate: "/features/workouts/screens/WorkoutOverview",
 } as const;
 

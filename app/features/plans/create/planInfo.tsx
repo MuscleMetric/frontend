@@ -1,4 +1,5 @@
 // app/features/plans/create/PlanInfo.tsx
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -12,12 +13,14 @@ import {
 } from "react-native";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { router, useFocusEffect } from "expo-router";
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { SafeAreaView } from "react-native-safe-area-context";
+
 import { supabase } from "../../../../lib/supabase";
 import { useExercisesCache, CachedExercise } from "./exercisesStore";
 import { usePlanDraft } from "./store";
 import { useAppTheme } from "../../../../lib/useAppTheme";
-import { SafeAreaView } from "react-native-safe-area-context";
+
+/* ---------------- helpers ---------------- */
 
 async function fetchAllExercises(): Promise<CachedExercise[]> {
   const pageSize = 500;
@@ -30,6 +33,7 @@ async function fetchAllExercises(): Promise<CachedExercise[]> {
       .order("popularity", { ascending: false })
       .range(from, from + pageSize - 1);
     if (error) throw error;
+
     const chunk = (data ?? []) as CachedExercise[];
     out.push(...chunk);
     if (chunk.length < pageSize) break;
@@ -45,7 +49,6 @@ function startOfTodayLocal() {
 }
 
 function parseYmdLocal(ymd: string) {
-  // ymd = "YYYY-MM-DD"
   const [y, m, day] = ymd.split("-").map(Number);
   return new Date(y, (m ?? 1) - 1, day ?? 1);
 }
@@ -70,48 +73,33 @@ function weeksBetweenCeil(start: Date, end: Date) {
   return Math.max(1, Math.ceil(days / 7));
 }
 
-export default function PlanInfo() {
-  const { reset } = usePlanDraft();
+function formatEndLabel(d: Date) {
+  // e.g. "Ends Apr 12"
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  return `Ends ${months[d.getMonth()]} ${d.getDate()}`;
+}
 
+/* ---------------- screen ---------------- */
+
+type LengthMode = "weeks" | "date";
+
+export default function PlanInfo() {
+  const { colors, typography, layout } = useAppTheme();
+  const s = useMemo(() => makeStyles(colors, typography, layout), [colors, typography, layout]);
+
+  const { reset, title, endDate, workoutsPerWeek, setMeta, initWorkouts } = usePlanDraft();
+
+  // NOTE: Keeping your prior behaviour (reset on focus) since you asked not to change functionality.
+  // If you want "Back" from step 2 to preserve inputs, remove this reset and only reset on entry.
   useFocusEffect(
     useCallback(() => {
       reset();
     }, [reset])
   );
-  const { colors } = useAppTheme();
-  const s = useMemo(() => makeStyles(colors), [colors]);
 
-  const { title, endDate, workoutsPerWeek, setMeta, initWorkouts } =
-    usePlanDraft();
-  const [show, setShow] = useState(false);
-  const [tempDate, setTempDate] = useState<Date>(
-    endDate ? new Date(endDate) : new Date()
-  );
+  // Exercise cache warm-up (kept to preserve your existing behavior)
   const { items, setItems } = useExercisesCache();
   const [loadingExercises, setLoadingExercises] = useState(false);
-
-  type LengthPreset = 4 | 8 | 12 | "custom";
-
-  const [lengthPreset, setLengthPreset] = useState<LengthPreset>(() => {
-    if (!endDate) return 4; // default
-    const start = startOfTodayLocal();
-    const end = parseYmdLocal(endDate);
-    const w = weeksBetweenCeil(start, end);
-    if (w === 4 || w === 8 || w === 12) return w;
-    return "custom";
-  });
-
-  const PRESETS = [4, 8, 12] as const;
-
-  const start = useMemo(() => startOfTodayLocal(), []);
-  const end = endDate ? parseYmdLocal(endDate) : null;
-
-  const computedWeeks = useMemo(() => {
-    if (!end) return 0;
-    return weeksBetweenCeil(start, end);
-  }, [endDate]); // ok; depends on endDate string
-
-  const endDateLabel = end ? end.toDateString() : "Not set";
 
   useEffect(() => {
     if (items.length > 0) return;
@@ -126,13 +114,61 @@ export default function PlanInfo() {
         setLoadingExercises(false);
       }
     })();
-  }, []);
+  }, [items.length, setItems]);
+
+  // Length selection (toggle weeks vs end date)
+  const start = useMemo(() => startOfTodayLocal(), []);
+  const end = endDate ? parseYmdLocal(endDate) : null;
+
+  const [lengthMode, setLengthMode] = useState<LengthMode>("weeks");
+  const [showDateModal, setShowDateModal] = useState(false);
+  const [tempDate, setTempDate] = useState<Date>(() => end ?? addWeeksLocal(start, 8));
+
+  const computedWeeks = useMemo(() => {
+    if (!end) return 8;
+    return weeksBetweenCeil(start, end);
+  }, [endDate]);
+
+  const [weeks, setWeeks] = useState<number>(() => computedWeeks || 8);
+
+  // keep local weeks in sync if endDate changes (e.g. user picked a date)
+  useEffect(() => {
+    if (!end) return;
+    const w = weeksBetweenCeil(start, end);
+    setWeeks(w);
+  }, [endDate]);
+
+  // Ensure an endDate exists when using weeks mode (so proceed() works)
+  useEffect(() => {
+    if (endDate) return;
+    // default to 8 weeks on first render
+    const d = addWeeksLocal(start, 8);
+    setMeta({ endDate: formatYmdLocal(d) });
+    setTempDate(d);
+    setWeeks(8);
+  }, [endDate, setMeta, start]);
+
+  const MIN_WEEKS = 1;
+  const MAX_WEEKS = 52;
+
+  function commitWeeks(nextWeeks: number) {
+    const w = Math.min(MAX_WEEKS, Math.max(MIN_WEEKS, nextWeeks));
+    setWeeks(w);
+    const d = addWeeksLocal(start, w);
+    setMeta({ endDate: formatYmdLocal(d) });
+    setTempDate(d);
+  }
+
+  const planNameValid = title.trim().length > 0;
+  const endValid = !!endDate;
+  const daysValid = workoutsPerWeek >= 1 && workoutsPerWeek <= 7;
+
+  const canContinue = planNameValid && endValid && daysValid && !loadingExercises;
 
   function proceed() {
-    if (!title.trim()) return Alert.alert("Please add a plan title");
+    if (!planNameValid) return Alert.alert("Please add a plan name");
     if (!endDate) return Alert.alert("Please choose an end date");
-    if (workoutsPerWeek < 1)
-      return Alert.alert("Workouts per week must be at least 1");
+    if (!daysValid) return Alert.alert("Days per week must be between 1 and 7");
     initWorkouts(workoutsPerWeek);
     router.push({
       pathname: "/features/plans/create/workout",
@@ -140,175 +176,178 @@ export default function PlanInfo() {
     });
   }
 
+  const summaryText = useMemo(() => {
+    const days = `${workoutsPerWeek} day${workoutsPerWeek === 1 ? "" : "s"}/week`;
+    const w = `${computedWeeks} week${computedWeeks === 1 ? "" : "s"}`;
+    const ends = end ? formatEndLabel(end) : "End date not set";
+    return `${days} • ${w} • ${ends}`;
+  }, [workoutsPerWeek, computedWeeks, endDate]);
+
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }}>
       <View style={s.page}>
-        {/* Top bar */}
-        <View style={s.topBar}>
-          <Pressable
-            onPress={() => router.back()}
-            hitSlop={10}
-            style={s.backPill}
-          >
-            <Text style={s.backIcon}>‹</Text>
-            <Text style={s.backText}>Back</Text>
+        {/* Header */}
+        <View style={s.header}>
+          <Pressable onPress={() => router.back()} hitSlop={layout.hitSlop} style={s.headerIconBtn}>
+            <Text style={s.headerIcon}>‹</Text>
           </Pressable>
 
-          {/* Optional: step indicator */}
-          <View style={s.stepPill}>
-            <Text style={s.stepText}>Step 1 of 4</Text>
+          <View style={s.headerCenter}>
+            <Text style={s.headerTitle}>Step 1: Plan Info</Text>
           </View>
+
+          <Pressable
+            onPress={() => router.back()}
+            hitSlop={layout.hitSlop}
+            style={s.headerTextBtn}
+          >
+            <Text style={s.headerTextBtnText}>Save & Exit</Text>
+          </Pressable>
         </View>
 
-        {/* Centered sheet */}
-        <View style={s.sheet}>
-          <View style={{ marginBottom: 14 }}>
-            <Text style={s.h1}>Plan setup</Text>
-            <Text style={s.subtitle}>
-              Name your plan and choose how many workouts you’ll run each week.
-            </Text>
+        {/* Progress */}
+        <View style={s.progressWrap}>
+          <View style={s.progressBarTrack}>
+            <View style={[s.progressBarFill, { width: "25%" }]} />
+          </View>
+          <Text style={s.progressMeta}>Step 1 of 4</Text>
+        </View>
+
+        {/* Content */}
+        <View style={s.content}>
+          {/* Plan name */}
+          <Text style={s.sectionLabel}>Plan Name</Text>
+          <View style={[s.inputWrap, planNameValid && s.inputWrapValid]}>
+            <TextInput
+              value={title}
+              onChangeText={(t) => setMeta({ title: t })}
+              placeholder="Hypertrophy Peak Phase"
+              placeholderTextColor={colors.textMuted}
+              style={s.input}
+              returnKeyType="done"
+            />
+            {planNameValid ? (
+              <View style={s.validBadge}>
+                <Text style={s.validBadgeText}>✓</Text>
+              </View>
+            ) : null}
           </View>
 
+          {/* Days per week */}
+          <Text style={[s.sectionLabel, { marginTop: layout.space.lg }]}>Days per week</Text>
+          <View style={s.daysRow}>
+            {[1, 2, 3, 4, 5, 6, 7].map((n) => {
+              const active = workoutsPerWeek === n;
+              return (
+                <Pressable
+                  key={n}
+                  onPress={() => setMeta({ workoutsPerWeek: n })}
+                  style={[s.dayPill, active && s.dayPillActive]}
+                >
+                  <Text style={[s.dayPillText, active && s.dayPillTextActive]}>{n}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          {/* Plan length */}
+          <Text style={[s.sectionLabel, { marginTop: layout.space.lg }]}>Plan Length</Text>
+
+          {/* Toggle */}
+          <View style={s.segment}>
+            <Pressable
+              onPress={() => setLengthMode("weeks")}
+              style={[s.segmentBtn, lengthMode === "weeks" && s.segmentBtnActive]}
+            >
+              <Text style={[s.segmentText, lengthMode === "weeks" && s.segmentTextActive]}>
+                Weeks
+              </Text>
+            </Pressable>
+
+            <Pressable
+              onPress={() => setLengthMode("date")}
+              style={[s.segmentBtn, lengthMode === "date" && s.segmentBtnActive]}
+            >
+              <Text style={[s.segmentText, lengthMode === "date" && s.segmentTextActive]}>
+                End date
+              </Text>
+            </Pressable>
+          </View>
+
+          {lengthMode === "weeks" ? (
+            <View style={s.stepper}>
+              <Text style={s.stepperNumber}>{weeks}</Text>
+              <Text style={s.stepperUnit}>weeks</Text>
+
+              <View style={{ flex: 1 }} />
+
+              <Pressable
+                onPress={() => commitWeeks(weeks - 1)}
+                style={s.stepperBtn}
+                hitSlop={layout.hitSlop}
+              >
+                <Text style={s.stepperBtnText}>–</Text>
+              </Pressable>
+
+              <Pressable
+                onPress={() => commitWeeks(weeks + 1)}
+                style={s.stepperBtn}
+                hitSlop={layout.hitSlop}
+              >
+                <Text style={s.stepperBtnText}>+</Text>
+              </Pressable>
+            </View>
+          ) : (
+            <Pressable
+              onPress={() => {
+                setTempDate(end ?? addWeeksLocal(start, weeks));
+                setShowDateModal(true);
+              }}
+              style={s.dateSelect}
+            >
+              <Text style={s.dateSelectText}>
+                {end ? end.toDateString() : "Select end date"}
+              </Text>
+              <Text style={s.chevron}>›</Text>
+            </Pressable>
+          )}
+
+          {/* (Optional) warm-up indicator kept from previous behavior */}
           {loadingExercises ? (
             <View style={s.loadingRow}>
               <ActivityIndicator />
-              <Text style={s.muted}>Loading exercise library…</Text>
+              <Text style={s.loadingText}>Loading exercise library…</Text>
             </View>
           ) : null}
+        </View>
 
-          {/* Section: Title */}
-          <View style={s.section}>
-            <Text style={s.label}>Title</Text>
-            <Text style={s.helper}>Make it recognisable at a glance.</Text>
-            <TextInput
-              style={s.input}
-              value={title}
-              onChangeText={(t) => setMeta({ title: t })}
-              placeholder="Push / Pull / Legs"
-              placeholderTextColor={colors.subtle}
-              returnKeyType="done"
-            />
+        {/* Bottom pinned summary + CTA */}
+        <View style={s.bottomDock}>
+          <View style={s.summaryChip}>
+            <Text style={s.summaryChipText}>{summaryText}</Text>
           </View>
 
-          <View style={s.section}>
-            <Text style={s.label}>Plan length</Text>
-            <Text style={s.helper}>
-              Pick a duration — you can still set a custom end date.
-            </Text>
-
-            <View style={s.lengthRow}>
-              {PRESETS.map((w) => {
-                const active = lengthPreset === w;
-                return (
-                  <Pressable
-                    key={w}
-                    onPress={() => {
-                      setLengthPreset(w);
-                      const d = addWeeksLocal(start, w);
-                      setMeta({ endDate: formatYmdLocal(d) });
-                      setTempDate(d);
-                    }}
-                    style={[s.lengthChip, active && s.lengthChipActive]}
-                  >
-                    <Text
-                      style={[
-                        s.lengthChipText,
-                        active && s.lengthChipTextActive,
-                      ]}
-                    >
-                      {w}w
-                    </Text>
-                  </Pressable>
-                );
-              })}
-
-              {/* Custom */}
-              <Pressable
-                onPress={() => {
-                  setLengthPreset("custom");
-                  // open picker; tempDate should be current end date or today
-                  setTempDate(end ? end : start);
-                  setShow(true);
-                }}
-                style={[
-                  s.lengthChip,
-                  lengthPreset === "custom" && s.lengthChipActive,
-                ]}
-              >
-                <Text
-                  style={[
-                    s.lengthChipText,
-                    lengthPreset === "custom" && s.lengthChipTextActive,
-                  ]}
-                >
-                  Custom
-                </Text>
-              </Pressable>
-            </View>
-
-            {/* Always visible summary */}
-            <View style={s.summaryCard}>
-              <View style={s.summaryRow}>
-                <Text style={s.summaryLabel}>End date</Text>
-                <Text style={s.summaryValue}>{endDateLabel}</Text>
-              </View>
-              <View style={s.summaryRow}>
-                <Text style={s.summaryLabel}>Duration</Text>
-                <Text style={s.summaryValue}>
-                  {end
-                    ? `${computedWeeks} week${computedWeeks === 1 ? "" : "s"}`
-                    : "—"}
-                </Text>
-              </View>
-            </View>
-          </View>
-
-          {/* Section: Workouts per week */}
-          <View style={s.section}>
-            <Text style={s.label}>Workouts per week</Text>
-            <Text style={s.helper}>
-              This creates that many workouts in your plan.
-            </Text>
-
-            <View style={s.chipRow}>
-              {[1, 2, 3, 4, 5, 6].map((n) => {
-                const active = workoutsPerWeek === n;
-                return (
-                  <Pressable
-                    key={n}
-                    onPress={() => setMeta({ workoutsPerWeek: n })}
-                    style={[s.chip, active && s.chipActive]}
-                  >
-                    <Text style={[s.chipText, active && s.chipTextActive]}>
-                      {n}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-          </View>
-
-          {/* Primary action */}
-          <Pressable style={[s.btn, s.primary]} onPress={proceed}>
-            <Text style={s.btnPrimaryText}>Next</Text>
-            <Text style={s.btnArrow}>→</Text>
+          <Pressable
+            onPress={proceed}
+            disabled={!canContinue}
+            style={[s.cta, !canContinue && s.ctaDisabled]}
+          >
+            <Text style={s.ctaText}>Continue</Text>
           </Pressable>
         </View>
 
-        {/* end date modal */}
+        {/* Date picker modal */}
         <Modal
-          visible={show}
+          visible={showDateModal}
           transparent
           animationType="slide"
-          onRequestClose={() => setShow(false)}
+          onRequestClose={() => setShowDateModal(false)}
         >
           <View style={s.modalScrim}>
             <View style={s.modalCard}>
-              <View style={{ marginBottom: 8 }}>
-                <Text style={s.h3}>Select end date</Text>
-                <Text style={s.modalSub}>
-                  Pick when this plan finishes (you can change it later).
-                </Text>
+              <View style={{ marginBottom: layout.space.sm }}>
+                <Text style={s.modalTitle}>Select end date</Text>
+                <Text style={s.modalSub}>Pick when this plan finishes (you can change it later).</Text>
               </View>
 
               <DateTimePicker
@@ -319,28 +358,25 @@ export default function PlanInfo() {
                 onChange={(_, d) => d && setTempDate(d)}
               />
 
-              <View style={{ flexDirection: "row", gap: 8, marginTop: 12 }}>
-                <Pressable
-                  style={[s.btn, { flex: 1 }]}
-                  onPress={() => setShow(false)}
-                >
-                  <Text style={s.btnText}>Cancel</Text>
+              <View style={s.modalActions}>
+                <Pressable style={[s.modalBtn]} onPress={() => setShowDateModal(false)}>
+                  <Text style={s.modalBtnText}>Cancel</Text>
                 </Pressable>
+
                 <Pressable
-                  style={[s.btn, s.primary, { flex: 1 }]}
+                  style={[s.modalBtn, s.modalBtnPrimary]}
                   onPress={() => {
                     const ymd = formatYmdLocal(tempDate);
                     setMeta({ endDate: ymd });
 
-                    // if user-picked date matches preset (4/8/12), snap to it; else keep custom
                     const w = weeksBetweenCeil(start, tempDate);
-                    if (w === 4 || w === 8 || w === 12) setLengthPreset(w);
-                    else setLengthPreset("custom");
+                    setWeeks(w);
+                    setLengthMode("date");
 
-                    setShow(false);
+                    setShowDateModal(false);
                   }}
                 >
-                  <Text style={s.btnPrimaryText}>Done</Text>
+                  <Text style={s.modalBtnPrimaryText}>Done</Text>
                 </Pressable>
               </View>
             </View>
@@ -351,256 +387,350 @@ export default function PlanInfo() {
   );
 }
 
-/* -------- themed styles -------- */
-const makeStyles = (colors: any) =>
+/* ---------------- styles ---------------- */
+
+const makeStyles = (colors: any, typography: any, layout: any) =>
   StyleSheet.create({
     page: {
       flex: 1,
-      paddingHorizontal: 16,
-      paddingTop: 8,
-      backgroundColor: colors.background,
-      alignItems: "center", // centers the sheet
+      backgroundColor: colors.bg,
     },
 
-    topBar: {
-      width: "100%",
-      maxWidth: 520,
+    header: {
+      paddingHorizontal: layout.space.lg,
+      paddingTop: layout.space.sm,
+      paddingBottom: layout.space.sm,
       flexDirection: "row",
       alignItems: "center",
       justifyContent: "space-between",
-      marginBottom: 10,
+    },
+    headerIconBtn: {
+      width: 44,
+      height: 44,
+      borderRadius: layout.radius.pill,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    headerIcon: {
+      color: colors.primary,
+      fontSize: 26,
+      fontFamily: typography.fontFamily.bold,
+      marginTop: -2,
+    },
+    headerCenter: {
+      flex: 1,
+      alignItems: "center",
+    },
+    headerTitle: {
+      color: colors.text,
+      fontSize: typography.size.sub,
+      fontFamily: typography.fontFamily.semibold,
+      letterSpacing: 0.2,
+    },
+    headerTextBtn: {
+      height: 44,
+      alignItems: "flex-end",
+      justifyContent: "center",
+      paddingHorizontal: layout.space.sm,
+    },
+    headerTextBtnText: {
+      color: colors.primary,
+      fontSize: typography.size.meta,
+      fontFamily: typography.fontFamily.semibold,
     },
 
-    backPill: {
+    progressWrap: {
+      paddingHorizontal: layout.space.lg,
+      paddingBottom: layout.space.sm,
+    },
+    progressBarTrack: {
+      height: 4,
+      borderRadius: 999,
+      backgroundColor: colors.trackBg,
+      overflow: "hidden",
+    },
+    progressBarFill: {
+      height: 4,
+      borderRadius: 999,
+      backgroundColor: colors.primary,
+    },
+    progressMeta: {
+      marginTop: layout.space.xs,
+      color: colors.textMuted,
+      fontSize: typography.size.meta,
+      fontFamily: typography.fontFamily.medium,
+      textAlign: "right",
+    },
+
+    content: {
+      flex: 1,
+      paddingHorizontal: layout.space.lg,
+      paddingTop: layout.space.md,
+    },
+
+    sectionLabel: {
+      color: colors.text,
+      fontSize: typography.size.sub,
+      fontFamily: typography.fontFamily.semibold,
+      marginBottom: layout.space.sm,
+    },
+
+    inputWrap: {
       flexDirection: "row",
       alignItems: "center",
-      gap: 8,
-      paddingVertical: 8,
-      paddingHorizontal: 12,
-      borderRadius: 999,
       backgroundColor: colors.surface,
-      borderWidth: StyleSheet.hairlineWidth,
+      borderWidth: 2,
       borderColor: colors.border,
+      borderRadius: layout.radius.xl,
+      paddingHorizontal: layout.space.md,
+      height: 54,
     },
-    backIcon: {
-      color: colors.primary,
-      fontSize: 18,
-      fontWeight: "900",
+    inputWrapValid: {
+      borderColor: colors.primary,
+    },
+    input: {
+      flex: 1,
+      color: colors.text,
+      fontSize: typography.size.body,
+      fontFamily: typography.fontFamily.medium,
+    },
+    validBadge: {
+      width: 22,
+      height: 22,
+      borderRadius: 999,
+      backgroundColor: colors.primary,
+      alignItems: "center",
+      justifyContent: "center",
+      marginLeft: layout.space.sm,
+    },
+    validBadgeText: {
+      color: colors.onPrimary,
+      fontSize: 14,
+      fontFamily: typography.fontFamily.bold,
       marginTop: -1,
     },
-    backText: {
-      color: colors.primary,
-      fontSize: 15,
-      fontWeight: "800",
-    },
 
-    stepPill: {
-      paddingVertical: 6,
-      paddingHorizontal: 10,
-      borderRadius: 999,
+    daysRow: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      gap: 8,
+    },
+    dayPill: {
+      width: 40,
+      height: 40,
+      borderRadius: layout.radius.pill,
       backgroundColor: colors.surface,
-      borderWidth: StyleSheet.hairlineWidth,
+      borderWidth: 2,
       borderColor: colors.border,
+      alignItems: "center",
+      justifyContent: "center",
     },
-    stepText: {
-      color: colors.subtle,
-      fontWeight: "800",
-      fontSize: 12,
+    dayPillActive: {
+      backgroundColor: colors.primary,
+      borderColor: colors.primary,
+    },
+    dayPillText: {
+      color: colors.textMuted,
+      fontFamily: typography.fontFamily.semibold,
+      fontSize: typography.size.sub,
+    },
+    dayPillTextActive: {
+      color: colors.onPrimary,
     },
 
-    sheet: {
-      width: "100%",
-      maxWidth: 520,
-      backgroundColor: colors.card,
-      borderRadius: 16,
-      borderWidth: StyleSheet.hairlineWidth,
+    segment: {
+      flexDirection: "row",
+      backgroundColor: colors.surface,
+      borderRadius: layout.radius.pill,
+      borderWidth: 1,
       borderColor: colors.border,
-      padding: 16,
-      shadowColor: colors.text,
-      shadowOpacity: 0.06,
-      shadowOffset: { width: 0, height: 6 },
-      shadowRadius: 14,
-      elevation: 2,
+      overflow: "hidden",
+      marginBottom: layout.space.md,
+    },
+    segmentBtn: {
+      flex: 1,
+      paddingVertical: 10,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    segmentBtnActive: {
+      backgroundColor: colors.cardPressed,
+    },
+    segmentText: {
+      color: colors.textMuted,
+      fontFamily: typography.fontFamily.semibold,
+      fontSize: typography.size.meta,
+    },
+    segmentTextActive: {
+      color: colors.primary,
     },
 
-    h1: {
-      fontSize: 22,
-      fontWeight: "900",
+    stepper: {
+      flexDirection: "row",
+      alignItems: "center",
+      backgroundColor: colors.surface,
+      borderRadius: layout.radius.xl,
+      borderWidth: 1,
+      borderColor: colors.border,
+      paddingHorizontal: layout.space.md,
+      height: 56,
+    },
+    stepperNumber: {
       color: colors.text,
-      marginBottom: 6,
+      fontFamily: typography.fontFamily.bold,
+      fontSize: typography.size.h2,
+      marginRight: 6,
     },
-    subtitle: {
-      color: colors.subtle,
-      fontWeight: "600",
-      lineHeight: 18,
+    stepperUnit: {
+      color: colors.textMuted,
+      fontFamily: typography.fontFamily.medium,
+      fontSize: typography.size.sub,
+    },
+    stepperBtn: {
+      width: 40,
+      height: 40,
+      borderRadius: layout.radius.pill,
+      backgroundColor: colors.bg,
+      borderWidth: 1,
+      borderColor: colors.border,
+      alignItems: "center",
+      justifyContent: "center",
+      marginLeft: 10,
+    },
+    stepperBtnText: {
+      color: colors.primary,
+      fontFamily: typography.fontFamily.bold,
+      fontSize: 20,
+      marginTop: -1,
     },
 
-    h3: { fontSize: 16, fontWeight: "900", color: colors.text },
-    modalSub: { marginTop: 4, color: colors.subtle, fontWeight: "600" },
+    dateSelect: {
+      flexDirection: "row",
+      alignItems: "center",
+      backgroundColor: colors.surface,
+      borderRadius: layout.radius.xl,
+      borderWidth: 1,
+      borderColor: colors.border,
+      paddingHorizontal: layout.space.md,
+      height: 56,
+    },
+    dateSelectText: {
+      flex: 1,
+      color: colors.text,
+      fontFamily: typography.fontFamily.medium,
+      fontSize: typography.size.sub,
+    },
+    chevron: {
+      color: colors.textMuted,
+      fontFamily: typography.fontFamily.bold,
+      fontSize: 22,
+      marginLeft: 10,
+      marginTop: -2,
+    },
 
     loadingRow: {
       flexDirection: "row",
       alignItems: "center",
-      gap: 8,
-      marginBottom: 10,
+      gap: 10,
+      marginTop: layout.space.md,
     },
-    muted: { color: colors.subtle, fontWeight: "600" },
-
-    section: {
-      marginTop: 12,
-      paddingTop: 12,
-      borderTopWidth: StyleSheet.hairlineWidth,
-      borderTopColor: colors.border,
+    loadingText: {
+      color: colors.textMuted,
+      fontFamily: typography.fontFamily.medium,
+      fontSize: typography.size.meta,
     },
 
-    label: {
-      fontWeight: "900",
-      marginBottom: 4,
-      color: colors.text,
-      fontSize: 14,
+    bottomDock: {
+      paddingHorizontal: layout.space.lg,
+      paddingBottom: layout.space.lg,
+      paddingTop: layout.space.sm,
+      backgroundColor: colors.bg,
     },
-    helper: {
-      color: colors.subtle,
-      fontWeight: "600",
-      marginBottom: 10,
-      fontSize: 12,
-    },
-
-    input: {
-      backgroundColor: colors.background,
+    summaryChip: {
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: colors.surface,
+      borderRadius: layout.radius.md,
+      borderWidth: 1,
+      borderColor: colors.border,
       paddingVertical: 12,
       paddingHorizontal: 12,
-      borderRadius: 12,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: colors.border,
-      color: colors.text,
-      fontWeight: "700",
+      marginBottom: layout.space.md,
     },
-    inputPressable: { justifyContent: "center" },
-
-    dateRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "space-between",
-    },
-    chevron: {
-      color: colors.subtle,
-      fontSize: 18,
-      fontWeight: "900",
-      marginLeft: 10,
+    summaryChipText: {
+      color: colors.primary,
+      fontFamily: typography.fontFamily.semibold,
+      fontSize: typography.size.meta,
+      textAlign: "center",
     },
 
-    chipRow: {
-      flexDirection: "row",
-      gap: 10,
-      flexWrap: "wrap",
-    },
-    chip: {
-      width: 44,
-      height: 44,
-      borderRadius: 999,
-      alignItems: "center",
-      justifyContent: "center",
-      backgroundColor: colors.background,
-      borderWidth: 3,
-      borderColor: colors.border,
-    },
-    chipActive: {
+    cta: {
+      height: 56,
+      borderRadius: layout.radius.xl,
       backgroundColor: colors.primary,
-      borderColor: colors.primary,
-    },
-    chipText: { fontWeight: "900", color: colors.text },
-    chipTextActive: { color: colors.onPrimary ?? "#fff" },
-
-    btn: {
-      marginTop: 16,
-      backgroundColor: colors.surface,
-      paddingVertical: 12,
-      borderRadius: 12,
       alignItems: "center",
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: colors.border,
-      flexDirection: "row",
       justifyContent: "center",
-      gap: 8,
     },
-    btnText: { fontWeight: "900", color: colors.text },
-    primary: { backgroundColor: colors.primary, borderColor: colors.primary },
-    btnPrimaryText: { color: colors.onPrimary ?? "#fff", fontWeight: "900" },
-    btnArrow: {
-      color: colors.onPrimary ?? "#fff",
-      fontWeight: "900",
-      fontSize: 16,
+    ctaDisabled: {
+      opacity: 0.45,
+    },
+    ctaText: {
+      color: colors.onPrimary,
+      fontFamily: typography.fontFamily.bold,
+      fontSize: typography.size.body,
     },
 
     modalScrim: {
       flex: 1,
-      backgroundColor: "rgba(0,0,0,0.35)",
+      backgroundColor: colors.overlay,
       justifyContent: "flex-end",
     },
     modalCard: {
-      backgroundColor: colors.card,
-      padding: 16,
-      borderTopLeftRadius: 18,
-      borderTopRightRadius: 18,
+      backgroundColor: colors.surface,
+      borderTopLeftRadius: layout.radius.xl,
+      borderTopRightRadius: layout.radius.xl,
+      padding: layout.space.lg,
       borderTopWidth: StyleSheet.hairlineWidth,
       borderColor: colors.border,
     },
-
-    lengthRow: {
+    modalTitle: {
+      color: colors.text,
+      fontFamily: typography.fontFamily.bold,
+      fontSize: typography.size.h3,
+    },
+    modalSub: {
+      marginTop: 4,
+      color: colors.textMuted,
+      fontFamily: typography.fontFamily.medium,
+      fontSize: typography.size.meta,
+    },
+    modalActions: {
       flexDirection: "row",
       gap: 10,
-      flexWrap: "wrap",
+      marginTop: layout.space.md,
     },
-
-    lengthChip: {
-      paddingHorizontal: 14,
-      paddingVertical: 10,
-      borderRadius: 999,
-      backgroundColor: colors.background,
-      borderWidth: 2,
+    modalBtn: {
+      flex: 1,
+      height: 48,
+      borderRadius: layout.radius.lg,
+      backgroundColor: colors.bg,
+      borderWidth: 1,
       borderColor: colors.border,
+      alignItems: "center",
+      justifyContent: "center",
     },
-
-    lengthChipActive: {
+    modalBtnText: {
+      color: colors.text,
+      fontFamily: typography.fontFamily.semibold,
+      fontSize: typography.size.sub,
+    },
+    modalBtnPrimary: {
       backgroundColor: colors.primary,
       borderColor: colors.primary,
     },
-
-    lengthChipText: {
-      fontWeight: "900",
-      color: colors.text,
-    },
-
-    lengthChipTextActive: {
-      color: colors.onPrimary ?? "#fff",
-    },
-
-    summaryCard: {
-      marginTop: 12,
-      backgroundColor: colors.background,
-      borderRadius: 12,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: colors.border,
-      padding: 12,
-    },
-
-    summaryRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "space-between",
-      paddingVertical: 6,
-    },
-
-    summaryLabel: {
-      color: colors.subtle,
-      fontWeight: "800",
-      fontSize: 12,
-    },
-
-    summaryValue: {
-      color: colors.text,
-      fontWeight: "900",
-      fontSize: 12,
+    modalBtnPrimaryText: {
+      color: colors.onPrimary,
+      fontFamily: typography.fontFamily.semibold,
+      fontSize: typography.size.sub,
     },
   });
