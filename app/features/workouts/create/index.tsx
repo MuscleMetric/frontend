@@ -23,11 +23,47 @@ import {
   ExerciseNoteSheet,
   DiscardChangesSheet,
   SupersetSheet,
+  SupersetPickExercisesSheet,
 } from "./modals";
 
-type RouteParams = {
-  draftId?: string;
-};
+type RouteParams = { draftId?: string };
+
+// helper: existing groups + next letter
+function getExistingGroups(exercises: any[]) {
+  const set = new Set<string>();
+  (exercises ?? []).forEach((x) => {
+    const g = x?.supersetGroup ? String(x.supersetGroup).toUpperCase() : null;
+    if (g) set.add(g);
+  });
+  return Array.from(set).sort();
+}
+
+function nextGroupLetter(existing: string[]) {
+  const used = new Set(existing.map((g) => g.toUpperCase()));
+  for (let i = 0; i < 26; i++) {
+    const c = String.fromCharCode("A".charCodeAt(0) + i);
+    if (!used.has(c)) return c;
+  }
+  return "A";
+}
+
+/**
+ * Minimal placeholder. Swap this to your real logic later.
+ * Options:
+ * - use draft.workoutImageKey when you add it
+ * - infer from majority muscle/equipment once you have that data here
+ */
+function inferWorkoutImageKey(draft: any): string {
+  // crude fallback: if title contains keywords
+  const t = String(draft?.title ?? "").toLowerCase();
+  if (t.includes("leg")) return "legs";
+  if (t.includes("pull") || t.includes("back")) return "pull";
+  if (t.includes("push") || t.includes("chest")) return "push";
+  if (t.includes("upper")) return "upper_body";
+  if (t.includes("lower")) return "lower_body";
+  if (t.includes("cardio") || t.includes("run")) return "cardio";
+  return "full_body";
+}
 
 export default function CreateWorkoutScreen() {
   const { draftId } = useLocalSearchParams<RouteParams>();
@@ -42,12 +78,11 @@ export default function CreateWorkoutScreen() {
     setNote,
     addExercises,
 
-    // IMPORTANT: these now operate on exerciseKey (not exerciseId)
+    // keyed actions (exerciseKey)
     removeExercise,
     toggleFavourite,
     setExerciseNote,
 
-    // NEW: you said you’re adding these into state
     toggleDropset,
     setSupersetGroup,
 
@@ -62,13 +97,17 @@ export default function CreateWorkoutScreen() {
   const [noteOpen, setNoteOpen] = useState(false);
   const [noteExerciseKey, setNoteExerciseKey] = useState<string | null>(null);
 
+  // Superset flow (Option B)
   const [supersetOpen, setSupersetOpen] = useState(false);
-  const [supersetExerciseKey, setSupersetExerciseKey] = useState<string | null>(
-    null
-  );
+  const [pickSupersetOpen, setPickSupersetOpen] = useState(false);
+
+  const [pendingAnchorKey, setPendingAnchorKey] = useState<string | null>(null);
+  const [pendingSupersetGroup, setPendingSupersetGroup] = useState<string | null>(null);
+  const [requirePartner, setRequirePartner] = useState(false);
 
   const [discardOpen, setDiscardOpen] = useState(false);
 
+  // dirty check
   const isDirty = useMemo(() => {
     const current = snapshotHash(draft);
     const saved =
@@ -77,7 +116,6 @@ export default function CreateWorkoutScreen() {
       (draft as any).snapshot_hash ??
       (draft as any).snapshotHash ??
       null;
-
     return saved ? current !== saved : true;
   }, [draft]);
 
@@ -87,34 +125,44 @@ export default function CreateWorkoutScreen() {
     return hasTitle && hasExercises && !saving;
   }, [draft.title, draft.exercises, saving]);
 
-  const onBack = useCallback(() => {
-    if (isDirty) setDiscardOpen(true);
-    else router.back();
-  }, [isDirty]);
-
   const discardAndExit = useCallback(() => {
     setDiscardOpen(false);
     router.back();
   }, []);
 
-  // --- helpers to locate the draft row by key ---
+  // locate draft row by key
   const findByKey = useCallback(
     (exerciseKey: string) =>
-      (draft.exercises ?? []).find((x: any) => String(x.key) === exerciseKey) ??
-      null,
+      (draft.exercises ?? []).find((x: any) => String(x.key) === exerciseKey) ?? null,
     [draft.exercises]
   );
 
+  // Note sheet open
   const openExerciseNote = useCallback((exerciseKey: string) => {
     setNoteExerciseKey(exerciseKey);
     setNoteOpen(true);
   }, []);
 
+  // Superset open (start at group picker)
   const openSuperset = useCallback((exerciseKey: string) => {
-    setSupersetExerciseKey(exerciseKey);
+    setPendingAnchorKey(exerciseKey);
+    setPendingSupersetGroup(null);
+    setRequirePartner(false);
     setSupersetOpen(true);
   }, []);
 
+  // groups for SupersetSheet
+  const existingGroups = useMemo(
+    () => getExistingGroups(draft.exercises ?? []),
+    [draft.exercises]
+  );
+
+  const suggestedNewGroup = useMemo(
+    () => nextGroupLetter(existingGroups),
+    [existingGroups]
+  );
+
+  // ✅ Save via RPC
   const saveWorkout = useCallback(
     async (mode: "save" | "save_start") => {
       if (!userId) {
@@ -137,42 +185,31 @@ export default function CreateWorkoutScreen() {
       setSaving(true);
       try {
         const notes = String(draft.note ?? "").trim();
+        const workoutImageKey = inferWorkoutImageKey(draft);
 
-        const { data: wIns, error: wErr } = await supabase
-          .from("workouts")
-          .insert({
-            user_id: userId,
-            title,
-            notes: notes.length ? notes : null,
-          })
-          .select("id")
-          .single();
+        const p_workout = {
+          title,
+          notes: notes.length ? notes : null,
+          workout_image_key: workoutImageKey,
 
-        if (wErr) throw wErr;
+          exercises: exercises.map((ex: any, idx: number) => ({
+            exercise_id: String(ex.exerciseId),
+            order_index: idx,
 
-        const workoutId = String(wIns?.id);
+            // IMPORTANT: workout_exercises column is "notes" not "note"
+            notes: ex.note ? String(ex.note) : null,
 
-        const rows = exercises.map((ex: any, idx: number) => ({
-          workout_id: workoutId,
-          exercise_id: String(ex.exerciseId),
-          order_index: idx,
-          note: ex.note ? String(ex.note) : null,
-          is_favourite: !!ex.isFavourite,
+            is_dropset: !!ex.isDropset,
+            superset_group: ex.supersetGroup ? String(ex.supersetGroup).toUpperCase() : null,
+            superset_index:
+              ex.supersetIndex === 0 || ex.supersetIndex ? Number(ex.supersetIndex) : null,
+          })),
+        };
 
-          // NEW: carry these through now so your future save RPC can use them
-          is_dropset: !!ex.isDropset,
-          superset_group: ex.supersetGroup ? String(ex.supersetGroup) : null,
-          superset_index:
-            ex.supersetIndex === 0 || ex.supersetIndex
-              ? Number(ex.supersetIndex)
-              : null,
-        }));
+        const { data, error } = await supabase.rpc("create_workout_v1", { p_workout });
+        if (error) throw error;
 
-        const { error: weErr } = await supabase
-          .from("workout_exercises")
-          .insert(rows);
-        if (weErr) throw weErr;
-
+        const workoutId = String(data);
         markSavedNow();
 
         if (mode === "save_start") {
@@ -193,28 +230,34 @@ export default function CreateWorkoutScreen() {
     [userId, draft, markSavedNow]
   );
 
-  // IMPORTANT: selection should be based on exerciseId (for picker), but draft actions use key
+  // picker selection uses exerciseId (not key)
   const selectedExerciseIds = useMemo(
     () => (draft.exercises ?? []).map((x: any) => String(x.exerciseId)),
     [draft.exercises]
   );
 
-  // For SupersetSheet label + current group
-  const supersetRow = useMemo(() => {
-    if (!supersetExerciseKey) return null;
-    return findByKey(supersetExerciseKey);
-  }, [supersetExerciseKey, findByKey]);
-
-  // For Note sheet label + initial note
   const noteRow = useMemo(() => {
     if (!noteExerciseKey) return null;
     return findByKey(noteExerciseKey);
   }, [noteExerciseKey, findByKey]);
 
+  const anchorRow = useMemo(() => {
+    if (!pendingAnchorKey) return null;
+    return findByKey(pendingAnchorKey);
+  }, [pendingAnchorKey, findByKey]);
+
+  // items for “pick partner exercises” (ONLY current workout exercises)
+  const pickItems = useMemo(() => {
+    return (draft.exercises ?? []).map((x: any) => ({
+      key: String(x.key),
+      name: String(x.name ?? ""),
+      supersetGroup: x.supersetGroup ? String(x.supersetGroup).toUpperCase() : null,
+    }));
+  }, [draft.exercises]);
+
   return (
     <Screen>
-      {/* If your ScreenHeader supports onBack, wire it. If not, keep showBack={true}. */}
-      <ScreenHeader title="Create workout" showBack={true} />
+      <ScreenHeader title="Create Workout" showBack={true} />
 
       {/* Whole screen scrolls */}
       <ScrollView
@@ -231,14 +274,8 @@ export default function CreateWorkoutScreen() {
         <Card>
           <View style={{ gap: layout.space.md }}>
             <CreateWorkoutHeader />
-            <WorkoutNameInput
-              value={String(draft.title ?? "")}
-              onChange={setTitle}
-            />
-            <WorkoutNotesCard
-              value={String(draft.note ?? "")}
-              onChange={setNote}
-            />
+            <WorkoutNameInput value={String(draft.title ?? "")} onChange={setTitle} />
+            <WorkoutNotesCard value={String(draft.note ?? "")} onChange={setNote} />
           </View>
         </Card>
 
@@ -273,18 +310,10 @@ export default function CreateWorkoutScreen() {
                 items={draft.exercises as any}
                 onAdd={() => setAddOpen(true)}
                 onRemove={(exerciseKey: string) => removeExercise(exerciseKey)}
-                onToggleFavourite={(exerciseKey: string) =>
-                  toggleFavourite(exerciseKey)
-                }
-                onToggleDropset={(exerciseKey: string) =>
-                  toggleDropset?.(exerciseKey)
-                }
-                onOpenSuperset={(exerciseKey: string) =>
-                  openSuperset(exerciseKey)
-                }
-                onOpenNote={(exerciseKey: string) =>
-                  openExerciseNote(exerciseKey)
-                }
+                onToggleFavourite={(exerciseKey: string) => toggleFavourite(exerciseKey)}
+                onToggleDropset={(exerciseKey: string) => toggleDropset(exerciseKey)}
+                onOpenSuperset={(exerciseKey: string) => openSuperset(exerciseKey)}
+                onOpenNote={(exerciseKey: string) => openExerciseNote(exerciseKey)}
               />
             ) : (
               <EmptyExercisesState onAdd={() => setAddOpen(true)} />
@@ -308,18 +337,15 @@ export default function CreateWorkoutScreen() {
         </View>
       </ScrollView>
 
-      {/* Modals */}
+      {/* ---- Modals ---- */}
+
       <AddExercisesSheet
         visible={addOpen}
         userId={String(userId ?? "")}
         selectedIds={selectedExerciseIds}
         onClose={() => setAddOpen(false)}
-        onDone={(pickedIds: string[]) => {
-          // IMPORTANT: ensure names are present.
-          // Your AddExercisesSheet already has items (ExerciseListItem) internally.
-          // Best pattern: change AddExercisesSheet to call onDone(items: {id,name}[]) instead.
-          // For now, keep backward-compatible: we’ll fill names lazily if missing.
-          addExercises(pickedIds.map((id) => ({ exerciseId: id, name: "" })));
+        onDone={(pickedItems: Array<{ exerciseId: string; name: string }>) => {
+          addExercises(pickedItems);
           setAddOpen(false);
         }}
         enableMuscleFilter
@@ -342,19 +368,82 @@ export default function CreateWorkoutScreen() {
         }}
       />
 
+      {/* ✅ Superset GROUP picker (then we open partner picker) */}
       <SupersetSheet
         visible={supersetOpen}
-        exerciseName={String(supersetRow?.name ?? "Exercise")}
-        currentGroup={(supersetRow?.supersetGroup as any) ?? null}
+        exerciseName={String(anchorRow?.name ?? "Exercise")}
+        currentGroup={(anchorRow?.supersetGroup as any) ?? null}
+        existingGroups={existingGroups}
+        suggestedNewGroup={suggestedNewGroup}
         onClose={() => {
           setSupersetOpen(false);
-          setSupersetExerciseKey(null);
+          setPendingAnchorKey(null);
+          setPendingSupersetGroup(null);
+          setRequirePartner(false);
         }}
         onPickGroup={(group: string | null) => {
-          if (!supersetExerciseKey) return;
-          setSupersetGroup?.(supersetExerciseKey, group);
+          if (!pendingAnchorKey) return;
+
+          // Clear superset
+          if (!group) {
+            setSupersetGroup(pendingAnchorKey, null);
+            setSupersetOpen(false);
+            setPendingAnchorKey(null);
+            setPendingSupersetGroup(null);
+            setRequirePartner(false);
+            return;
+          }
+
+          const g = String(group).toUpperCase();
+
+          // Is this a brand-new group for this workout (excluding anchor)?
+          const othersInGroup = (draft.exercises ?? []).some(
+            (x: any) =>
+              String(x.key) !== String(pendingAnchorKey) &&
+              String(x.supersetGroup ?? "").toUpperCase() === g
+          );
+
+          // If new group, require at least 1 partner (so "superset" means something)
+          setRequirePartner(!othersInGroup);
+
+          setPendingSupersetGroup(g);
+
+          // Close group picker and open partner picker
           setSupersetOpen(false);
-          setSupersetExerciseKey(null);
+          setPickSupersetOpen(true);
+        }}
+      />
+
+      {/* ✅ Superset PARTNER picker (ONLY current workout exercises) */}
+      <SupersetPickExercisesSheet
+        visible={pickSupersetOpen}
+        anchorKey={String(pendingAnchorKey ?? "")}
+        anchorName={String(anchorRow?.name ?? "Exercise")}
+        group={String(pendingSupersetGroup ?? suggestedNewGroup)}
+        items={pickItems}
+        requireAtLeastOne={requirePartner}
+        onClose={() => {
+          setPickSupersetOpen(false);
+          setPendingSupersetGroup(null);
+          setRequirePartner(false);
+          setPendingAnchorKey(null);
+        }}
+        onApply={(pickedKeys: string[]) => {
+          if (!pendingAnchorKey) return;
+
+          const g = String(pendingSupersetGroup ?? suggestedNewGroup).toUpperCase();
+
+          // set group for anchor
+          setSupersetGroup(pendingAnchorKey, g);
+
+          // set group for chosen partners
+          pickedKeys.forEach((k) => setSupersetGroup(String(k), g));
+
+          // close + reset
+          setPickSupersetOpen(false);
+          setPendingSupersetGroup(null);
+          setPendingAnchorKey(null);
+          setRequirePartner(false);
         }}
       />
 

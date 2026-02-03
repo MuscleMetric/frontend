@@ -1,19 +1,18 @@
 // app/features/workouts/create/ui/ExerciseList.tsx
-import React from "react";
+import React, { useMemo } from "react";
 import { View, Text, StyleSheet, Pressable } from "react-native";
 import { useAppTheme } from "@/lib/useAppTheme";
 import { Card } from "@/ui";
 import ExerciseRow from "./ExerciseRow";
 
 export type CreateExerciseItem = {
-  key: string; // IMPORTANT: stable UI key
+  key: string; // stable UI key
   exerciseId: string;
   name: string;
   note: string | null;
 
   isFavourite: boolean;
 
-  // NEW
   isDropset: boolean;
   supersetGroup: string | null;
   supersetIndex: number | null;
@@ -43,7 +42,10 @@ export default function ExerciseList({
   renderDragHandle?: (exerciseKey: string) => React.ReactNode;
 }) {
   const { colors, typography, layout } = useAppTheme();
-  const styles = makeStyles(colors, typography, layout);
+  const styles = useMemo(
+    () => makeStyles(colors, typography, layout),
+    [colors, typography, layout]
+  );
 
   return (
     <Card>
@@ -59,28 +61,44 @@ export default function ExerciseList({
           <Text style={styles.muted}>Add exercises to this workout.</Text>
         ) : (
           <View>
-            {items.map((it) => (
-              <ExerciseRow
-                key={it.key}
-                name={it.name}
-                notePreview={it.note}
-                isFavourite={it.isFavourite}
-                isDropset={it.isDropset}
-                supersetGroup={it.supersetGroup}
-                onToggleFavourite={() => onToggleFavourite(it.key)}
-                onToggleDropset={() => onToggleDropset(it.key)}
-                onOpenSuperset={() => onOpenSuperset(it.key)}
-                onOpenNote={() => onOpenNote(it.key)}
-                onRemove={() => onRemove(it.key)}
-                dragHandle={renderDragHandle ? renderDragHandle(it.key) : undefined}
-              />
-            ))}
+            {items.map((it, idx) => {
+              const prev = idx > 0 ? items[idx - 1] : null;
+
+              // Optional: show a small superset header when a group begins
+              const showSupersetHeader =
+                !!it.supersetGroup &&
+                (!prev || prev.supersetGroup !== it.supersetGroup);
+
+              // Optional: tighten spacing inside a group
+              const isInSameGroupAsPrev =
+                !!it.supersetGroup && prev?.supersetGroup === it.supersetGroup;
+
+              return (
+                <View key={it.key} style={isInSameGroupAsPrev ? styles.groupTight : undefined}>
+                  {showSupersetHeader ? (
+                    <Text style={styles.groupHeader}>
+                      Superset {String(it.supersetGroup).toUpperCase()}
+                    </Text>
+                  ) : null}
+
+                  <ExerciseRow
+                    name={it.name}
+                    notePreview={it.note}
+                    isFavourite={it.isFavourite}
+                    isDropset={it.isDropset}
+                    supersetGroup={it.supersetGroup}
+                    onToggleFavourite={() => onToggleFavourite(it.key)}
+                    onToggleDropset={() => onToggleDropset(it.key)}
+                    onOpenSuperset={() => onOpenSuperset(it.key)}
+                    onOpenNote={() => onOpenNote(it.key)}
+                    onRemove={() => onRemove(it.key)}
+                    dragHandle={renderDragHandle ? renderDragHandle(it.key) : undefined}
+                  />
+                </View>
+              );
+            })}
           </View>
         )}
-
-        <Text style={styles.hint}>
-          Tip: favourite ★ exercises you want to keep near the top.
-        </Text>
       </View>
     </Card>
   );
@@ -124,5 +142,20 @@ const makeStyles = (colors: any, typography: any, layout: any) =>
       fontFamily: typography.fontFamily.medium,
       fontSize: 12,
       color: colors.textMuted,
+    },
+
+    // Superset visual helpers (list-level)
+    groupHeader: {
+      marginTop: 10,
+      marginBottom: 6,
+      paddingHorizontal: 2,
+      fontFamily: typography.fontFamily.bold,
+      fontSize: 12,
+      letterSpacing: 0.6,
+      textTransform: "uppercase",
+      color: colors.textMuted,
+    },
+    groupTight: {
+      marginTop: -6, // reduces the vertical gap between two grouped rows
     },
   });

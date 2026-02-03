@@ -1,3 +1,4 @@
+// app/features/workouts/create/modals/SupersetSheet.tsx
 import React, { useMemo } from "react";
 import { View, Text, Pressable, StyleSheet } from "react-native";
 import { ModalSheet } from "@/ui";
@@ -7,38 +8,41 @@ type Props = {
   visible: boolean;
   exerciseName: string;
   currentGroup: string | null;
+
+  existingGroups: string[]; // ["A","B",...]
+  suggestedNewGroup: string; // "A" if none exist, else next free letter
+
   onClose: () => void;
   onPickGroup: (group: string | null) => void;
 };
-
-const GROUPS = ["A", "B", "C", "D", "E", "F"];
 
 export default function SupersetSheet({
   visible,
   exerciseName,
   currentGroup,
+  existingGroups,
+  suggestedNewGroup,
   onClose,
   onPickGroup,
 }: Props) {
   const { colors, typography, layout } = useAppTheme();
   const styles = useMemo(() => makeStyles(colors, typography, layout), [colors, typography, layout]);
 
+  const groups = useMemo(() => {
+    const uniq = Array.from(new Set((existingGroups ?? []).map((g) => String(g).toUpperCase())));
+    uniq.sort();
+    return uniq;
+  }, [existingGroups]);
+
   return (
     <ModalSheet visible={visible} onClose={onClose} title="Superset">
       <View style={{ paddingHorizontal: layout.space.md, paddingBottom: layout.space.md, gap: layout.space.md }}>
         <Text style={styles.muted}>
-          Assign <Text style={styles.strong}>{exerciseName}</Text> to a superset group.
+          Add <Text style={styles.strong}>{exerciseName}</Text> to a superset.
         </Text>
 
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: layout.space.sm }}>
-          <Pressable
-            onPress={() => onPickGroup(null)}
-            style={[styles.pillBtn, !currentGroup ? styles.pillActive : styles.pillIdle]}
-          >
-            <Text style={!currentGroup ? styles.pillTextActive : styles.pillTextIdle}>None</Text>
-          </Pressable>
-
-          {GROUPS.map((g) => {
+          {groups.map((g) => {
             const active = currentGroup === g;
             return (
               <Pressable
@@ -47,15 +51,23 @@ export default function SupersetSheet({
                 style={[styles.pillBtn, active ? styles.pillActive : styles.pillIdle]}
               >
                 <Text style={active ? styles.pillTextActive : styles.pillTextIdle}>
-                  Group {g}
+                  Superset {g}
                 </Text>
               </Pressable>
             );
           })}
+
+          {/* Always offer "Create new" */}
+          <Pressable
+            onPress={() => onPickGroup(suggestedNewGroup)}
+            style={[styles.pillBtn, styles.pillIdle]}
+          >
+            <Text style={styles.pillTextIdle}>Create Superset {suggestedNewGroup}</Text>
+          </Pressable>
         </View>
 
         <Pressable onPress={onClose} style={styles.secondaryBtn}>
-          <Text style={styles.secondaryText}>Done</Text>
+          <Text style={styles.secondaryText}>Cancel</Text>
         </Pressable>
       </View>
     </ModalSheet>

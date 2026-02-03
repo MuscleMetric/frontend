@@ -11,8 +11,12 @@ export type WorkoutDraftExercise = {
 
   // NEW
   isDropset: boolean;
-  supersetGroup: string | null; // "A", "B", ...
-  supersetIndex: number | null; // 0..n inside group
+
+  // "A", "B", ... (user-facing)
+  supersetGroup: string | null;
+
+  // 0..n inside group (computed by reducer)
+  supersetIndex: number | null;
 };
 
 export type WorkoutDraft = {

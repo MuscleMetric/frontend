@@ -17,12 +17,11 @@ export function initialDraft(draftId: string, nowIso: string): WorkoutDraft {
 export function makeDraftExercise(input: { exerciseId: string; name: string }): WorkoutDraftExercise {
   return {
     key: makeExerciseKey(),
-    exerciseId: input.exerciseId,
-    name: input.name ?? "",
+    exerciseId: String(input.exerciseId),
+    name: String(input.name ?? ""),
     note: null,
     isFavourite: false,
 
-    // NEW
     isDropset: false,
     supersetGroup: null,
     supersetIndex: null,

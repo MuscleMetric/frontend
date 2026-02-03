@@ -19,8 +19,7 @@ type Props = {
   userId: string;
   selectedIds: string[];
   onClose: () => void;
-  onDone: (nextSelectedIds: string[]) => void;
-
+  onDone: (picked: Array<{ exerciseId: string; name: string }>) => void;
   // default these ON so chips appear unless you explicitly disable
   enableMuscleFilter?: boolean;
   enableEquipmentFilter?: boolean;
@@ -128,7 +127,11 @@ export default function AddExercisesSheet({
   const countAdded = picked.size;
 
   const onPressAdd = useCallback(() => {
-    onDone(Array.from(picked));
+    const pickedItems = items
+      .filter((x) => picked.has(x.id))
+      .map((x) => ({ exerciseId: x.id, name: x.name }));
+
+    onDone(pickedItems);
     onClose();
   }, [picked, onDone, onClose]);
 
