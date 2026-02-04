@@ -1,5 +1,5 @@
 // app/features/plans/edit/goals.tsx
-import React, { useMemo, useState, useEffect } from "react";
+import React, { useMemo, useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -12,7 +12,11 @@ import {
 import { useRouter } from "expo-router";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { supabase } from "../../../../lib/supabase";
+import { useAuth } from "../../../../lib/authContext";
 import { useAppTheme } from "../../../../lib/useAppTheme";
+import { ScreenHeader, Icon } from "@/ui";
+
 import { useEditPlan, type ExerciseRow, type GoalDraft } from "./store";
 
 /** Helpers for mode <-> unit */
@@ -26,6 +30,13 @@ const MODE_UNIT: Record<GoalDraft["mode"], string> = {
 type DedupExercise = {
   exercise: ExerciseRow;
   workoutTitles: string[];
+};
+
+type LastMetric = {
+  weight?: number | null;
+  reps?: number | null;
+  time_minutes?: number | null;
+  distance?: number | null;
 };
 
 function labelForMode(m: GoalDraft["mode"]) {
@@ -43,7 +54,9 @@ function labelForMode(m: GoalDraft["mode"]) {
 
 function modeOptionsForExercise(ex: ExerciseRow): GoalDraft["mode"][] {
   const t = (ex.type ?? "").toLowerCase();
-  return t === "cardio" ? ["distance", "time"] : ["exercise_weight", "exercise_reps"];
+  return t === "cardio"
+    ? ["distance", "time"]
+    : ["exercise_weight", "exercise_reps"];
 }
 
 function getWeeksBetween(startIso: string, endIso: string): number {
@@ -85,26 +98,60 @@ function decreaseRange(start: number, weeks: number, mode: GoalDraft["mode"]) {
   };
 }
 
-function calcRangeForMode(mode: GoalDraft["mode"], start: number, weeks: number) {
+function calcRangeForMode(
+  mode: GoalDraft["mode"],
+  start: number,
+  weeks: number
+) {
   // time goals typically aim to decrease
-  return mode === "time" ? decreaseRange(start, weeks, mode) : increaseRange(start, weeks, mode);
+  return mode === "time"
+    ? decreaseRange(start, weeks, mode)
+    : increaseRange(start, weeks, mode);
+}
+
+function pickStartForMode(mode: GoalDraft["mode"], last?: LastMetric) {
+  if (!last) return null;
+
+  if (mode === "exercise_weight") {
+    return typeof last.weight === "number" ? roundForMode(mode, last.weight) : null;
+  }
+  if (mode === "exercise_reps") {
+    return typeof last.reps === "number" ? roundForMode(mode, last.reps) : null;
+  }
+  if (mode === "distance") {
+    return typeof last.distance === "number"
+      ? roundForMode(mode, last.distance)
+      : null;
+  }
+  if (mode === "time") {
+    return typeof last.time_minutes === "number"
+      ? roundForMode(mode, last.time_minutes)
+      : null;
+  }
+  return null;
 }
 
 export default function EditGoals() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { colors } = useAppTheme();
-  const s = useMemo(() => makeStyles(colors), [colors]);
+  const { session } = useAuth();
+  const userId = session?.user?.id ?? null;
+
+  const { colors, typography, layout } = useAppTheme() as any;
+  const s = useMemo(() => makeStyles(colors, typography, layout), [colors, typography, layout]);
 
   const { workouts, goals: storeGoals, setGoals, endDate } = useEditPlan();
 
   // Local buffer so we can Cancel without mutating store
   const [localGoals, setLocalGoals] = useState<GoalDraft[]>(storeGoals ?? []);
 
+  // last metrics map for autofill
+  const [lastMap, setLastMap] = useState<Record<string, LastMetric>>({});
+
   useEffect(() => {
     setLocalGoals(storeGoals ?? []);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // only once on mount; store is source-of-truth when entering
+  }, []); // only once on mount
 
   // Plan length (weeks)
   const todayIso = new Date().toISOString().slice(0, 10);
@@ -135,6 +182,64 @@ export default function EditGoals() {
     );
   }, [workouts]);
 
+  const allExerciseIds = useMemo(
+    () => deduped.map((d) => String(d.exercise.id)).filter(Boolean),
+    [deduped]
+  );
+
+  const fetchLastMetrics = useCallback(async () => {
+    if (!userId) return;
+    if (!allExerciseIds.length) return;
+
+    try {
+      // RPC returns rows per set; we reduce to "best last-known" values per exercise.
+      const { data, error } = await supabase.rpc("get_last_exercise_session_sets", {
+        p_user_id: userId,
+        p_exercise_ids: allExerciseIds,
+      });
+
+      if (error) throw error;
+
+      const next: Record<string, LastMetric> = {};
+
+      (data ?? []).forEach((r: any) => {
+        const exId = String(r.exercise_id ?? "");
+        if (!exId) return;
+
+        const w = typeof r.weight === "number" ? r.weight : r.weight != null ? Number(r.weight) : null;
+        const reps = typeof r.reps === "number" ? r.reps : r.reps != null ? Number(r.reps) : null;
+        const dist =
+          typeof r.distance === "number" ? r.distance : r.distance != null ? Number(r.distance) : null;
+        const tsec =
+          typeof r.time_seconds === "number"
+            ? r.time_seconds
+            : r.time_seconds != null
+            ? Number(r.time_seconds)
+            : null;
+
+        if (!next[exId]) next[exId] = {};
+
+        // pick max values from last session sets
+        if (w != null) next[exId].weight = Math.max(next[exId].weight ?? 0, w);
+        if (reps != null) next[exId].reps = Math.max(next[exId].reps ?? 0, reps);
+        if (dist != null) next[exId].distance = Math.max(next[exId].distance ?? 0, dist);
+        if (tsec != null) {
+          const minutes = tsec / 60;
+          next[exId].time_minutes = Math.max(next[exId].time_minutes ?? 0, minutes);
+        }
+      });
+
+      setLastMap(next);
+    } catch (e: any) {
+      // Non-fatal: just skip autofill
+      console.warn("get_last_exercise_session_sets failed:", e?.message ?? e);
+    }
+  }, [userId, allExerciseIds]);
+
+  useEffect(() => {
+    fetchLastMetrics();
+  }, [fetchLastMetrics]);
+
   const findGoal = (exerciseId: string) =>
     localGoals.find((g) => String(g.exercise.id) === String(exerciseId));
 
@@ -160,6 +265,17 @@ export default function EditGoals() {
     return a !== b;
   }, [storeGoals, localGoals]);
 
+  const selectedGoals = useMemo(() => {
+    return (localGoals ?? []).slice().sort((a, b) =>
+      a.exercise.name.localeCompare(b.exercise.name)
+    );
+  }, [localGoals]);
+
+  const unselected = useMemo(() => {
+    const selectedIds = new Set((localGoals ?? []).map((g) => String(g.exercise.id)));
+    return deduped.filter((d) => !selectedIds.has(String(d.exercise.id)));
+  }, [deduped, localGoals]);
+
   function toggleExercise(ex: ExerciseRow) {
     const exists = findGoal(ex.id);
     if (exists) {
@@ -172,14 +288,23 @@ export default function EditGoals() {
     }
 
     const firstMode = modeOptionsForExercise(ex)[0];
+    const last = lastMap[String(ex.id)];
+    const autoStart = pickStartForMode(firstMode, last);
+
+    const suggestedTarget =
+      autoStart != null && planWeeks > 0
+        ? calcRangeForMode(firstMode, autoStart, planWeeks).suggested
+        : 0;
+
     const newGoal: GoalDraft = {
-      id: null, // new goal
+      id: null,
       exercise: ex,
       mode: firstMode,
       unit: MODE_UNIT[firstMode],
-      start: null,
-      target: 0,
+      start: autoStart,
+      target: autoStart != null ? suggestedTarget : 0,
     };
+
     setLocalGoals([...localGoals, newGoal]);
   }
 
@@ -195,91 +320,140 @@ export default function EditGoals() {
   }
 
   function onChangeMode(ex: ExerciseRow, goal: GoalDraft, nextMode: GoalDraft["mode"]) {
-    updateGoal(ex.id, { mode: nextMode, unit: MODE_UNIT[nextMode] });
+    const last = lastMap[String(ex.id)];
+    const autoStart = pickStartForMode(nextMode, last);
+
+    const nextTarget =
+      autoStart != null && planWeeks > 0
+        ? calcRangeForMode(nextMode, autoStart, planWeeks).suggested
+        : goal.target;
+
+    updateGoal(ex.id, {
+      mode: nextMode,
+      unit: MODE_UNIT[nextMode],
+      start: goal.start == null ? autoStart : goal.start, // only autofill if start is empty
+      target: goal.start == null && autoStart != null ? nextTarget : nextTarget,
+    });
   }
 
   function onSave() {
-    // Guard: 0..3 goals is allowed? your create flow requires 1..3, but edit can be 0..3.
     if (localGoals.length > 3) {
       Alert.alert("Too many goals", "You can select up to 3 goals.");
       return;
     }
-    // Normalize numbers
+
     const cleaned = localGoals.map((g) => ({
       ...g,
       start: g.start == null ? null : Number(g.start),
       target: Number(g.target ?? 0),
       unit: g.unit ?? MODE_UNIT[g.mode],
     }));
+
     setGoals(cleaned);
     router.back();
   }
 
-  const footerH = 86 + insets.bottom;
+  const footerH = 92 + insets.bottom;
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }} edges={["bottom"]}>
+      <ScreenHeader
+        title="Goals"
+        showBack
+        right={
+          <View style={{ width: 64, alignItems: "flex-end" }}>
+            {isDirty ? (
+              <View style={s.dirtyPill}>
+                <Text numberOfLines={1} style={s.dirtyPillText}>
+                  Edited
+                </Text>
+              </View>
+            ) : (
+              <Icon name="checkmark-circle" size={18} color={colors.success} />
+            )}
+          </View>
+        }
+      />
+
       <ScrollView
         style={{ flex: 1, backgroundColor: colors.bg }}
-        contentContainerStyle={{ padding: 16, paddingBottom: footerH + 16 }}
+        contentContainerStyle={{
+          paddingHorizontal: layout.space.lg,
+          paddingTop: layout.space.md,
+          paddingBottom: footerH + layout.space.lg,
+          gap: layout.space.lg,
+        }}
       >
-        <Text style={s.h2}>Edit Goals</Text>
-        <Text style={s.muted}>
-          Pick up to 3 exercises from your plan to track.
-        </Text>
+        {/* Top copy */}
+        <View style={{ gap: 6 }}>
+          <Text style={s.h1}>Track up to 3 goals</Text>
+          <Text style={s.sub}>
+            We’ll auto-fill the starting value from your last logged session where possible.
+          </Text>
+        </View>
 
-        <View style={{ height: 12 }} />
-
-        {deduped.length === 0 ? (
-          <View style={s.emptyCard}>
-            <Text style={s.emptyTitle}>No exercises in this plan yet</Text>
-            <Text style={s.emptySub}>
-              Add exercises to your workouts first, then come back to set goals.
-            </Text>
+        {/* Selected section */}
+        <View style={{ gap: layout.space.sm }}>
+          <View style={s.sectionRow}>
+            <Text style={s.sectionLabel}>SELECTED</Text>
+            <Text style={s.sectionMeta}>{selectedGoals.length}/3</Text>
           </View>
-        ) : (
-          deduped.map(({ exercise, workoutTitles }) => {
-            const selected = !!findGoal(exercise.id);
-            const g = findGoal(exercise.id);
-            const contextText =
-              workoutTitles.length > 0 ? workoutTitles.join(", ") : "—";
-            const modes = modeOptionsForExercise(exercise);
 
-            return (
-              <View
-                key={exercise.id}
-                style={[s.card, selected && { borderColor: colors.primary }]}
-              >
-                <Pressable
-                  onPress={() => toggleExercise(exercise)}
-                  style={{ flexDirection: "row", justifyContent: "space-between" }}
-                >
-                  <View style={{ flex: 1, paddingRight: 10 }}>
-                    <Text style={s.h4}>{exercise.name}</Text>
-                    <Text style={s.muted}>{contextText}</Text>
-                  </View>
+          {selectedGoals.length === 0 ? (
+            <View style={s.emptyCard}>
+              <Text style={s.emptyTitle}>No goals selected</Text>
+              <Text style={s.emptySub}>
+                Pick exercises from your plan below to start tracking.
+              </Text>
+            </View>
+          ) : (
+            <View style={{ gap: layout.space.sm }}>
+              {selectedGoals.map((g) => {
+                const modes = modeOptionsForExercise(g.exercise);
 
-                  <Text style={[s.badge, selected ? s.badgeOn : s.badgeOff]}>
-                    {selected ? "Selected" : "Select"}
-                  </Text>
-                </Pressable>
+                return (
+                  <View key={g.exercise.id} style={s.goalCard}>
+                    <View style={s.goalHeader}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={s.goalTitle} numberOfLines={1}>
+                          {g.exercise.name}
+                        </Text>
+                        <Text style={s.goalSub} numberOfLines={1}>
+                          {g.mode === "exercise_weight"
+                            ? "Increase weight"
+                            : g.mode === "exercise_reps"
+                            ? "Increase reps"
+                            : g.mode === "distance"
+                            ? "Increase distance"
+                            : "Reduce time"}
+                        </Text>
+                      </View>
 
-                {selected && g && (
-                  <View style={{ marginTop: 10, gap: 10 }}>
-                    {/* Mode selector */}
-                    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                      <Pressable
+                        onPress={() => toggleExercise(g.exercise)}
+                        hitSlop={10}
+                        style={s.removePill}
+                      >
+                        <Icon name="close" size={16} color={colors.danger} />
+                        <Text style={s.removeText}>Remove</Text>
+                      </Pressable>
+                    </View>
+
+                    {/* Mode chips */}
+                    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
                       {modes.map((m) => {
                         const active = g.mode === m;
                         return (
                           <Pressable
                             key={m}
-                            onPress={() => onChangeMode(exercise, g, m)}
+                            onPress={() => onChangeMode(g.exercise, g, m)}
                             style={[s.chip, active && s.chipActive]}
                           >
                             <Text
                               style={{
                                 color: active ? (colors.onPrimary ?? "#fff") : colors.text,
-                                fontWeight: "800",
+                                fontFamily: typography.fontFamily.semibold,
+                                fontSize: 12,
                               }}
                             >
                               {labelForMode(m)}
@@ -289,12 +463,13 @@ export default function EditGoals() {
                       })}
                     </View>
 
-                    {/* Values */}
-                    <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
+                    {/* Start/Target */}
+                    <View style={{ flexDirection: "row", gap: 10, alignItems: "center" }}>
                       <View style={{ flex: 1 }}>
+                        <Text style={s.fieldLabel}>Start</Text>
                         <TextInput
                           style={s.input}
-                          placeholder="Start"
+                          placeholder="—"
                           placeholderTextColor={colors.textMuted}
                           keyboardType="numeric"
                           value={g.start != null ? String(g.start) : ""}
@@ -304,43 +479,40 @@ export default function EditGoals() {
 
                             if (val != null && planWeeks > 0) {
                               const { suggested } = calcRangeForMode(g.mode, val, planWeeks);
-                              updateGoal(exercise.id, {
+                              updateGoal(g.exercise.id, {
                                 start: val,
                                 target: suggested,
                                 unit: MODE_UNIT[g.mode],
                               });
                             } else {
-                              updateGoal(exercise.id, {
-                                start: val,
-                                unit: MODE_UNIT[g.mode],
-                              });
+                              updateGoal(g.exercise.id, { start: val, unit: MODE_UNIT[g.mode] });
                             }
                           }}
                         />
                       </View>
 
-                      <Text style={s.unitPill}>{MODE_UNIT[g.mode]}</Text>
+                      <View style={s.unitPillWrap}>
+                        <Text style={s.unitPill}>{MODE_UNIT[g.mode]}</Text>
+                      </View>
 
                       <View style={{ flex: 1 }}>
+                        <Text style={s.fieldLabel}>Target</Text>
                         <TextInput
                           style={s.input}
-                          placeholder="Target"
+                          placeholder="—"
                           placeholderTextColor={colors.textMuted}
                           keyboardType="numeric"
                           value={g.target != null ? String(g.target) : ""}
                           onChangeText={(v) => {
                             const raw = v === "" ? 0 : Number(v);
                             const val = roundForMode(g.mode, raw);
-                            updateGoal(exercise.id, {
-                              target: val,
-                              unit: MODE_UNIT[g.mode],
-                            });
+                            updateGoal(g.exercise.id, { target: val, unit: MODE_UNIT[g.mode] });
                           }}
                         />
                       </View>
                     </View>
 
-                    {/* Recommended range */}
+                    {/* Recommended */}
                     {g.start != null && planWeeks > 0 ? (
                       <Text style={s.recoText}>
                         {(() => {
@@ -351,35 +523,100 @@ export default function EditGoals() {
                           )} ${MODE_UNIT[g.mode]}`;
                         })()}
                       </Text>
-                    ) : null}
+                    ) : (
+                      <Text style={s.recoMuted}>
+                        Tip: enter a start value to get an auto-recommended target.
+                      </Text>
+                    )}
                   </View>
-                )}
-              </View>
-            );
-          })
-        )}
+                );
+              })}
+            </View>
+          )}
+        </View>
 
-        {deduped.length > 0 ? (
-          <Text style={s.hint}>
-            {localGoals.length}/3 goals selected
-            {isDirty ? " • Unsaved changes" : ""}
-          </Text>
+        {/* Available exercises */}
+        <View style={{ gap: layout.space.sm }}>
+          <View style={s.sectionRow}>
+            <Text style={s.sectionLabel}>AVAILABLE EXERCISES</Text>
+            <Text style={s.sectionMeta}>{unselected.length}</Text>
+          </View>
+
+          {deduped.length === 0 ? (
+            <View style={s.emptyCard}>
+              <Text style={s.emptyTitle}>No exercises in this plan yet</Text>
+              <Text style={s.emptySub}>
+                Add exercises to your workouts first, then come back to set goals.
+              </Text>
+            </View>
+          ) : (
+            <View style={{ gap: layout.space.sm }}>
+              {unselected.map(({ exercise, workoutTitles }) => {
+                const contextText =
+                  workoutTitles.length > 0 ? workoutTitles.join(", ") : "—";
+
+                const disabled = selectedGoals.length >= 3;
+
+                return (
+                  <Pressable
+                    key={exercise.id}
+                    onPress={() => (!disabled ? toggleExercise(exercise) : null)}
+                    style={({ pressed }) => [
+                      s.pickRow,
+                      pressed && !disabled ? { opacity: 0.9 } : null,
+                      disabled ? { opacity: 0.55 } : null,
+                    ]}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text style={s.pickTitle} numberOfLines={1}>
+                        {exercise.name}
+                      </Text>
+                      <Text style={s.pickSub} numberOfLines={1}>
+                        {contextText}
+                      </Text>
+                    </View>
+
+                    <View style={s.pickRight}>
+                      <View style={s.addPill}>
+                        <Icon name="add" size={16} color={colors.text} />
+                        <Text style={s.addText}>Add</Text>
+                      </View>
+                      <Icon name="chevron-forward" size={18} color={colors.textMuted} />
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </View>
+          )}
+
+          {deduped.length > 0 ? (
+            <Text style={s.hint}>
+              {selectedGoals.length}/3 goals selected
+              {isDirty ? " • Unsaved changes" : ""}
+            </Text>
+          ) : null}
+        </View>
+
+        {!userId ? (
+          <Text style={s.recoMuted}>You’re not signed in — start autofill is disabled.</Text>
         ) : null}
       </ScrollView>
 
       {/* Sticky footer */}
-      <View style={[s.footer, { paddingBottom: insets.bottom + 12 }]}>
-        <Pressable style={s.footerBtn} onPress={() => router.back()}>
-          <Text style={s.footerText}>Cancel</Text>
-        </Pressable>
+      <View style={[s.footer, { paddingBottom: insets.bottom + layout.space.md }]}>
+        <View style={{ flexDirection: "row", gap: layout.space.sm }}>
+          <Pressable style={s.footerBtnGhost} onPress={() => router.back()}>
+            <Text style={s.footerGhostText}>Cancel</Text>
+          </Pressable>
 
-        <Pressable
-          style={[s.footerBtn, s.primaryBtn, !isDirty && { opacity: 0.55 }]}
-          onPress={onSave}
-          disabled={!isDirty}
-        >
-          <Text style={s.primaryText}>Save goals</Text>
-        </Pressable>
+          <Pressable
+            style={[s.footerBtnPrimary, !isDirty && { opacity: 0.55 }]}
+            onPress={onSave}
+            disabled={!isDirty}
+          >
+            <Text style={s.footerPrimaryText}>Save goals</Text>
+          </Pressable>
+        </View>
       </View>
     </SafeAreaView>
   );
@@ -387,45 +624,105 @@ export default function EditGoals() {
 
 /* -------- themed styles -------- */
 
-const makeStyles = (colors: any) =>
+const makeStyles = (colors: any, typography: any, layout: any) =>
   StyleSheet.create({
-    h2: { fontSize: 18, fontWeight: "900", color: colors.text },
-    h4: { fontSize: 15, fontWeight: "800", color: colors.text },
-    muted: { color: colors.textMuted ?? colors.subtle },
+    h1: {
+      color: colors.text,
+      fontFamily: typography.fontFamily.bold,
+      fontSize: 22,
+      letterSpacing: -0.3,
+    },
+    sub: {
+      color: colors.textMuted,
+      fontFamily: typography.fontFamily.medium,
+      fontSize: 13,
+      lineHeight: 18,
+    },
 
-    card: {
-      backgroundColor: colors.card,
-      borderRadius: 12,
-      padding: 12,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: colors.border,
-      marginBottom: 10,
+    sectionRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      paddingHorizontal: 2,
+    },
+    sectionLabel: {
+      color: colors.textMuted,
+      fontSize: 12,
+      letterSpacing: 0.9,
+      fontFamily: typography.fontFamily.semibold,
+    },
+    sectionMeta: {
+      color: colors.textMuted,
+      fontSize: 12,
+      fontFamily: typography.fontFamily.semibold,
     },
 
     emptyCard: {
       backgroundColor: colors.card,
-      borderRadius: 12,
-      padding: 14,
+      borderRadius: 16,
+      padding: layout.space.lg,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      gap: 6,
+    },
+    emptyTitle: {
+      color: colors.text,
+      fontFamily: typography.fontFamily.bold,
+      fontSize: 15,
+    },
+    emptySub: {
+      color: colors.textMuted,
+      fontFamily: typography.fontFamily.medium,
+      fontSize: 13,
+      lineHeight: 18,
+    },
+
+    goalCard: {
+      backgroundColor: colors.card,
+      borderRadius: 18,
+      padding: layout.space.lg,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      gap: layout.space.md,
+    },
+    goalHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 12,
+    },
+    goalTitle: {
+      color: colors.text,
+      fontFamily: typography.fontFamily.bold,
+      fontSize: 16,
+    },
+    goalSub: {
+      marginTop: 4,
+      color: colors.textMuted,
+      fontFamily: typography.fontFamily.medium,
+      fontSize: 12,
+    },
+
+    removePill: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+      paddingHorizontal: 10,
+      paddingVertical: 8,
+      borderRadius: 999,
+      backgroundColor: colors.surface,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.border,
     },
-    emptyTitle: { color: colors.text, fontWeight: "900", fontSize: 15 },
-    emptySub: { color: colors.textMuted ?? colors.subtle, marginTop: 6, fontWeight: "600" },
-
-    badge: {
-      paddingHorizontal: 10,
-      paddingVertical: 6,
-      borderRadius: 999,
-      fontWeight: "900",
-      overflow: "hidden",
+    removeText: {
+      color: colors.danger,
+      fontFamily: typography.fontFamily.semibold,
+      fontSize: 12,
     },
-    badgeOn: { backgroundColor: colors.primary, color: colors.onPrimary ?? "#fff" },
-    badgeOff: { backgroundColor: colors.surface, color: colors.text },
 
     chip: {
       backgroundColor: colors.surface,
       paddingHorizontal: 12,
-      paddingVertical: 8,
+      paddingVertical: 10,
       borderRadius: 999,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.border,
@@ -435,37 +732,99 @@ const makeStyles = (colors: any) =>
       borderColor: colors.primary,
     },
 
+    fieldLabel: {
+      color: colors.textMuted,
+      fontFamily: typography.fontFamily.semibold,
+      fontSize: 12,
+      marginBottom: 8,
+    },
+
     input: {
       backgroundColor: colors.surface,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.border,
-      borderRadius: 10,
-      paddingHorizontal: 10,
-      paddingVertical: 9,
+      borderRadius: 14,
+      paddingHorizontal: 12,
+      paddingVertical: 12,
       color: colors.text,
-      fontWeight: "800",
+      fontFamily: typography.fontFamily.semibold,
+      fontSize: 14,
     },
 
+    unitPillWrap: { paddingTop: 20 },
     unitPill: {
-      paddingHorizontal: 10,
-      paddingVertical: 7,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
       borderRadius: 999,
       backgroundColor: colors.surface,
       color: colors.text,
-      fontWeight: "900",
+      fontFamily: typography.fontFamily.semibold,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.border,
+      overflow: "hidden",
     },
 
     recoText: {
       color: colors.text,
-      fontWeight: "700",
+      fontFamily: typography.fontFamily.semibold,
+      fontSize: 12,
+    },
+    recoMuted: {
+      color: colors.textMuted,
+      fontFamily: typography.fontFamily.medium,
+      fontSize: 12,
+    },
+
+    pickRow: {
+      backgroundColor: colors.card,
+      borderRadius: 18,
+      paddingHorizontal: layout.space.lg,
+      paddingVertical: layout.space.lg,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 12,
+    },
+    pickTitle: {
+      color: colors.text,
+      fontFamily: typography.fontFamily.bold,
+      fontSize: 15,
+    },
+    pickSub: {
+      marginTop: 4,
+      color: colors.textMuted,
+      fontFamily: typography.fontFamily.medium,
+      fontSize: 12,
+    },
+    pickRight: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
+    },
+    addPill: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      borderRadius: 999,
+      backgroundColor: colors.surface,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+    },
+    addText: {
+      color: colors.text,
+      fontFamily: typography.fontFamily.semibold,
+      fontSize: 12,
     },
 
     hint: {
       marginTop: 6,
-      color: colors.textMuted ?? colors.subtle,
-      fontWeight: "800",
+      color: colors.textMuted,
+      fontFamily: typography.fontFamily.semibold,
+      fontSize: 12,
+      paddingHorizontal: 2,
     },
 
     footer: {
@@ -473,37 +832,53 @@ const makeStyles = (colors: any) =>
       left: 0,
       right: 0,
       bottom: 0,
-      flexDirection: "row",
-      gap: 12,
-      paddingHorizontal: 16,
-      paddingTop: 10,
+      paddingHorizontal: layout.space.lg,
+      paddingTop: 12,
+      backgroundColor: colors.bg,
       borderTopWidth: StyleSheet.hairlineWidth,
       borderTopColor: colors.border,
-      backgroundColor: colors.bg,
     },
-
-    footerBtn: {
+    footerBtnGhost: {
       flex: 1,
-      paddingVertical: 12,
-      borderRadius: 12,
+      height: 48,
+      borderRadius: 14,
       alignItems: "center",
+      justifyContent: "center",
       backgroundColor: colors.surface,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.border,
     },
-
-    footerText: {
-      fontWeight: "900",
+    footerGhostText: {
       color: colors.text,
+      fontFamily: typography.fontFamily.bold,
     },
-
-    primaryBtn: {
+    footerBtnPrimary: {
+      flex: 1,
+      height: 48,
+      borderRadius: 14,
+      alignItems: "center",
+      justifyContent: "center",
       backgroundColor: colors.primary,
+      borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.primary,
     },
-
-    primaryText: {
+    footerPrimaryText: {
       color: colors.onPrimary ?? "#fff",
-      fontWeight: "900",
+      fontFamily: typography.fontFamily.bold,
+    },
+
+    dirtyPill: {
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      borderRadius: 999,
+      backgroundColor: colors.primaryBg ?? colors.surface,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      flexShrink: 0,
+    },
+    dirtyPillText: {
+      color: colors.primaryText ?? colors.primary,
+      fontFamily: typography.fontFamily.semibold,
+      fontSize: 12,
     },
   });
