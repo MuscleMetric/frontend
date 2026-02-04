@@ -13,12 +13,21 @@ export type WorkoutExerciseDraft = {
   order_index: number;
   supersetGroup?: string | null;
   isDropset?: boolean;
+
+  // ✅ add these so workoutEditor.tsx compiles + can edit targets/notes
+  target_sets?: number | null;
+  target_reps?: number | null;
+  target_weight?: number | null;
+  target_time_seconds?: number | null;
+  target_distance?: number | null;
+  notes?: string | null;
 };
 
 export type WorkoutDraft = {
   id?: string;
   title: string;
   exercises: WorkoutExerciseDraft[];
+  imageKey: string | null;
 };
 
 export type GoalDraft = {
@@ -107,6 +116,7 @@ export const useEditPlan = create<EditState>((set, get) => ({
     const next: WorkoutDraft = {
       title: `Workout ${nextNumber}`,
       exercises: [],
+      imageKey: null,
     };
     const workouts = [...state.workouts, next];
     set({ workouts, workoutsPerWeek: workouts.length });

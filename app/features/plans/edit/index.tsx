@@ -132,7 +132,7 @@ export default function EditPlan() {
             `
             id, title, order_index, workout_id,
             workouts!inner (
-              id, title,
+              id, title, workout_image_key,
               workout_exercises (
                 id, order_index, superset_group, is_dropset, is_archived,
                 exercises ( id, name, type )
@@ -166,12 +166,14 @@ export default function EditPlan() {
               order_index: i,
               supersetGroup: we?.superset_group ?? null,
               isDropset: !!we?.is_dropset,
+              imageKey: w?.workout_image_key ?? null,
             }));
 
           return {
             id: String(row.id ?? ""),
             title: row.title ?? w?.title ?? "Workout",
             exercises: exs,
+            imageKey: w?.workout_image_key ?? null,
           };
         });
 
@@ -488,7 +490,7 @@ export default function EditPlan() {
             style={s.row}
             onPress={() =>
               router.push({
-                pathname: "/features/plans/edit/workout",
+                pathname: "/features/plans/edit/workouts",
                 params: { planId },
               })
             }
