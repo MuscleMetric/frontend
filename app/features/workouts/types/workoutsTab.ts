@@ -5,6 +5,8 @@ export type WorkoutsTabState = "new_user" | "no_plan" | "with_plan";
 export type WorkoutsTabPayload = {
   state: WorkoutsTabState;
 
+  workoutsTotal: number;
+
   setup?: {
     title: string;
     subtitle: string;

@@ -20,13 +20,14 @@ import { MyWorkoutsSection } from "../sections/MyWorkoutsSection";
 import { ActivePlanHeroSection } from "../sections/ActivePlanHeroSection";
 import { PlanScheduleSection } from "../sections/PlanScheduleSection";
 import { OptionalSessionsSection } from "../sections/OptionalSessionsSection";
+import { NoPlanCtaSection } from "../sections/NoPlanCtaSection";
 
 const ROUTES = {
   workoutPreview: "/features/workouts/screens/WorkoutOverview",
   workoutUse: "/features/workouts/screens/WorkoutOverview",
   planView: "/features/plans/history/view",
   planEdit: "/features/plans/edit",
-  planCreate: "/features/workouts/screens/WorkoutOverview",
+  planCreate: "/features/plans/create/planInfo",
 } as const;
 
 export default function WorkoutsHome() {
@@ -96,6 +97,11 @@ function StateRenderer({
           onOpenCreate={onOpenCreate}
         />
 
+        <NoPlanCtaSection
+          workoutsTotal={payload.workoutsTotal ?? 0}
+          onPress={() => router.push(ROUTES.planCreate)}
+        />
+
         <SuggestedSection
           suggested={payload.suggested ?? null}
           onPressWorkout={(workoutId) =>
@@ -124,18 +130,25 @@ function StateRenderer({
 
   if (payload.state === "no_plan") {
     return (
-      <MyWorkoutsSection
-        mode="no_plan"
-        myWorkouts={payload.myWorkouts}
-        onOpenCreate={onOpenCreate}
-        onExplorePlans={() => router.push(ROUTES.planCreate)}
-        onPressWorkout={(workoutId) =>
-          router.push({
-            pathname: ROUTES.workoutUse,
-            params: { workoutId },
-          })
-        }
-      />
+      <>
+        <NoPlanCtaSection
+          workoutsTotal={payload.workoutsTotal ?? 0}
+          onPress={() => router.push(ROUTES.planCreate)}
+        />
+
+        <MyWorkoutsSection
+          mode="no_plan"
+          myWorkouts={payload.myWorkouts}
+          onOpenCreate={onOpenCreate}
+          onExplorePlans={() => router.push(ROUTES.planCreate)}
+          onPressWorkout={(workoutId) =>
+            router.push({
+              pathname: ROUTES.workoutUse,
+              params: { workoutId },
+            })
+          }
+        />
+      </>
     );
   }
 

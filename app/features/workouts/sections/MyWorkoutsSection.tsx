@@ -64,7 +64,12 @@ export function MyWorkoutsSection({
 
         {myWorkouts.seeAll && onSeeAll ? (
           <View style={{ marginLeft: layout.space.sm }}>
-            <Button title="See all" variant="text" fullWidth={false} onPress={onSeeAll} />
+            <Button
+              title="See all"
+              variant="text"
+              fullWidth={false}
+              onPress={onSeeAll}
+            />
           </View>
         ) : null}
 
@@ -110,9 +115,13 @@ export function MyWorkoutsSection({
               subtitle={w.previewText}
               rightText={lastDoneLabel(w.lastDoneAt)}
               left={
-                <WorkoutCover imageKey={w.imageKey} height={56} radius={14} />
+                <View style={{ width: 56 }}>
+                  <WorkoutCover imageKey={w.imageKey} variant="tile" />
+                </View>
               }
-              onPress={onPressWorkout ? () => onPressWorkout(w.workoutId) : undefined}
+              onPress={
+                onPressWorkout ? () => onPressWorkout(w.workoutId) : undefined
+              }
             />
           ))}
         </View>
