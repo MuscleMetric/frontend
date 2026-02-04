@@ -31,9 +31,7 @@ export function ScreenHeader({
     >
       <View style={styles.container}>
         {/* Left slot */}
-        <View style={styles.side}>
-          {showBack ? <BackButton /> : null}
-        </View>
+        <View style={styles.side}>{showBack ? <BackButton /> : null}</View>
 
         {/* Center title (absolute, true center) */}
         <View pointerEvents="none" style={styles.center}>
@@ -52,9 +50,7 @@ export function ScreenHeader({
         </View>
 
         {/* Right slot */}
-        <View style={styles.sideRight}>
-          {right}
-        </View>
+        <View style={styles.sideRight}>{right}</View>
       </View>
     </View>
   );
@@ -81,7 +77,8 @@ const styles = StyleSheet.create({
   sideRight: {
     position: "absolute",
     right: 0,
-    width: 44,
+    minWidth: 44, // keep tap target
+    maxWidth: 160, 
     alignItems: "flex-end",
     justifyContent: "center",
   },

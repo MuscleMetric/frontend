@@ -1,5 +1,11 @@
 // app/features/plans/edit/index.tsx
-import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import React, {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useCallback,
+} from "react";
 import {
   View,
   Text,
@@ -9,17 +15,26 @@ import {
   Pressable,
   Alert,
 } from "react-native";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter, Stack } from "expo-router";
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
+
 import { supabase } from "../../../../lib/supabase";
 import { useAuth } from "../../../../lib/authContext";
 import { useAppTheme } from "../../../../lib/useAppTheme";
+
 import {
   useEditPlan,
   type WorkoutDraft,
   type ExerciseRow,
   type GoalDraft,
 } from "./store";
-import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+
+// Your custom header + icons
+import { ScreenHeader } from "@/ui";
+import { Icon } from "@/ui/icons/Icon";
 
 function fmtDateShort(iso?: string | null) {
   if (!iso) return "—";
@@ -43,7 +58,6 @@ function normalizePlanSnapshot(input: {
   };
 
   const workouts = (input.workouts ?? []).map((w, wIdx) => ({
-    // do NOT include DB ids in dirty detection
     order: wIdx,
     title: (w.title ?? "").trim(),
     exercises: (w.exercises ?? [])
@@ -69,22 +83,25 @@ function normalizePlanSnapshot(input: {
 }
 
 export default function EditPlan() {
+  // Hide native header so ScreenHeader is used instead
+  // (Expo Router per-screen)
+  // eslint-disable-next-line react/jsx-no-undef
+  // @ts-ignore
+  const _ = <Stack.Screen options={{ headerShown: false }} />;
+
   const { planId } = useLocalSearchParams<{ planId: string }>();
   const router = useRouter();
   const { session } = useAuth();
   const userId = session?.user?.id ?? null;
 
   const { colors, typography, layout } = useAppTheme() as any;
-  const s = useMemo(() => makeStyles(colors, typography, layout), [colors, typography, layout]);
+  const s = useMemo(
+    () => makeStyles(colors, typography, layout),
+    [colors, typography, layout]
+  );
   const insets = useSafeAreaInsets();
 
-  const {
-    initFromLoaded,
-    title,
-    endDate,
-    workouts,
-    goals,
-  } = useEditPlan();
+  const { initFromLoaded, title, endDate, workouts, goals } = useEditPlan();
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -100,7 +117,6 @@ export default function EditPlan() {
       try {
         setLoading(true);
 
-        // Plan meta
         const { data: p, error: pErr } = await supabase
           .from("plans")
           .select("id, title, start_date, end_date")
@@ -110,7 +126,6 @@ export default function EditPlan() {
 
         if (pErr) throw pErr;
 
-        // Plan workouts + nested exercises
         const { data: pws, error: pwsErr } = await supabase
           .from("plan_workouts")
           .select(
@@ -132,11 +147,15 @@ export default function EditPlan() {
         if (pwsErr) throw pwsErr;
 
         const workoutDrafts: WorkoutDraft[] = (pws ?? []).map((row: any) => {
-          const w = Array.isArray(row.workouts) ? row.workouts[0] : row.workouts;
+          const w = Array.isArray(row.workouts)
+            ? row.workouts[0]
+            : row.workouts;
 
           const exs = (w?.workout_exercises ?? [])
             .slice()
-            .sort((a: any, b: any) => (a.order_index ?? 0) - (b.order_index ?? 0))
+            .sort(
+              (a: any, b: any) => (a.order_index ?? 0) - (b.order_index ?? 0)
+            )
             .map((we: any, i: number) => ({
               id: String(we.id ?? ""),
               exercise: {
@@ -156,10 +175,11 @@ export default function EditPlan() {
           };
         });
 
-        // Goals
         const { data: g, error: gErr } = await supabase
           .from("goals")
-          .select(`id, type, target_number, unit, notes, exercises ( id, name, type )`)
+          .select(
+            `id, type, target_number, unit, notes, exercises ( id, name, type )`
+          )
           .eq("plan_id", planId)
           .eq("user_id", userId)
           .order("created_at");
@@ -188,7 +208,6 @@ export default function EditPlan() {
           goals: goalDrafts,
         });
 
-        // set initial dirty snapshot after initFromLoaded
         const snap = JSON.stringify(
           normalizePlanSnapshot({
             title: p?.title ?? "Plan",
@@ -257,7 +276,9 @@ export default function EditPlan() {
     <View
       style={[
         s.statusDot,
-        { backgroundColor: dirty ? colors.primary : colors.success ?? "#22c55e" },
+        {
+          backgroundColor: dirty ? colors.primary : colors.success ?? "#22c55e",
+        },
       ]}
     />
   );
@@ -301,7 +322,6 @@ export default function EditPlan() {
       const { error } = await supabase.rpc("update_full_plan", payload);
       if (error) throw error;
 
-      // update initial snapshot so UI becomes "clean" without forcing a reload
       initialSnapRef.current = currentSnap;
 
       Alert.alert("Saved", "Plan changes have been saved.");
@@ -336,7 +356,7 @@ export default function EditPlan() {
 
     Alert.alert(
       "Archive plan?",
-      "This will archive the plan and hide it from active views. You can restore it later (if supported).",
+      "This will archive the plan and hide it from active views.",
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -379,28 +399,54 @@ export default function EditPlan() {
     );
   }
 
-  const footerH = 92 + insets.bottom;
+  const footerH = 104 + insets.bottom;
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }}>
+    <SafeAreaView
+      edges={["bottom"]}
+      style={{ flex: 1, backgroundColor: colors.bg }}
+    >
+      <ScreenHeader
+        title="Edit Plan"
+        right={
+          isDirty ? (
+            <Icon
+              name="alert-circle-outline"
+              size={20}
+              color={colors.primary}
+            />
+          ) : (
+            <Icon
+              name="checkmark-circle-outline"
+              size={20}
+              color={colors.success}
+            />
+          )
+        }
+      />
+
       <ScrollView
         style={{ flex: 1, backgroundColor: colors.bg }}
         contentContainerStyle={{
-          padding: layout.space?.md ?? 16,
-          paddingBottom: footerH + 16,
-          gap: 12,
+          paddingHorizontal: layout.space?.lg ?? 18,
+          paddingTop: layout.space?.md ?? 16,
+          paddingBottom: footerH + 18,
+          gap: 18,
         }}
       >
         <View style={s.headerCard}>
-          <Text style={s.title}>Edit Plan</Text>
+          <Text style={s.title} numberOfLines={1}>
+            {title?.trim() || "Untitled plan"}
+          </Text>
           <Text style={s.subTitle} numberOfLines={2}>
-            {title?.trim() || "Untitled plan"} • Ends {fmtDateShort(endDate)}
+            Ends {fmtDateShort(endDate)}
           </Text>
         </View>
 
         <Text style={s.sectionLabel}>PLAN CONFIGURATION</Text>
 
         <View style={s.card}>
+          {/* Plan Info */}
           <Pressable
             style={s.row}
             onPress={() =>
@@ -412,24 +458,32 @@ export default function EditPlan() {
           >
             <View style={s.rowLeft}>
               <View style={s.iconCircle}>
-                <Text style={s.iconText}>i</Text>
+                <Icon
+                  name="information-circle-outline"
+                  size={18}
+                  color={colors.text}
+                />
               </View>
+
               <View style={{ flex: 1 }}>
                 <Text style={s.rowTitle}>Plan Info</Text>
-                <Text style={s.rowSub}>
-                  General settings and scheduling
-                </Text>
+                <Text style={s.rowSub}>General settings and scheduling</Text>
               </View>
             </View>
 
             <View style={s.rowRight}>
               {statusDot(dirtyPlanInfo)}
-              <Text style={s.chev}>›</Text>
+              <Icon
+                name="chevron-forward"
+                size={18}
+                color={colors.textMuted ?? colors.subtle}
+              />
             </View>
           </Pressable>
 
           <View style={s.divider} />
 
+          {/* Workouts */}
           <Pressable
             style={s.row}
             onPress={() =>
@@ -441,25 +495,41 @@ export default function EditPlan() {
           >
             <View style={s.rowLeft}>
               <View style={s.iconCircle}>
-                <Text style={s.iconText}>🏋️</Text>
+                <Icon name="barbell-outline" size={18} color={colors.text} />
               </View>
+
               <View style={{ flex: 1 }}>
                 <Text style={s.rowTitle}>Workouts</Text>
                 <Text style={s.rowSub}>
-                  {workouts.length} workouts •{" "}
-                  {workouts.reduce((sum, w) => sum + (w.exercises?.length ?? 0), 0)} exercises
+                  {workouts.length} workout{workouts.length === 1 ? "" : "s"} •{" "}
+                  {workouts.reduce(
+                    (sum, w) => sum + (w.exercises?.length ?? 0),
+                    0
+                  )}{" "}
+                  exercise
+                  {workouts.reduce(
+                    (sum, w) => sum + (w.exercises?.length ?? 0),
+                    0
+                  ) === 1
+                    ? ""
+                    : "s"}
                 </Text>
               </View>
             </View>
 
             <View style={s.rowRight}>
               {statusDot(dirtyWorkouts)}
-              <Text style={s.chev}>›</Text>
+              <Icon
+                name="chevron-forward"
+                size={18}
+                color={colors.textMuted ?? colors.subtle}
+              />
             </View>
           </Pressable>
 
           <View style={s.divider} />
 
+          {/* Goals */}
           <Pressable
             style={s.row}
             onPress={() =>
@@ -471,8 +541,9 @@ export default function EditPlan() {
           >
             <View style={s.rowLeft}>
               <View style={s.iconCircle}>
-                <Text style={s.iconText}>◎</Text>
+                <Icon name="trophy-outline" size={18} color={colors.text} />
               </View>
+
               <View style={{ flex: 1 }}>
                 <Text style={s.rowTitle}>Goals</Text>
                 <Text style={s.rowSub}>
@@ -483,26 +554,30 @@ export default function EditPlan() {
 
             <View style={s.rowRight}>
               {statusDot(dirtyGoals)}
-              <Text style={s.chev}>›</Text>
+              <Icon
+                name="chevron-forward"
+                size={18}
+                color={colors.textMuted ?? colors.subtle}
+              />
             </View>
           </Pressable>
         </View>
 
         {isDirty ? (
-          <Text style={s.dirtyHint}>
-            You have unsaved changes.
-          </Text>
+          <Text style={s.dirtyHint}>You have unsaved changes.</Text>
         ) : (
-          <Text style={s.cleanHint}>
-            Everything is up to date.
-          </Text>
+          <Text style={s.cleanHint}>Everything is up to date.</Text>
         )}
       </ScrollView>
 
       {/* Sticky footer */}
-      <View style={[s.footer, { paddingBottom: insets.bottom + 12 }]}>
-        <View style={{ flexDirection: "row", gap: 10 }}>
-          <Pressable style={[s.footerBtn, s.footerBtnGhost]} onPress={onCancel} disabled={saving}>
+      <View style={[s.footer, { paddingBottom: insets.bottom + 14 }]}>
+        <View style={{ flexDirection: "row", gap: 12 }}>
+          <Pressable
+            style={[s.footerBtn, s.footerBtnGhost]}
+            onPress={onCancel}
+            disabled={saving}
+          >
             <Text style={s.footerBtnGhostText}>Cancel</Text>
           </Pressable>
 
@@ -524,7 +599,7 @@ export default function EditPlan() {
         <Pressable
           onPress={onArchive}
           disabled={saving}
-          style={{ marginTop: 10, alignItems: "center" }}
+          style={{ marginTop: 12, alignItems: "center" }}
         >
           <Text style={s.archiveText}>Archive plan</Text>
         </Pressable>
@@ -554,44 +629,45 @@ const makeStyles = (colors: any, typography: any, layout: any) =>
 
     headerCard: {
       backgroundColor: colors.card,
-      borderRadius: 16,
-      padding: 16,
+      borderRadius: 18,
+      padding: 18,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.border,
+      gap: 8,
     },
     title: {
-      fontSize: 18,
+      fontSize: 20,
       fontFamily: typography?.fontFamily?.bold ?? undefined,
-      fontWeight: "800",
+      fontWeight: "900",
       color: colors.text,
+      letterSpacing: -0.2,
     },
     subTitle: {
-      marginTop: 6,
       color: colors.textMuted ?? colors.subtle,
       fontFamily: typography?.fontFamily?.medium ?? undefined,
       fontSize: 13,
     },
 
     sectionLabel: {
-      marginTop: 4,
-      marginBottom: -4,
+      marginTop: 6,
+      marginBottom: -8,
       color: colors.textMuted ?? colors.subtle,
       fontSize: 12,
-      letterSpacing: 0.8,
-      fontWeight: "800",
+      letterSpacing: 0.9,
+      fontWeight: "900",
     },
 
     card: {
       backgroundColor: colors.card,
-      borderRadius: 16,
+      borderRadius: 18,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.border,
       overflow: "hidden",
     },
 
     row: {
-      paddingHorizontal: 14,
-      paddingVertical: 14,
+      paddingHorizontal: 16,
+      paddingVertical: 18,
       flexDirection: "row",
       alignItems: "center",
       justifyContent: "space-between",
@@ -599,39 +675,34 @@ const makeStyles = (colors: any, typography: any, layout: any) =>
     rowLeft: {
       flexDirection: "row",
       alignItems: "center",
-      gap: 12,
+      gap: 14,
       flex: 1,
-      paddingRight: 12,
+      paddingRight: 14,
     },
     rowRight: {
       flexDirection: "row",
       alignItems: "center",
-      gap: 10,
+      gap: 12,
     },
 
     iconCircle: {
-      width: 34,
-      height: 34,
-      borderRadius: 10,
+      width: 38,
+      height: 38,
+      borderRadius: 12,
       backgroundColor: colors.surface,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.border,
       alignItems: "center",
       justifyContent: "center",
     },
-    iconText: {
-      color: colors.text,
-      fontWeight: "800",
-      fontSize: 14,
-    },
 
     rowTitle: {
       color: colors.text,
-      fontWeight: "800",
+      fontWeight: "900",
       fontSize: 15,
     },
     rowSub: {
-      marginTop: 2,
+      marginTop: 4,
       color: colors.textMuted ?? colors.subtle,
       fontSize: 12,
       fontWeight: "600",
@@ -640,7 +711,7 @@ const makeStyles = (colors: any, typography: any, layout: any) =>
     divider: {
       height: StyleSheet.hairlineWidth,
       backgroundColor: colors.border,
-      marginLeft: 60,
+      marginLeft: 68,
     },
 
     statusDot: {
@@ -648,21 +719,16 @@ const makeStyles = (colors: any, typography: any, layout: any) =>
       height: 10,
       borderRadius: 999,
     },
-    chev: {
-      color: colors.textMuted ?? colors.subtle,
-      fontSize: 20,
-      marginTop: -2,
-    },
 
     dirtyHint: {
       color: colors.primary,
-      fontWeight: "800",
-      marginTop: 4,
+      fontWeight: "900",
+      marginTop: 2,
     },
     cleanHint: {
       color: colors.textMuted ?? colors.subtle,
       fontWeight: "700",
-      marginTop: 4,
+      marginTop: 2,
     },
 
     footer: {
@@ -670,8 +736,8 @@ const makeStyles = (colors: any, typography: any, layout: any) =>
       left: 0,
       right: 0,
       bottom: 0,
-      paddingHorizontal: layout?.space?.md ?? 16,
-      paddingTop: 10,
+      paddingHorizontal: layout?.space?.lg ?? 18,
+      paddingTop: 12,
       backgroundColor: colors.bg,
       borderTopWidth: StyleSheet.hairlineWidth,
       borderTopColor: colors.border,
@@ -679,8 +745,8 @@ const makeStyles = (colors: any, typography: any, layout: any) =>
 
     footerBtn: {
       flex: 1,
-      paddingVertical: 12,
-      borderRadius: 12,
+      paddingVertical: 13,
+      borderRadius: 14,
       alignItems: "center",
       borderWidth: StyleSheet.hairlineWidth,
     },
@@ -690,7 +756,7 @@ const makeStyles = (colors: any, typography: any, layout: any) =>
     },
     footerBtnGhostText: {
       color: colors.text,
-      fontWeight: "800",
+      fontWeight: "900",
     },
     footerBtnPrimary: {
       backgroundColor: colors.primary,
@@ -703,6 +769,6 @@ const makeStyles = (colors: any, typography: any, layout: any) =>
 
     archiveText: {
       color: colors.danger ?? "#ef4444",
-      fontWeight: "800",
+      fontWeight: "900",
     },
   });
