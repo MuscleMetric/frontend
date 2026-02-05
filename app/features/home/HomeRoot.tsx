@@ -1,3 +1,4 @@
+//app/features/home/HomeRoot.tsx
 import React, { useMemo } from "react";
 import { HomeNewUser } from "./layouts/HomeNewUser";
 import { HomeExperiencedNoPlan } from "./layouts/HomeExperiencedNoPlan";
