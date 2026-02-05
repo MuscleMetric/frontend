@@ -9,6 +9,7 @@ import {
 } from "react-native";
 import { useAppTheme } from "../../../../../lib/useAppTheme";
 import { Card, Pill } from "@/ui";
+import { router } from "expo-router";
 
 type DayItem = { day: string; trained: boolean; workout_count?: number };
 
@@ -22,8 +23,11 @@ function normalizeDays(raw: any): DayItem[] {
   return raw
     .map((it) => ({
       day: dayKeyFromAny(it?.day),
-      trained: Boolean(it?.trained === true || it?.trained === "true" || it?.trained === 1),
-      workout_count: it?.workout_count == null ? undefined : Number(it.workout_count),
+      trained: Boolean(
+        it?.trained === true || it?.trained === "true" || it?.trained === 1
+      ),
+      workout_count:
+        it?.workout_count == null ? undefined : Number(it.workout_count),
     }))
     .filter((it) => !!it.day);
 }
@@ -70,7 +74,10 @@ function fmtDuration(seconds?: number | null) {
 function fmtTime(iso?: string | null) {
   if (!iso) return "";
   const d = new Date(iso);
-  return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  return d.toLocaleTimeString(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 function fmtVolume(v?: number | null) {
@@ -81,7 +88,10 @@ function fmtVolume(v?: number | null) {
 
 export function StreakCard({ card, summary }: { card: any; summary?: any }) {
   const { colors, typography, layout } = useAppTheme();
-  const styles = useMemo(() => makeStyles(colors, typography, layout), [colors, typography, layout]);
+  const styles = useMemo(
+    () => makeStyles(colors, typography, layout),
+    [colors, typography, layout]
+  );
 
   const weeklyStreak = Number(card?.weekly_streak ?? 0);
 
@@ -158,10 +168,18 @@ export function StreakCard({ card, summary }: { card: any; summary?: any }) {
   const todayKey = useMemo(() => ymd(new Date()), []);
 
   const weeks = useMemo(() => {
-    const cells: Array<{ key: string; dayNum: number | null; trained: boolean }> = [];
+    const cells: Array<{
+      key: string;
+      dayNum: number | null;
+      trained: boolean;
+    }> = [];
 
     for (let i = 0; i < leadingEmpty; i++) {
-      cells.push({ key: `empty-${monthStartStr || "fallback"}-${i}`, dayNum: null, trained: false });
+      cells.push({
+        key: `empty-${monthStartStr || "fallback"}-${i}`,
+        dayNum: null,
+        trained: false,
+      });
     }
 
     for (let d = 1; d <= daysInMonth; d++) {
@@ -171,7 +189,11 @@ export function StreakCard({ card, summary }: { card: any; summary?: any }) {
     }
 
     while (cells.length % 7 !== 0) {
-      cells.push({ key: `tail-${monthStartStr || "fallback"}-${cells.length}`, dayNum: null, trained: false });
+      cells.push({
+        key: `tail-${monthStartStr || "fallback"}-${cells.length}`,
+        dayNum: null,
+        trained: false,
+      });
     }
 
     return chunk(cells, 7);
@@ -292,14 +314,17 @@ export function StreakCard({ card, summary }: { card: any; summary?: any }) {
           ))}
         </View>
 
-        <View style={[styles.divider, { backgroundColor: colors.trackBorder }]} />
+        <View
+          style={[styles.divider, { backgroundColor: colors.trackBorder }]}
+        />
 
         {/* Calendar */}
         <View style={{ gap: layout.space.sm }}>
           {weeks.map((week, wIdx) => (
             <View key={`week-${wIdx}`} style={styles.weekGridRow}>
               {week.map((c) => {
-                if (c.dayNum == null) return <View key={c.key} style={styles.cell} />;
+                if (c.dayNum == null)
+                  return <View key={c.key} style={styles.cell} />;
 
                 const isToday = c.key === todayKey;
                 const isSelected = selectedKey === c.key;
@@ -322,7 +347,11 @@ export function StreakCard({ card, summary }: { card: any; summary?: any }) {
                   ? ringOnBg
                   : "transparent";
 
-                const textColor = isFuture ? colors.textMuted : isSelected ? selectedBorder : colors.text;
+                const textColor = isFuture
+                  ? colors.textMuted
+                  : isSelected
+                  ? selectedBorder
+                  : colors.text;
 
                 return (
                   <Pressable
@@ -346,7 +375,9 @@ export function StreakCard({ card, summary }: { card: any; summary?: any }) {
                         },
                       ]}
                     >
-                      <Text style={[styles.dayText, { color: textColor }]}>{c.dayNum}</Text>
+                      <Text style={[styles.dayText, { color: textColor }]}>
+                        {c.dayNum}
+                      </Text>
                     </View>
                   </Pressable>
                 );
@@ -365,31 +396,45 @@ export function StreakCard({ card, summary }: { card: any; summary?: any }) {
                 <ActivityIndicator />
               ) : (
                 <Text style={styles.dayPanelMeta}>
-                  {dayWorkouts.length} workout{dayWorkouts.length === 1 ? "" : "s"}
+                  {dayWorkouts.length} workout
+                  {dayWorkouts.length === 1 ? "" : "s"}
                 </Text>
               )}
             </View>
 
             {dayError ? (
-              <Text style={[styles.errorText, { color: colors.danger }]}>{dayError}</Text>
+              <Text style={[styles.errorText, { color: colors.danger }]}>
+                {dayError}
+              </Text>
             ) : null}
 
             {!dayLoading && !dayError && dayWorkouts.length === 0 ? (
-              <Text style={styles.emptyText}>No workouts logged on this day.</Text>
+              <Text style={styles.emptyText}>
+                No workouts logged on this day.
+              </Text>
             ) : null}
 
             {!dayLoading && !dayError && dayWorkouts.length > 0 ? (
               <View style={{ gap: layout.space.sm }}>
                 {dayWorkouts.map((w) => (
-                  <View
+                  <Pressable
                     key={w.workout_history_id}
-                    style={[
+                    onPress={() => {
+                      if (!w.workout_history_id) return;
+                      router.push({
+                        pathname: "features/history/screens/WorkoutHistoryDetailScreen",
+                        params: { workoutHistoryId: w.workout_history_id },
+                      });
+                    }}
+                    style={({ pressed }) => [
                       styles.workoutRow,
                       {
                         backgroundColor: colors.trackBg,
                         borderColor: colors.trackBorder,
+                        opacity: pressed ? 0.85 : 1,
                       },
                     ]}
+                    hitSlop={8}
                   >
                     <View style={{ flex: 1, gap: 4 }}>
                       <Text style={styles.workoutTitle} numberOfLines={1}>
@@ -397,11 +442,12 @@ export function StreakCard({ card, summary }: { card: any; summary?: any }) {
                       </Text>
 
                       <Text style={styles.workoutSub}>
-                        {fmtTime(w.completed_at)} • {fmtDuration(w.duration_seconds)} •{" "}
+                        {fmtTime(w.completed_at)} •{" "}
+                        {fmtDuration(w.duration_seconds)} •{" "}
                         {w.sets_completed ?? 0} sets • {fmtVolume(w.volume_kg)}
                       </Text>
                     </View>
-                  </View>
+                  </Pressable>
                 ))}
               </View>
             ) : null}
