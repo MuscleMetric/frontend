@@ -52,6 +52,7 @@ type DeepAnalyticsPayload = {
       completed_at: string;
     }[];
     set_contribution: {
+      set_id: string; // ✅ NEW
       set_number: number;
       volume: number;
       weight_kg: number;
@@ -647,7 +648,7 @@ function ContributionBars({
   height = 120,
   barColor = "rgba(34,197,94,0.18)",
 }: {
-  sets: { set_number: number; volume: number }[];
+  sets: { set_id: string; set_number: number; volume: number }[]; // ✅ include set_id
   height?: number;
   barColor?: string;
 }) {
@@ -666,7 +667,7 @@ function ContributionBars({
           const h = Math.max(6, Math.round((s.volume / maxV) * height));
           return (
             <View
-              key={s.set_number}
+              key={s.set_id} // ✅ unique even for dropsets
               style={{
                 flex: 1,
                 alignItems: "center",
@@ -1036,6 +1037,7 @@ export default function DeepAnalytics({
             {contrib.length ? (
               <ContributionBars
                 sets={contrib.map((s) => ({
+                  set_id: s.set_id, // ✅ pass through
                   set_number: s.set_number,
                   volume: s.volume,
                 }))}
