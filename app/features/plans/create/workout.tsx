@@ -15,7 +15,10 @@ function isWorkoutReady(w: any) {
 
 export default function PlanCreateWorkouts() {
   const { colors, typography, layout } = useAppTheme();
-  const s = useMemo(() => makeStyles(colors, typography, layout), [colors, typography, layout]);
+  const s = useMemo(
+    () => makeStyles(colors, typography, layout),
+    [colors, typography, layout]
+  );
 
   const { workoutsPerWeek, workouts } = usePlanDraft();
 
@@ -30,17 +33,14 @@ export default function PlanCreateWorkouts() {
     return `Create ${n} workout${n === 1 ? "" : "s"} for your week`;
   }, [total]);
 
-  const openWorkout = useCallback(
-    (index: number) => {
-      // Uses your shared Plan Workout Editor screen (create/edit can both use it).
-      // Create this route at: app/features/plans/editor/workoutEditor.tsx
-      router.push({
-        pathname: "/features/plans/editor/workoutEditor",
-        params: { index: String(index), mode: "create" },
-      });
-    },
-    []
-  );
+  const openWorkout = useCallback((index: number) => {
+    // Uses your shared Plan Workout Editor screen (create/edit can both use it).
+    // Create this route at: app/features/plans/editor/workoutEditor.tsx
+    router.push({
+      pathname: "/features/plans/editor/workoutEditorWrapper",
+      params: { index: String(index), mode: "create" },
+    });
+  }, []);
 
   const proceed = useCallback(() => {
     if (!allReady) return;
@@ -52,7 +52,11 @@ export default function PlanCreateWorkouts() {
       <View style={s.page}>
         {/* Header */}
         <View style={s.header}>
-          <Pressable onPress={() => router.back()} hitSlop={layout.hitSlop} style={s.headerIconBtn}>
+          <Pressable
+            onPress={() => router.back()}
+            hitSlop={layout.hitSlop}
+            style={s.headerIconBtn}
+          >
             <Text style={s.headerIcon}>‹</Text>
           </Pressable>
 
@@ -89,7 +93,9 @@ export default function PlanCreateWorkouts() {
           {Array.from({ length: total }, (_, i) => {
             const w = list[i];
             const ready = isWorkoutReady(w);
-            const exCount = Array.isArray(w?.exercises) ? w.exercises.length : 0;
+            const exCount = Array.isArray(w?.exercises)
+              ? w.exercises.length
+              : 0;
 
             // styling matches your mock: first = ready chip, middle = “…” chip, etc.
             const leftBadge = ready ? (
@@ -106,7 +112,10 @@ export default function PlanCreateWorkouts() {
               <Pressable
                 key={i}
                 onPress={() => openWorkout(i)}
-                style={[s.workoutRow, !ready && exCount > 0 ? s.workoutRowActive : null]}
+                style={[
+                  s.workoutRow,
+                  !ready && exCount > 0 ? s.workoutRowActive : null,
+                ]}
               >
                 {leftBadge}
 
@@ -118,7 +127,9 @@ export default function PlanCreateWorkouts() {
                   {ready ? (
                     <Text style={s.workoutMetaReady}>Ready</Text>
                   ) : exCount > 0 ? (
-                    <Text style={s.workoutMeta}>{exCount} exercise{exCount === 1 ? "" : "s"} added</Text>
+                    <Text style={s.workoutMeta}>
+                      {exCount} exercise{exCount === 1 ? "" : "s"} added
+                    </Text>
                   ) : (
                     <Text style={s.workoutMeta}>Tap to add exercises</Text>
                   )}
@@ -139,7 +150,9 @@ export default function PlanCreateWorkouts() {
           {/* Optional “Add exercises” helper row when at least one workout is empty */}
           {!allReady ? (
             <View style={s.addHint}>
-              <Text style={s.addHintText}>Tip: open each workout and add exercises to enable Continue.</Text>
+              <Text style={s.addHintText}>
+                Tip: open each workout and add exercises to enable Continue.
+              </Text>
             </View>
           ) : null}
         </View>

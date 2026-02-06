@@ -119,7 +119,7 @@ export default function Review() {
         start: g.start ?? null,
       }));
 
-      const { error: rpcError } = await supabase.rpc("create_full_plan", {
+      const { error: rpcError } = await supabase.rpc("create_plan_v1", {
         p_user_id: userId,
         p_title: title,
         p_end_date: endDate,
@@ -128,7 +128,7 @@ export default function Review() {
       });
 
       if (rpcError) {
-        console.error("create_full_plan RPC failed:", rpcError);
+        console.error("create_plan_v1 RPC failed:", rpcError);
         Alert.alert("Could not create plan", rpcError.message ?? "Unknown error");
         return;
       }
