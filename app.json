@@ -3,14 +3,14 @@
     "name": "MuscleMetric",
     "slug": "musclemetric",
     "version": "1.0.4",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "experiments": {
       "typedRoutes": false,
       "reactCompiler": false
     },
     "extra": {
       "supabaseUrl": "https://cpzgnhchdpkxnebjsyyi.supabase.co",
-      "supabaseAnonKey": "…",
+      "supabaseAnonKey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNwemduaGNoZHBreG5lYmpzeXlpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjAwMzU1NTYsImV4cCI6MjA3NTYxMTU1Nn0.hmDtqnRzofHJ2Zg2AMyF1jY1Et6MPocJehZAfJYHzK8",
       "eas": {
         "projectId": "1e89dfbc-feae-4387-82bd-a1d3252bd76d",
         "build": {

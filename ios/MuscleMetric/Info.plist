@@ -25,21 +25,16 @@
 		<key>CFBundleURLTypes</key>
 		<array>
 			<dict>
+				<key>CFBundleURLName</key>
+				<string>com.musclemetric.app</string>
 				<key>CFBundleURLSchemes</key>
 				<array>
 					<string>musclemetric</string>
-					<string>com.musclemetric.app</string>
-				</array>
-			</dict>
-			<dict>
-				<key>CFBundleURLSchemes</key>
-				<array>
-					<string>exp+musclemetric</string>
 				</array>
 			</dict>
 		</array>
 		<key>CFBundleVersion</key>
-		<string>19</string>
+		<string>22</string>
 		<key>ITSAppUsesNonExemptEncryption</key>
 		<false />
 		<key>LSMinimumSystemVersion</key>

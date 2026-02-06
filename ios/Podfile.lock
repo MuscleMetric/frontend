@@ -1,10 +1,10 @@
 PODS:
-  - EXConstants (18.0.12):
+  - EXConstants (18.0.13):
     - ExpoModulesCore
   - EXJSONUtils (0.15.0)
   - EXManifests (1.0.10):
     - ExpoModulesCore
-  - Expo (54.0.29):
+  - Expo (54.0.33):
     - ExpoModulesCore
     - hermes-engine
     - RCTRequired
@@ -200,7 +200,7 @@ PODS:
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
     - Yoga
-  - ExpoAsset (12.0.11):
+  - ExpoAsset (12.0.12):
     - ExpoModulesCore
   - ExpoBackgroundFetch (14.0.9):
     - ExpoModulesCore
@@ -210,9 +210,9 @@ PODS:
     - ExpoModulesCore
   - ExpoFileSystem (19.0.21):
     - ExpoModulesCore
-  - ExpoFont (14.0.10):
+  - ExpoFont (14.0.11):
     - ExpoModulesCore
-  - ExpoHead (6.0.20):
+  - ExpoHead (6.0.23):
     - ExpoModulesCore
     - RNScreens
   - ExpoImage (3.0.11):
@@ -226,7 +226,7 @@ PODS:
     - ExpoModulesCore
   - ExpoLinearGradient (15.0.8):
     - ExpoModulesCore
-  - ExpoLinking (8.0.10):
+  - ExpoLinking (8.0.11):
     - ExpoModulesCore
   - ExpoLiveActivity (0.4.2):
     - ExpoModulesCore
@@ -262,7 +262,7 @@ PODS:
     - ExpoModulesCore
   - ExpoSMS (14.0.8):
     - ExpoModulesCore
-  - ExpoSplashScreen (31.0.12):
+  - ExpoSplashScreen (31.0.13):
     - ExpoModulesCore
   - EXTaskManager (14.0.9):
     - ExpoModulesCore
@@ -2718,32 +2718,32 @@ EXTERNAL SOURCES:
     :path: "../node_modules/react-native/ReactCommon/yoga"
 
 SPEC CHECKSUMS:
-  EXConstants: 805f35b1b295c542ca6acce836f21a1f9ee104d5
+  EXConstants: fce59a631a06c4151602843667f7cfe35f81e271
   EXJSONUtils: 1d3e4590438c3ee593684186007028a14b3686cd
   EXManifests: a8d97683e5c7a3b026ffbd58559c64dc655b747b
-  Expo: 8fa2204bf8483fe546b4ec87c90d3ca189afc8db
+  Expo: aadbcc8c6c14ff3105a9154f1683cb1424ff0d2a
   expo-dev-client: 425ee077d6754a98cfe3a2e2410d29b440b24c9d
   expo-dev-launcher: a4f4cdef064ab1fb8621e5b8c7c457cd6e9568c3
   expo-dev-menu: 05b18812110c175814c6af0d09dd658abcc5e00d
   expo-dev-menu-interface: 600df12ea01efecdd822daaf13cc0ac091775533
-  ExpoAsset: 23a958e97d3d340919fe6774db35d563241e6c03
+  ExpoAsset: f867e55ceb428aab99e1e8c082b5aee7c159ea18
   ExpoBackgroundFetch: 1631d1fbf59e6ad98ca83b6780ae3a35f678f632
   ExpoBlur: b90747a3f22a8b6ceffd9cb0dc41a4184efdc656
   ExpoClipboard: b36b287d8356887844bb08ed5c84b5979bb4dd1e
   ExpoFileSystem: 858a44267a3e6e9057e0888ad7c7cfbf55d52063
-  ExpoFont: 35ac6191ed86bbf56b3ebd2d9154eda9fad5b509
-  ExpoHead: 4dfca97cc1aad43603fbce30d369b9c6deebeefc
+  ExpoFont: f543ce20a228dd702813668b1a07b46f51878d47
+  ExpoHead: 7e19b2272edf492262acf8afb391a295198a6b23
   ExpoImage: 686f972bff29525733aa13357f6691dc90aa03d8
   ExpoKeepAwake: 55f75eca6499bb9e4231ebad6f3e9cb8f99c0296
   ExpoLinearGradient: 809102bdb979f590083af49f7fa4805cd931bd58
-  ExpoLinking: f4c4a351523da72a6bfa7e1f4ca92aee1043a3ca
+  ExpoLinking: 8f0aaf69aa56f832913030503b6263dc6f647f37
   ExpoLiveActivity: d0dd0e8e1460b6b26555b611c4826cdb1036eea2
   ExpoMediaLibrary: a3093b04365b245bb23b25b6eba84eb6ab55fecb
   ExpoModulesCore: f3da4f1ab5a8375d0beafab763739dbee8446583
   ExpoSensors: 8f9fe9a9ffd36ca9c2f0fe40dafc0a063f844420
   ExpoSharing: 0d983394ed4a80334bab5a0d5384f75710feb7e8
   ExpoSMS: 34f6c0d30e6f87c53fd3ab137bb862b61a58d44e
-  ExpoSplashScreen: 76af87337650d06926aa7d0157fe98b4fddca336
+  ExpoSplashScreen: bc3cffefca2716e5f22350ca109badd7e50ec14d
   EXTaskManager: 6f1a66e4c8cc6df6e24c3d90928704bc3013eae5
   EXUpdatesInterface: 5adf50cb41e079c861da6d9b4b954c3db9a50734
   FBLazyVector: e95a291ad2dadb88e42b06e0c5fb8262de53ec12
