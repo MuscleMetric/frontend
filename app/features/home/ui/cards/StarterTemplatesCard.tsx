@@ -11,7 +11,7 @@ type StarterTemplateItem = {
   subtitle?: string | null;
   badge?: string | null;
 
-  workoutImageKey?: string | null; // ✅ from backend: workout_image_key
+  workoutImageKey?: string | null;
   duration_min?: number | null;
   exercise_count?: number | null;
 };

@@ -4,6 +4,9 @@ export type ProgressOverview = {
     generated_at: string;
     timezone: string;
     unit: "kg";
+    workouts_total: number;
+    days_since_last_workout?: number;
+    last_workout_at?: string | null;
   };
 
   momentum: {
