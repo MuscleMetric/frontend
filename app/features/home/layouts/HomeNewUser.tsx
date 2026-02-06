@@ -6,8 +6,15 @@ import { HomeCardRenderer } from "../ui/HomeCardRenderer";
 import { quoteOfTheDay } from "../../../../lib/quotes";
 import type { Quote } from "../../../../lib/quotes";
 import { pickCard, excludeTypes } from "./homeLayoutHelpers";
+import { NewUserProgressCard } from "../ui/cards/NewUserProgressCard";
 
-export function HomeNewUser({ summary, userId }: { summary: any; userId: string }) {
+export function HomeNewUser({
+  summary,
+  userId,
+}: {
+  summary: any;
+  userId: string;
+}) {
   const { layout } = useAppTheme();
   const styles = useMemo(() => makeStyles(layout), [layout]);
 
@@ -42,6 +49,13 @@ export function HomeNewUser({ summary, userId }: { summary: any; userId: string 
           <View style={styles.quoteWrap}>
             <QuoteHeader quote={dailyQuote} />
           </View>
+
+          <View style={styles.block}>
+            <NewUserProgressCard
+              completed={summary?.user?.workouts_total ?? 0}
+              target={5}
+            />
+          </View>
         </View>
       }
       renderItem={({ item }) => (
@@ -59,7 +73,10 @@ export function HomeNewUser({ summary, userId }: { summary: any; userId: string 
 const makeStyles = (layout: any) =>
   StyleSheet.create({
     listContent: { paddingBottom: layout.space.xl },
-    block: { paddingHorizontal: layout.space.lg, marginBottom: layout.space.md },
+    block: {
+      paddingHorizontal: layout.space.lg,
+      marginBottom: layout.space.md,
+    },
     quoteWrap: {
       paddingHorizontal: layout.space.lg,
       marginTop: layout.space.sm,
