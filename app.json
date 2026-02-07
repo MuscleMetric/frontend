@@ -2,6 +2,10 @@
   "expo": {
     "name": "MuscleMetric",
     "slug": "musclemetric",
+    "scheme": "musclemetric",
+    "ios": {
+      "bundleIdentifier": "com.musclemetric.app"
+    },
     "version": "1.0.4",
     "newArchEnabled": false,
     "experiments": {

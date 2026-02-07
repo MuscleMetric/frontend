@@ -1,5 +1,5 @@
 // app/(tabs)/_layout.tsx
-import React, { useMemo } from "react";
+import { useMemo } from "react";
 import { Tabs } from "expo-router";
 import { View, Text, StyleSheet } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
