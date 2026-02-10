@@ -1,37 +1,30 @@
 import { supabase } from "../../../../lib/supabase";
-import type { OnboardingStatusRow } from "./types";
 
 /**
- * NOTE:
- * Replace this with your real RPC(s).
- * For now this is a typed placeholder that won’t break builds.
+ * Until you add a dedicated RPC, we mark completion by updating columns on `profiles`.
+ * Recommended columns (timestamptz):
+ * - onboarding_stage2_completed_at
+ * - onboarding_stage3_completed_at
+ * - onboarding_stage2_dismissed_at
+ * - onboarding_stage3_dismissed_at
  */
-export async function fetchOnboardingStatus(): Promise<OnboardingStatusRow | null> {
-  // Example shape. When you add the RPC, do:
-  // const { data, error } = await supabase.rpc("get_post_onboarding_status_v1").single();
-  // if (error) throw error;
-  // return data;
+export async function markOnboardingStageComplete(stage: "stage2" | "stage3") {
+  const patch =
+    stage === "stage2"
+      ? { onboarding_stage2_completed_at: new Date().toISOString() }
+      : { onboarding_stage3_completed_at: new Date().toISOString() };
 
-  // Temporary: try to read from profiles until RPC exists
-  const { data, error } = await supabase
-    .from("profiles")
-    .select(
-      `
-      onboarding_stage2_completed_at,
-      onboarding_stage2_dismissed_at,
-      onboarding_stage3_completed_at,
-      onboarding_stage3_dismissed_at
-    `
-    )
-    .single();
+  // if columns are missing, this will error — we swallow it to avoid blocking navigation
+  const { error } = await supabase.from("profiles").update(patch).eq("id", (await supabase.auth.getUser()).data.user?.id);
+  if (error) throw error;
+}
 
-  if (error) return null;
+export async function markOnboardingStageDismissed(stage: "stage2" | "stage3") {
+  const patch =
+    stage === "stage2"
+      ? { onboarding_stage2_dismissed_at: new Date().toISOString() }
+      : { onboarding_stage3_dismissed_at: new Date().toISOString() };
 
-  return {
-    stage2_completed_at: (data as any).onboarding_stage2_completed_at ?? null,
-    stage2_dismissed_at: (data as any).onboarding_stage2_dismissed_at ?? null,
-    stage3_completed_at: (data as any).onboarding_stage3_completed_at ?? null,
-    stage3_dismissed_at: (data as any).onboarding_stage3_dismissed_at ?? null,
-    workouts_total: 0, // you’ll replace with real count source
-  };
+  const { error } = await supabase.from("profiles").update(patch).eq("id", (await supabase.auth.getUser()).data.user?.id);
+  if (error) throw error;
 }

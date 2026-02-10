@@ -1,6 +1,6 @@
 // app/(tabs)/_layout.tsx
 import { useEffect, useMemo, useState } from "react";
-import { Tabs, router } from "expo-router";
+import { Tabs, router, usePathname } from "expo-router";
 import { View, Text, StyleSheet, ActivityIndicator } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
@@ -36,20 +36,33 @@ function CustomHeader({ title }: { title: string }) {
   );
 }
 
-type OnboardingStatus = {
+/** Stage 1 gate response (your existing RPC) */
+type Stage1Status = {
   user_id: string;
   is_complete: boolean;
-  onboarding_step: number;
+  onboarding_step: number | null;
   onboarding_completed_at: string | null;
   onboarding_dismissed_at: string | null;
   missing_fields: string[];
 };
 
+/** Stage 2/3 gate response (new RPC) */
+type OnboardingGateRow = {
+  user_id: string;
+  required_stage: "stage2" | "stage3" | null;
+  workouts_completed: number;
+  stage2_triggered_at: string | null;
+  stage2_completed_at: string | null;
+  stage3_triggered_at: string | null;
+  stage3_completed_at: string | null;
+};
+
 export default function TabsLayout() {
   const { colors, typography } = useAppTheme();
   const { session, profile, loading: authLoading } = useAuth();
+  const pathname = usePathname();
 
-  const [checkingOnboarding, setCheckingOnboarding] = useState(true);
+  const [checking, setChecking] = useState(true);
 
   const isAdmin = profile?.role === "admin";
 
@@ -63,42 +76,72 @@ export default function TabsLayout() {
 
     let cancelled = false;
 
-    async function checkOnboarding() {
-      const res = await supabase.rpc("get_onboarding_status_v1").single();
+    async function runGates() {
+      try {
+        // -------------------------
+        // 1) Stage 1 gate
+        // -------------------------
+        const s1 = await supabase.rpc("get_onboarding_status_v1").single();
+        if (cancelled) return;
 
-      if (cancelled) return;
+        if (s1.error) {
+          router.replace("/(auth)/onboarding");
+          return;
+        }
 
-      if (res.error) {
-        router.replace("/(auth)/onboarding");
-        return;
+        const stage1 = s1.data as unknown as Stage1Status;
+
+        if (!stage1?.is_complete) {
+          router.replace("/(auth)/onboarding");
+          return;
+        }
+
+        // -------------------------
+        // 2) Stage 2/3 gate
+        // -------------------------
+        const g = await supabase.rpc("get_onboarding_gate_v1").single();
+
+        if (g.error) {
+          console.log("gate rpc error:", g.error);
+          console.log("gate rpc data:", g.data);
+          setChecking(false);
+          return;
+        }
+
+        console.log("gate rpc ok:", g.data);
+
+        const gate = g.data as unknown as OnboardingGateRow;
+
+        if (gate?.required_stage === "stage2") {
+          // avoid pointless loop if you ever mount tabs while already on this route
+          if (pathname !== "/onboarding/stage2") {
+            router.replace("/onboarding/stage2");
+            return;
+          }
+        }
+
+        if (gate?.required_stage === "stage3") {
+          if (pathname !== "/onboarding/stage3") {
+            router.replace("/onboarding/stage3");
+            return;
+          }
+        }
+
+        setChecking(false);
+      } catch {
+        // safest fallback: allow app to load
+        setChecking(false);
       }
-
-      const data = res.data as unknown as {
-        user_id: string;
-        is_complete: boolean;
-        onboarding_step: number;
-        onboarding_completed_at: string | null;
-        onboarding_dismissed_at: string | null;
-        missing_fields: string[];
-      };
-
-      if (!data?.is_complete) {
-        router.replace("/(auth)/onboarding");
-        return;
-      }
-
-      setCheckingOnboarding(false);
     }
 
-    checkOnboarding();
+    runGates();
 
     return () => {
       cancelled = true;
     };
-  }, [authLoading, session]);
+  }, [authLoading, session, pathname]);
 
-  // ⏳ Block UI until onboarding status known
-  if (authLoading || checkingOnboarding) {
+  if (authLoading || checking) {
     return (
       <View
         style={{

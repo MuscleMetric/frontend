@@ -78,7 +78,10 @@ export default function OnboardingIndex() {
     }));
   }, [session]);
 
-  function onChange<K extends keyof OnboardingDraft>(key: K, value: OnboardingDraft[K]) {
+  function onChange<K extends keyof OnboardingDraft>(
+    key: K,
+    value: OnboardingDraft[K]
+  ) {
     setDraft((p) => ({ ...p, [key]: value }));
     // clear related error as user interacts
     setErrors((e) => {
@@ -140,7 +143,8 @@ export default function OnboardingIndex() {
         u.email ||
         null;
 
-      const trimmedEmail = (draft.email || u.email || meta.email || "").trim() || null;
+      const trimmedEmail =
+        (draft.email || u.email || meta.email || "").trim() || null;
 
       const profilePayload: any = {
         id: u.id,
@@ -159,6 +163,8 @@ export default function OnboardingIndex() {
           unit_weight: draft.unitWeight,
           unit_height: draft.unitHeight,
         },
+        onboarding_step: 1,
+        onboarding_completed_at: new Date().toISOString(),
       };
 
       const { error } = await supabase.from("profiles").upsert(profilePayload);
@@ -167,7 +173,10 @@ export default function OnboardingIndex() {
       setStep(4); // Ready screen
     } catch (e: any) {
       console.warn("Onboarding save failed:", e);
-      Alert.alert("Onboarding failed", e?.message ?? "Failed to save profile. Try again.");
+      Alert.alert(
+        "Onboarding failed",
+        e?.message ?? "Failed to save profile. Try again."
+      );
     } finally {
       setSaving(false);
     }
