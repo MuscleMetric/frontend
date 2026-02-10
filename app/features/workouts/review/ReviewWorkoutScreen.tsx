@@ -60,11 +60,6 @@ export default function ReviewWorkoutScreen() {
 
   const clientSaveIdRef = useRef<string>(newClientSaveId());
 
-  const durationSeconds = useMemo(() => {
-    if (!draft) return 0;
-    return durationSecondsFromDraft(draft);
-  }, [draft]);
-
   useEffect(() => {
     let cancelled = false;
 

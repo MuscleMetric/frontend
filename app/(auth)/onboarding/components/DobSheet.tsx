@@ -1,6 +1,15 @@
 import React, { useMemo, useRef } from "react";
-import { View, Text, Modal, Pressable, StyleSheet, Platform } from "react-native";
-import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
+import {
+  View,
+  Text,
+  Modal,
+  Pressable,
+  StyleSheet,
+  Platform,
+} from "react-native";
+import DateTimePicker, {
+  DateTimePickerEvent,
+} from "@react-native-community/datetimepicker";
 import { useAppTheme } from "../../../../lib/useAppTheme";
 
 export function DobSheet({
@@ -14,12 +23,10 @@ export function DobSheet({
   onCancel: () => void;
   onConfirm: (d: Date) => void;
 }) {
-  const { colors } = useAppTheme() as any;
+  const { colors } = useAppTheme() as any; // should match ThemeColors
   const styles = useMemo(() => makeStyles(colors), [colors]);
-
   const tempRef = useRef<Date>(initialDate);
 
-  // Android: show native picker only while visible
   if (Platform.OS === "android") {
     if (!visible) return null;
     return (
@@ -37,31 +44,55 @@ export function DobSheet({
   }
 
   return (
-    <Modal transparent animationType="slide" visible={visible} onRequestClose={onCancel}>
-      <Pressable style={styles.backdrop} onPress={onCancel} />
+    <Modal
+      transparent
+      animationType="slide"
+      visible={visible}
+      onRequestClose={onCancel}
+    >
+      <View style={styles.modalRoot}>
+        <Pressable style={styles.backdrop} onPress={onCancel} />
 
-      <View style={styles.sheet}>
-        <View style={styles.toolbar}>
-          <Pressable onPress={onCancel} hitSlop={10}>
-            <Text style={styles.cancel}>Cancel</Text>
-          </Pressable>
+        <View style={styles.sheet}>
+          <View style={styles.toolbar}>
+            <View style={styles.sideSlot}>
+              <Pressable onPress={onCancel} hitSlop={10}>
+                <Text style={styles.cancel}>Cancel</Text>
+              </Pressable>
+            </View>
 
-          <Text style={styles.title}>Select Date of Birth</Text>
+            <View style={styles.centerSlot}>
+              <Text style={styles.title} numberOfLines={1}>
+                Select Date of Birth
+              </Text>
+            </View>
 
-          <Pressable onPress={() => onConfirm(tempRef.current)} hitSlop={10}>
-            <Text style={styles.done}>Done</Text>
-          </Pressable>
+            <View style={[styles.sideSlot, styles.sideSlotRight]}>
+              <Pressable
+                onPress={() => onConfirm(tempRef.current)}
+                hitSlop={10}
+              >
+                <Text style={styles.done}>Done</Text>
+              </Pressable>
+            </View>
+          </View>
+
+          {/* OPAQUE background wrapper is essential on iOS spinner */}
+          <View style={styles.pickerBg}>
+            <View style={styles.pickerCenter}>
+              <DateTimePicker
+                value={initialDate}
+                mode="date"
+                display="spinner"
+                maximumDate={new Date()}
+                onChange={(_: DateTimePickerEvent, date?: Date) => {
+                  if (date) tempRef.current = date;
+                }}
+                style={styles.picker}
+              />
+            </View>
+          </View>
         </View>
-
-        <DateTimePicker
-          value={initialDate}
-          mode="date"
-          display="spinner"
-          maximumDate={new Date()}
-          onChange={(_: DateTimePickerEvent, date?: Date) => {
-            if (date) tempRef.current = date;
-          }}
-        />
       </View>
     </Modal>
   );
@@ -69,35 +100,53 @@ export function DobSheet({
 
 const makeStyles = (colors: any) =>
   StyleSheet.create({
+    modalRoot: { flex: 1, justifyContent: "flex-end" },
+
     backdrop: {
-      flex: 1,
-      backgroundColor: "rgba(0,0,0,0.45)",
+      ...StyleSheet.absoluteFillObject,
+      backgroundColor: colors.overlay ?? "rgba(0,0,0,0.45)",
     },
+
     sheet: {
-      backgroundColor: colors.card,
+      width: "100%",
+      backgroundColor: colors.surface, // ✅ tokens
       borderTopLeftRadius: 18,
       borderTopRightRadius: 18,
       overflow: "hidden",
     },
+
     toolbar: {
+      height: 48,
       flexDirection: "row",
       alignItems: "center",
-      justifyContent: "space-between",
-      paddingHorizontal: 16,
-      paddingVertical: 12,
+      paddingHorizontal: 12,
       borderBottomWidth: StyleSheet.hairlineWidth,
-      borderBottomColor: colors.border,
+      borderBottomColor: colors.border, // ✅ tokens
+      backgroundColor: colors.surface, // ✅ ensure opaque
     },
-    title: {
-      color: colors.text,
-      fontWeight: "900",
+
+    sideSlot: { width: 88, justifyContent: "center" },
+    sideSlotRight: { alignItems: "flex-end" },
+    centerSlot: { flex: 1, alignItems: "center", justifyContent: "center" },
+
+    title: { color: colors.text, fontWeight: "900" },
+    cancel: { color: colors.textMuted, fontWeight: "800" }, // ✅ tokens
+    done: { color: colors.primary, fontWeight: "900" }, // ✅ tokens
+
+    pickerBg: {
+      backgroundColor: colors.surface,
+      height: 216, // iOS standard picker height
+      justifyContent: "center",
     },
-    cancel: {
-      color: colors.subtle,
-      fontWeight: "800",
+
+    pickerCenter: {
+      alignItems: "center",
+      justifyContent: "center",
     },
-    done: {
-      color: colors.primary,
-      fontWeight: "900",
+
+    picker: {
+      width: "100%",
+      height: 216,
+      transform: [{ translateX: -12 }], // 👈 centers the wheel visually
     },
   });

@@ -25,14 +25,18 @@ export function UnitToggle<T extends string>({
         onPress={() => onChange(left.value)}
         style={[styles.pill, leftActive && styles.pillActive]}
       >
-        <Text style={[styles.text, leftActive && styles.textActive]}>{left.label}</Text>
+        <Text style={[styles.text, leftActive && styles.textActive]}>
+          {left.label}
+        </Text>
       </Pressable>
 
       <Pressable
         onPress={() => onChange(right.value)}
         style={[styles.pill, rightActive && styles.pillActive]}
       >
-        <Text style={[styles.text, rightActive && styles.textActive]}>{right.label}</Text>
+        <Text style={[styles.text, rightActive && styles.textActive]}>
+          {right.label}
+        </Text>
       </Pressable>
     </View>
   );
@@ -44,11 +48,12 @@ const makeStyles = (colors: any) =>
       flexDirection: "row",
       borderRadius: 999,
       padding: 3,
-      backgroundColor: "rgba(255,255,255,0.06)",
+      backgroundColor: colors.trackBg ?? "rgba(0,0,0,0.06)",
       borderWidth: StyleSheet.hairlineWidth,
-      borderColor: "rgba(255,255,255,0.10)",
+      borderColor: colors.trackBorder ?? "rgba(0,0,0,0.10)",
       gap: 3,
     },
+
     pill: {
       paddingHorizontal: 14,
       paddingVertical: 8,
@@ -56,19 +61,30 @@ const makeStyles = (colors: any) =>
       alignItems: "center",
       justifyContent: "center",
       minWidth: 46,
+      backgroundColor: "transparent",
     },
+
     pillActive: {
-      backgroundColor: "rgba(255,255,255,0.12)",
+      backgroundColor: colors.primary,
       borderWidth: StyleSheet.hairlineWidth,
-      borderColor: "rgba(255,255,255,0.14)",
+      borderColor: colors.onPrimaryBorder ?? "rgba(255,255,255,0.25)",
+
+      // subtle elevation / glow
+      shadowColor: colors.primary,
+      shadowOpacity: 0.25,
+      shadowRadius: 8,
+      shadowOffset: { width: 0, height: 4 },
+      elevation: 3,
     },
+
     text: {
-      color: colors.subtle,
+      color: colors.textMuted ?? colors.subtle,
       fontWeight: "900",
       fontSize: 12,
       letterSpacing: 0.4,
     },
+
     textActive: {
-      color: colors.text,
+      color: colors.onPrimary ?? "#fff",
     },
   });

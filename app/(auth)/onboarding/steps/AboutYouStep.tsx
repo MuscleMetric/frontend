@@ -70,9 +70,6 @@ export function AboutYouStep({
             onPress={onOpenDob}
             style={[styles.input, styles.rowInput, !!errors.dob && styles.inputError]}
           >
-            <View style={styles.leftIcon}>
-              <Text style={styles.leftIconText}>📅</Text>
-            </View>
             <Text
               style={[
                 styles.rowText,
@@ -91,8 +88,7 @@ export function AboutYouStep({
             onChange={(g) => onChange("gender", g)}
             options={[
               { value: "male", label: "Male" },
-              { value: "female", label: "Female" },
-              { value: "other", label: "Other" },
+              { value: "female", label: "Female" }
             ]}
             error={!!errors.gender}
           />

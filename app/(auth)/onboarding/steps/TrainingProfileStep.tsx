@@ -1,10 +1,19 @@
 import React, { useMemo } from "react";
-import { View, Text, Pressable, StyleSheet } from "react-native";
+import { View, Text, Pressable, StyleSheet, ScrollView } from "react-native";
 import { useAppTheme } from "../../../../lib/useAppTheme";
 import type { Goal, Level, OnboardingDraft } from "../types";
 
 import { Stepper } from "../components/Stepper";
 import { PrimaryCTA } from "../components/PrimaryCTA";
+
+// ✅ Use your app icon component (adjust import path if needed)
+import { Icon } from "../../../../ui/icons/Icon";
+
+type GoalOption = {
+  value: Goal;
+  label: string;
+  iconName: string; // depends on your Icon set
+};
 
 export function TrainingProfileStep({
   draft,
@@ -15,7 +24,10 @@ export function TrainingProfileStep({
   progress = 0.75,
 }: {
   draft: OnboardingDraft;
-  onChange: <K extends keyof OnboardingDraft>(key: K, value: OnboardingDraft[K]) => void;
+  onChange: <K extends keyof OnboardingDraft>(
+    key: K,
+    value: OnboardingDraft[K]
+  ) => void;
   onNext: () => void;
   stepLabel?: string;
   rightLabel?: string;
@@ -25,69 +37,125 @@ export function TrainingProfileStep({
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
   const levelOptions: { value: Level; title: string; desc: string }[] = [
-    { value: "beginner", title: "Beginner", desc: "New to structured training." },
-    { value: "intermediate", title: "Intermediate", desc: "Consistent training for 6+ months." },
-    { value: "advanced", title: "Advanced", desc: "Experienced with complex movements." },
+    {
+      value: "beginner",
+      title: "Beginner",
+      desc: "New to structured training.",
+    },
+    {
+      value: "intermediate",
+      title: "Intermediate",
+      desc: "Consistent training for 6+ months.",
+    },
+    {
+      value: "advanced",
+      title: "Advanced",
+      desc: "Experienced with complex movements.",
+    },
   ];
 
-  const goalOptions: { value: Goal; label: string; icon: string }[] = [
-    { value: "build_muscle", label: "Build Muscle", icon: "🏋️" },
-    { value: "lose_fat", label: "Lose Fat", icon: "🔥" },
+  // ✅ All 4 goals, icons only (no emojis)
+  // Pick iconName values that exist in your Icon component
+  const goalOptions: GoalOption[] = [
+    {
+      value: "get_stronger",
+      label: "Get Stronger",
+      iconName: "barbell-outline",
+    },
+    { value: "build_muscle", label: "Build Muscle", iconName: "body-outline" },
+    { value: "lose_fat", label: "Lose Fat", iconName: "flame-outline" },
+    {
+      value: "improve_endurance",
+      label: "Improve Endurance",
+      iconName: "pulse-outline",
+    },
   ];
 
   return (
     <View style={styles.page}>
       <View style={styles.body}>
-        <Stepper label={stepLabel} progress={progress} rightLabel={rightLabel} />
+        <Stepper
+          label={stepLabel}
+          progress={progress}
+          rightLabel={rightLabel}
+        />
 
-        <View style={styles.header}>
-          <Text style={styles.h1}>Training Profile</Text>
-          <Text style={styles.sub}>
-            Help us customize your workout intensity and volume.
-          </Text>
-        </View>
+        <ScrollView
+          contentContainerStyle={{ paddingBottom: 20 }}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.header}>
+            <Text style={styles.h1}>Training Profile</Text>
+            <Text style={styles.sub}>
+              Help us customize your workout intensity and volume.
+            </Text>
+          </View>
 
-        <Text style={styles.sectionLabel}>FITNESS LEVEL</Text>
-        <View style={{ gap: 10 }}>
-          {levelOptions.map((opt) => {
-            const active = draft.level === opt.value;
-            return (
-              <Pressable
-                key={opt.value}
-                onPress={() => onChange("level", opt.value)}
-                style={[styles.levelCard, active && styles.levelCardActive]}
-              >
-                <Text style={[styles.levelTitle, active && styles.levelTitleActive]}>
-                  {opt.title}
-                </Text>
-                <Text style={[styles.levelDesc, active && styles.levelDescActive]}>
-                  {opt.desc}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
+          <Text style={styles.sectionLabel}>FITNESS LEVEL</Text>
+          <View style={{ gap: 10 }}>
+            {levelOptions.map((opt) => {
+              const active = draft.level === opt.value;
+              return (
+                <Pressable
+                  key={opt.value}
+                  onPress={() => onChange("level", opt.value)}
+                  style={[styles.levelCard, active && styles.levelCardActive]}
+                >
+                  <Text
+                    style={[
+                      styles.levelTitle,
+                      active && styles.levelTitleActive,
+                    ]}
+                  >
+                    {opt.title}
+                  </Text>
+                  <Text
+                    style={[styles.levelDesc, active && styles.levelDescActive]}
+                  >
+                    {opt.desc}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
 
-        <View style={{ height: 18 }} />
+          <View style={{ height: 18 }} />
 
-        <Text style={styles.sectionLabel}>PRIMARY GOAL</Text>
-        <View style={styles.goalGrid}>
-          {goalOptions.map((g) => {
-            const active = draft.primaryGoal === g.value;
-            return (
-              <Pressable
-                key={g.value}
-                onPress={() => onChange("primaryGoal", g.value)}
-                style={[styles.goalTile, active && styles.goalTileActive]}
-              >
-                <Text style={styles.goalIcon}>{g.icon}</Text>
-                <Text style={[styles.goalText, active && styles.goalTextActive]}>
-                  {g.label}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
+          <Text style={styles.sectionLabel}>PRIMARY GOAL</Text>
+
+          {/* ✅ 2x2 grid for 4 goals */}
+          <View style={styles.goalGrid}>
+            {goalOptions.map((g) => {
+              const active = draft.primaryGoal === g.value;
+              return (
+                <Pressable
+                  key={g.value}
+                  onPress={() => onChange("primaryGoal", g.value)}
+                  style={[styles.goalTile, active && styles.goalTileActive]}
+                >
+                  <View
+                    style={[
+                      styles.goalIconWrap,
+                      active && styles.goalIconWrapActive,
+                    ]}
+                  >
+                    <Icon
+                      name={g.iconName as any}
+                      size={18}
+                      color={active ? "#fff" : colors.text}
+                    />
+                  </View>
+
+                  <Text
+                    style={[styles.goalText, active && styles.goalTextActive]}
+                  >
+                    {g.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </ScrollView>
       </View>
 
       <PrimaryCTA title="Continue" onPress={onNext} />
@@ -144,12 +212,14 @@ const makeStyles = (colors: any) =>
     levelDesc: { color: colors.subtle, marginTop: 4, fontWeight: "700" },
     levelDescActive: { color: colors.subtle },
 
+    // ✅ 2x2 grid
     goalGrid: {
       flexDirection: "row",
+      flexWrap: "wrap",
       gap: 12,
     },
     goalTile: {
-      flex: 1,
+      width: "48%",
       borderRadius: 18,
       paddingVertical: 18,
       paddingHorizontal: 14,
@@ -164,7 +234,23 @@ const makeStyles = (colors: any) =>
       borderColor: colors.primary,
       backgroundColor: "rgba(0,0,0,0.12)",
     },
-    goalIcon: { fontSize: 22, marginBottom: 10, opacity: 0.95 },
-    goalText: { color: colors.text, fontWeight: "900" },
+
+    goalIconWrap: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: "rgba(255,255,255,0.06)",
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: "rgba(255,255,255,0.12)",
+      marginBottom: 10,
+    },
+    goalIconWrapActive: {
+      backgroundColor: colors.primary,
+      borderColor: colors.primary,
+    },
+
+    goalText: { color: colors.text, fontWeight: "900", textAlign: "center" },
     goalTextActive: { color: colors.text },
   });
