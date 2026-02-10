@@ -1,7 +1,7 @@
 // app/(tabs)/_layout.tsx
-import { useMemo } from "react";
-import { Tabs } from "expo-router";
-import { View, Text, StyleSheet } from "react-native";
+import { useEffect, useMemo, useState } from "react";
+import { Tabs, router } from "expo-router";
+import { View, Text, StyleSheet, ActivityIndicator } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   House,
@@ -10,8 +10,10 @@ import {
   User2,
   BarChart3,
 } from "lucide-react-native";
+
 import { useAppTheme } from "../../lib/useAppTheme";
 import { useAuth } from "../../lib/authContext";
+import { supabase } from "../../lib/supabase";
 import { ResumeWorkoutGate } from "@/app/features/workouts/components/ResumeWorkoutGate";
 
 function CustomHeader({ title }: { title: string }) {
@@ -34,15 +36,87 @@ function CustomHeader({ title }: { title: string }) {
   );
 }
 
+type OnboardingStatus = {
+  user_id: string;
+  is_complete: boolean;
+  onboarding_step: number;
+  onboarding_completed_at: string | null;
+  onboarding_dismissed_at: string | null;
+  missing_fields: string[];
+};
+
 export default function TabsLayout() {
   const { colors, typography } = useAppTheme();
-  const { profile } = useAuth();
+  const { session, profile, loading: authLoading } = useAuth();
+
+  const [checkingOnboarding, setCheckingOnboarding] = useState(true);
 
   const isAdmin = profile?.role === "admin";
+
+  useEffect(() => {
+    if (authLoading) return;
+
+    if (!session) {
+      router.replace("/(auth)/login");
+      return;
+    }
+
+    let cancelled = false;
+
+    async function checkOnboarding() {
+      const res = await supabase.rpc("get_onboarding_status_v1").single();
+
+      if (cancelled) return;
+
+      if (res.error) {
+        router.replace("/(auth)/onboarding");
+        return;
+      }
+
+      const data = res.data as unknown as {
+        user_id: string;
+        is_complete: boolean;
+        onboarding_step: number;
+        onboarding_completed_at: string | null;
+        onboarding_dismissed_at: string | null;
+        missing_fields: string[];
+      };
+
+      if (!data?.is_complete) {
+        router.replace("/(auth)/onboarding");
+        return;
+      }
+
+      setCheckingOnboarding(false);
+    }
+
+    checkOnboarding();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authLoading, session]);
+
+  // ⏳ Block UI until onboarding status known
+  if (authLoading || checkingOnboarding) {
+    return (
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: colors.bg,
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <ActivityIndicator />
+      </View>
+    );
+  }
 
   return (
     <>
       <ResumeWorkoutGate />
+
       <Tabs
         screenOptions={{
           header: ({ options }) => (
@@ -55,7 +129,6 @@ export default function TabsLayout() {
             />
           ),
 
-          // ✅ Tab bar uses your semantic surface/bg
           tabBarStyle: {
             backgroundColor: colors.surface,
             borderTopWidth: StyleSheet.hairlineWidth,
@@ -70,7 +143,6 @@ export default function TabsLayout() {
             fontFamily: typography.fontFamily.semibold,
           },
 
-          // ✅ Scene background matches app background token
           sceneStyle: { backgroundColor: colors.bg },
         }}
       >
@@ -115,7 +187,7 @@ export default function TabsLayout() {
             tabBarIcon: ({ color, size }) => (
               <BarChart3 color={color} size={size} />
             ),
-            href: isAdmin ? "admin" : null, // ✅ hide when not admin
+            href: isAdmin ? "admin" : null,
           }}
         />
 
@@ -145,7 +217,6 @@ const makeStyles = (colors: any, typography: any, layout: any) =>
       height: 52,
       paddingHorizontal: layout.space.lg,
       justifyContent: "center",
-      backgroundColor: colors.bg,
     },
     headerTitle: {
       fontSize: typography.size.h2,
