@@ -128,7 +128,6 @@ export default function Stage3FiveWorkoutsIndex() {
       <StageFooterCTA
         primaryTitle={primaryTitle(step)}
         onPrimary={onPrimary}
-        secondaryTitle={step > 0 ? "Back" : undefined}
         onSecondary={step > 0 ? back : null}
         topSlot={<PaginationDots total={TOTAL_STEPS} activeIndex={step} />}
         helperText={
