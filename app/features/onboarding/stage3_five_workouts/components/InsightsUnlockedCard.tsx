@@ -82,9 +82,9 @@ const makeStyles = (colors: any, typography: any, layout: any) =>
     },
 
     list: {
-      gap: layout.space.md,
+      gap: layout.space.xl,
     },
     itemRow: {
-      paddingTop: 2,
+      paddingTop: 4,
     },
   });

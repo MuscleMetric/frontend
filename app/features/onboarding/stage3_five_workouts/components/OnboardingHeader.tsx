@@ -27,7 +27,7 @@ export function OnboardingHeader({
   );
 
   return (
-    <View style={[styles.wrap, { paddingTop: Math.max(insets.top, layout.space.md) }]}>
+    <View style={[styles.wrap, { paddingTop: Math.max(insets.top, layout.space.md), paddingBottom: layout.space.md }]}>
       <View style={styles.row}>
         <View style={styles.left}>
           {onBack ? (

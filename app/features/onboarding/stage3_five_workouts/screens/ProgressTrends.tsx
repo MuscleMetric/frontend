@@ -48,12 +48,8 @@ export default function ProgressTrends({
 
   return (
     <View style={styles.wrap}>
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: layout.space.xl }}
-      >
         <Text style={styles.h1}>
-          See if you’re <Text style={styles.h1Em}>actually</Text> getting
+          See you’re <Text style={styles.h1Em}>actually</Text> getting
           stronger.
         </Text>
 
@@ -71,7 +67,6 @@ export default function ProgressTrends({
             series={series}
           />
         </View>
-      </ScrollView>
     </View>
   );
 }

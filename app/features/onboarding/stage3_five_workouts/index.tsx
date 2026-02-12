@@ -16,6 +16,7 @@ import InsightsOverview from "./screens/InsightsOverview";
 import ProgressTrends from "./screens/ProgressTrends";
 import ConsistencyStreak from "./screens/ConsistencyStreak";
 import PlanAdoption from "./screens/PlanAdoption";
+import { supabase } from "@/lib/supabase";
 
 type Step = 0 | 1 | 2 | 3 | 4;
 const TOTAL_STEPS = 5;
@@ -72,9 +73,20 @@ export default function Stage3FiveWorkoutsIndex() {
     setStep((s) => Math.max(0, (s - 1) as Step) as Step);
   }
 
-  function finish() {
-    // Later: mark onboarding stage3 complete + route to plan creation flow
-    router.replace("/(tabs)");
+  async function finish() {
+    try {
+      const { error } = await supabase.rpc("complete_onboarding_stage3");
+
+      if (error) {
+        console.error("[stage3] complete error:", error);
+      } else {
+        console.log("[stage3] marked complete");
+      }
+    } catch (e) {
+      console.error("[stage3] unexpected error:", e);
+    }
+
+    router.replace("/(tabs)/workout");
   }
 
   function onPrimary() {
@@ -99,14 +111,9 @@ export default function Stage3FiveWorkoutsIndex() {
     );
   }
 
-  const title = stepTitle(step);
-  const subtitle = stepSubtitle(step, ui);
-
   return (
     <View style={styles.page}>
       <OnboardingHeader
-        title={title}
-        subtitle={subtitle}
         stepLabel={`${step + 1} of ${TOTAL_STEPS}`}
         onBack={step > 0 ? back : null}
       />
@@ -130,11 +137,6 @@ export default function Stage3FiveWorkoutsIndex() {
         onPrimary={onPrimary}
         onSecondary={step > 0 ? back : null}
         topSlot={<PaginationDots total={TOTAL_STEPS} activeIndex={step} />}
-        helperText={
-          step === 4
-            ? "A plan gives you structure + targets so every workout moves you forward."
-            : undefined
-        }
       />
     </View>
   );

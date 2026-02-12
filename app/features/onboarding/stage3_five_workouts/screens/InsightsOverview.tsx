@@ -25,40 +25,41 @@ export default function InsightsOverview({
     {
       iconName: "trending-up-outline",
       title: "Progress trends",
-      subtitle: "Visualize your strength velocity",
+      subtitle: "Visualize your strength trajectory over time",
     },
     {
       iconName: "barbell-outline",
       title: "Strength milestones",
-      subtitle: "Personal records tracking active",
+      subtitle: "Personal records tracking and achievement highlights",
     },
     {
       iconName: "calendar-outline",
       title: "Consistency tracking",
-      subtitle: "Weekly frequency heatmaps",
+      subtitle: "Monthly frequency heatmaps",
     },
     {
       iconName: "navigate-outline",
       title: "Goal pacing",
-      subtitle: "Arrival estimates based on effort",
+      subtitle: "Step by step guide towards your strength goals",
     },
   ];
 
   return (
     <View style={styles.page}>
-        <Text style={styles.h1}>Why pages looks{"\n"}different now</Text>
+      <Text style={styles.h1}>
+        Dashboards have been <Text style={styles.h1Em}>improved</Text>
+      </Text>
 
-        <View style={{ height: layout.space.lg }} />
+      <View style={{ height: layout.space.lg }} />
 
-        <InsightsUnlockedCard title="Insights unlocked" items={items} />
+      <InsightsUnlockedCard title="Insights unlocked" items={items} />
 
-        <View style={{ height: layout.space.lg }} />
+      <View style={{ height: layout.space.lg }} />
 
-        <Text style={styles.footer}>
-          With <Text style={styles.footerEm}>{workoutsTotal} workouts</Text>,
-          your data becomes meaningful. We can now show real patterns — not
-          guesses.
-        </Text>
+      <Text style={styles.footer}>
+        With <Text style={styles.footerEm}>{workoutsTotal} workouts</Text>, your
+        data becomes meaningful. We can now show real patterns — not guesses.
+      </Text>
     </View>
   );
 }
@@ -71,23 +72,6 @@ const makeStyles = (colors: any, typography: any, layout: any) =>
       paddingTop: layout.space.md,
     },
 
-    badge: {
-      paddingHorizontal: layout.space.lg,
-      paddingVertical: 10,
-      borderRadius: layout.radius.pill,
-      backgroundColor: colors.trackBg,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: colors.trackBorder,
-      marginTop: layout.space.sm,
-    },
-    badgeText: {
-      color: colors.primary,
-      fontFamily: typography.fontFamily.semibold,
-      fontSize: typography.size.meta,
-      letterSpacing: 2.2,
-      textTransform: "uppercase",
-    },
-
     h1: {
       marginTop: layout.space.lg,
       color: colors.text,
@@ -97,6 +81,10 @@ const makeStyles = (colors: any, typography: any, layout: any) =>
       letterSpacing: -1.0,
       textAlign: "center",
       paddingHorizontal: layout.space.lg,
+    },
+    h1Em: {
+      color: colors.primary,
+      fontFamily: typography.fontFamily.bold,
     },
 
     footer: {
