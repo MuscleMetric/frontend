@@ -42,6 +42,7 @@ import {
 
 // ✅ NEW: add flow (full-screen route + return handler)
 import { setAddExercisesHandler } from "./add/addBus";
+import { pauseLivePersist, registerPersistControls } from "./persist/persistControl";
 
 type Params = { workoutId?: string; planWorkoutId?: string };
 
@@ -327,10 +328,20 @@ export default function LiveWorkoutScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const { persist } = usePersistDraft({
+  const { persist, pause, resume, cancelTimer } = usePersistDraft({
     enabledServer: true,
     serverDebounceMs: 1200,
   });
+
+  useEffect(() => {
+    // Make live persist controllable from other screens (Review)
+    registerPersistControls({ pause, resume, cancelTimer });
+
+    return () => {
+      // Ensure we never keep stale handlers around
+      registerPersistControls(null);
+    };
+  }, [pause, resume, cancelTimer]);
 
   useLiveActivitySync(draft, true);
 
@@ -460,6 +471,7 @@ export default function LiveWorkoutScreen() {
 
   async function discardSessionConfirmed() {
     if (!uid) return;
+    pauseLivePersist();
     stopLiveWorkout();
     await clearLiveDraftForUser(uid);
     await clearServerDraft(uid);

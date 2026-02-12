@@ -18,24 +18,44 @@ export async function bootLiveDraft(args: {
 }): Promise<LiveWorkoutDraft> {
   const { userId, workoutId, planWorkoutId, preferServer = true } = args;
 
-  // Attempt server first (if enabled)
-  if (preferServer) {
-    const server = await fetchServerDraft(userId);
-    if (server?.draftId) {
-      // also cache locally
-      await saveLiveDraftForUser(userId, server);
-      return server;
-    }
+  const [local, server] = await Promise.all([
+    loadLiveDraftForUser(userId),
+    preferServer ? fetchServerDraft(userId) : Promise.resolve(null),
+  ]);
+
+  const hasLocal = !!local?.draftId;
+  const hasServer = !!server?.draftId;
+
+  const localUpdated =
+    hasLocal && local?.updatedAt ? Date.parse(local.updatedAt) : 0;
+  const serverUpdated =
+    hasServer && server?.updatedAt ? Date.parse(server.updatedAt) : 0;
+
+  console.log("bootLiveDraft", {
+    preferServer,
+    hasLocal,
+    localUpdated: local?.updatedAt ?? null,
+    hasServer,
+    serverUpdated: server?.updatedAt ?? null,
+    pick:
+      hasServer && (!hasLocal || serverUpdated >= localUpdated)
+        ? "server"
+        : hasLocal
+        ? "local"
+        : "bootstrap",
+  });
+
+  // 1) Server if newer (or local missing)
+  if (hasServer && (!hasLocal || serverUpdated >= localUpdated)) {
+    await saveLiveDraftForUser(userId, server!); // cache server locally
+    return server!;
   }
 
-  // Local resume
-  const local = await loadLiveDraftForUser(userId);
-  if (local?.draftId) return local;
+  // 2) Local
+  if (hasLocal) return local!;
 
-  // Need workoutId to create a new session
-  if (!workoutId) {
-    throw new Error("No workoutId provided to start a session.");
-  }
+  // 3) Bootstrap
+  if (!workoutId) throw new Error("No workoutId provided to start a session.");
 
   const { data, error } = await supabase.rpc("get_workout_session_bootstrap", {
     p_workout_id: workoutId,

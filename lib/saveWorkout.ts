@@ -3,6 +3,13 @@ import { supabase } from "./supabase";
 import type { LiveWorkoutDraft } from "@/app/features/workouts/live/state/types";
 import * as Sentry from "@sentry/react-native";
 
+const DEBUG_SAVE = __DEV__;
+
+function dlog(message: string, data?: Record<string, any>) {
+  if (!DEBUG_SAVE) return;
+  console.log(`[saveWorkout] ${message}`, data ?? {});
+}
+
 function bc(message: string, data?: Record<string, any>) {
   Sentry.addBreadcrumb({
     category: "save_rpc",
@@ -291,11 +298,31 @@ export async function saveCompletedWorkoutFromLiveDraft(
   const payload = buildRpcPayloadFromDraft(args);
   const summary = summarizeRpcPayload(payload);
 
+  dlog("payload summary", summary);
+
+  // extra sanity: confirm IDs present
+  dlog("payload ids", {
+    client_save_id: payload.client_save_id,
+    workout_id: payload.workout_id,
+    plan_workout_id: payload.plan_workout_id,
+    completed_at: payload.completed_at,
+  });
+
   bc("rpc start", summary);
 
   try {
+    dlog("rpc calling save_completed_workout_v1");
+
     const { data, error } = await supabase.rpc("save_completed_workout_v1", {
       p_workout: payload,
+    });
+
+    dlog("rpc returned", {
+      hasData: data != null,
+      dataType: typeof data,
+      error: error
+        ? { message: error.message, code: (error as any).code }
+        : null,
     });
 
     if (error) {
@@ -305,6 +332,13 @@ export async function saveCompletedWorkoutFromLiveDraft(
         details: (error as any).details,
         hint: (error as any).hint,
         message: error.message,
+      });
+
+      dlog("rpc error", {
+        message: error.message,
+        code: (error as any).code,
+        details: (error as any).details,
+        hint: (error as any).hint,
       });
 
       Sentry.captureException(error, {
@@ -322,6 +356,8 @@ export async function saveCompletedWorkoutFromLiveDraft(
     }
 
     bc("rpc success", { ...summary, workoutHistoryId: String(data) });
+    dlog("rpc success", { workoutHistoryId: String(data) });
+
     return { workoutHistoryId: String(data) };
   } catch (e: any) {
     bc("rpc exception", { ...summary, message: String(e?.message ?? e) });

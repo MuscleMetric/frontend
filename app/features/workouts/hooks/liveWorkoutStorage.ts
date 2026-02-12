@@ -1,14 +1,17 @@
+//workouts/hooks/liveWorkoutStorage.ts
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import type { LiveWorkoutDraft } from "./liveWorkoutTypes";
 
 // liveWorkoutStorage.ts
-export const liveWorkoutDraftKeyFor = (userId: string) => `live_workout:${userId}`;
+export const liveWorkoutDraftKeyFor = (userId: string) =>
+  `live_workout:${userId}`;
 
 // keep existing keyFor if you want, but use the exported one everywhere
 const keyFor = liveWorkoutDraftKeyFor;
 
-
-export async function loadLiveDraftForUser(userId: string): Promise<LiveWorkoutDraft | null> {
+export async function loadLiveDraftForUser(
+  userId: string
+): Promise<LiveWorkoutDraft | null> {
   try {
     const raw = await AsyncStorage.getItem(keyFor(userId));
     if (!raw) return null;
@@ -23,13 +26,28 @@ export async function loadLiveDraftForUser(userId: string): Promise<LiveWorkoutD
   }
 }
 
-export async function saveLiveDraftForUser(userId: string, draft: LiveWorkoutDraft): Promise<void> {
-  // trust the caller's userId, but also keep the draft consistent
+export async function saveLiveDraftForUser(
+  userId: string,
+  draft: LiveWorkoutDraft
+): Promise<void> {
   const safe: LiveWorkoutDraft = {
     ...draft,
     userId,
     updatedAt: new Date().toISOString(),
   };
+
+  // ✅ DEBUG: who is writing this key?
+  if (__DEV__) {
+    const err = new Error("saveLiveDraftForUser called");
+    console.log("[resume-debug] WRITE live_workout", {
+      key: keyFor(userId),
+      workoutId: (safe as any).workoutId,
+      planWorkoutId: (safe as any).planWorkoutId,
+      updatedAt: safe.updatedAt,
+      stack: err.stack,
+    });
+  }
+
   await AsyncStorage.setItem(keyFor(userId), JSON.stringify(safe));
 }
 
@@ -39,7 +57,9 @@ export async function clearLiveDraftForUser(userId: string): Promise<void> {
 
 // Backwards compat with your current names:
 export const loadLiveWorkoutDraft = loadLiveDraftForUser;
-export async function saveLiveWorkoutDraft(draft: LiveWorkoutDraft): Promise<void> {
+export async function saveLiveWorkoutDraft(
+  draft: LiveWorkoutDraft
+): Promise<void> {
   return saveLiveDraftForUser(draft.userId, draft);
 }
 export const clearLiveWorkoutDraft = clearLiveDraftForUser;

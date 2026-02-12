@@ -21,12 +21,16 @@ import { SaveFooter } from "./ui/SaveFooter";
 
 import { useReviewData } from "./useReviewData";
 
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
 // ✅ Your save function (the one that calls save_completed_workout_v1)
 // Make sure the path matches where you placed it.
 import {
   saveCompletedWorkoutFromLiveDraft,
   durationSecondsFromDraft,
 } from "@/lib/saveWorkout";
+import { clearAllMmLiveDraftKeysForUser } from "../live/persist/mmLocal";
+import { pauseLivePersist } from "../live/persist/persistControl";
 
 type Params = { workoutId?: string; planWorkoutId?: string };
 
@@ -38,6 +42,48 @@ function newClientSaveId() {
     const v = c === "x" ? r : (r & 0x3) | 0x8;
     return v.toString(16);
   });
+}
+
+const DEBUG_LIVE = __DEV__;
+
+async function dumpLiveStorage(label: string, userId: string) {
+  if (!DEBUG_LIVE) return;
+
+  try {
+    const keys = await AsyncStorage.getAllKeys();
+
+    // filter to likely keys
+    const liveKeys = keys.filter((k) => {
+      const lk = k.toLowerCase();
+      return (
+        lk.includes("live") ||
+        lk.includes("workout") ||
+        lk.includes(userId.toLowerCase())
+      );
+    });
+
+    // show a small preview of values for the most suspicious keys
+    const interesting = liveKeys
+      .filter(
+        (k) => k.includes(userId) || k.toLowerCase().includes("live_workout")
+      )
+      .slice(0, 25);
+
+    const pairs = await AsyncStorage.multiGet(interesting);
+
+    console.log(`[resume-debug] ${label}`, {
+      totalKeys: keys.length,
+      liveKeyCount: liveKeys.length,
+      liveKeys,
+      preview: pairs.map(([k, v]) => ({
+        key: k,
+        // truncate values so logs stay readable
+        valuePreview: v ? v.slice(0, 180) : null,
+      })),
+    });
+  } catch (e) {
+    console.log(`[resume-debug] ${label} dump failed`, e);
+  }
 }
 
 export default function ReviewWorkoutScreen() {
@@ -147,13 +193,41 @@ export default function ReviewWorkoutScreen() {
               });
 
               // ✅ only clear AFTER successful save
-              stopLiveWorkout();
-              await clearLiveDraftForUser(uid);
-              await clearServerDraft(uid);
+              console.log("[resume-debug] save succeeded -> clearing…", {
+                uid,
+                workoutId,
+                planWorkoutId,
+              });
+
+              await dumpLiveStorage("BEFORE stop/clear", uid);
+
+              pauseLivePersist(); // ✅ stops LiveWorkoutScreen from rewriting drafts
+              stopLiveWorkout(); // should stop any autosave loops
+              console.log("[resume-debug] stopLiveWorkout() done");
+
+              try {
+                await clearLiveDraftForUser(uid);
+                console.log(
+                  "[resume-debug] cleared local draft key live_workout:<uid>"
+                );
+              } catch (e) {
+                console.log("[resume-debug] clearLiveDraftForUser FAILED", e);
+              }
+
+              const removed = await clearAllMmLiveDraftKeysForUser(uid);
+              console.log("[resume-debug] cleared mm:liveDraft keys", removed);
+
+              try {
+                await clearServerDraft(uid);
+                console.log("[resume-debug] cleared server draft row");
+              } catch (e) {
+                console.log("[resume-debug] clearServerDraft FAILED", e);
+              }
+
+              await dumpLiveStorage("AFTER stop/clear", uid);
 
               // Leave review screen + live screen
               router.replace("/(tabs)");
-              setTimeout(() => router.replace("/(tabs)"), 0); // exit live session route
             } catch (e: any) {
               Alert.alert(
                 "Save failed",

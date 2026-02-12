@@ -8,9 +8,10 @@ import { useAppTheme } from "@/lib/useAppTheme";
 import {
   loadLiveDraftForUser,
   clearLiveDraftForUser,
-} from "@/app/features/workouts/hooks/liveWorkoutStorage";
+} from "@/app/features/workouts/live/persist/local";
 
 import { clearServerDraft } from "@/app/features/workouts/live/persist/server";
+import { clearAllMmLiveDraftKeysForUser } from "../live/persist/mmLocal";
 
 type Draft = {
   draftId: string;
@@ -62,6 +63,12 @@ export function ResumeWorkoutGate() {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
 
+  useEffect(() => {
+    if (!userId) return;
+    loadDraft();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname, userId]);
+
   // ✅ don’t show if already in live flow
   const shouldSuppress = useMemo(() => {
     return pathname?.startsWith("/features/workouts/live");
@@ -86,23 +93,22 @@ export function ResumeWorkoutGate() {
     if (!shouldSuppress) setOpen(true);
   }
 
-  async function discardEverywhere() {
-    if (!userId) return;
+async function discardEverywhere() {
+  if (!userId) return;
 
-    setBusy(true);
-    try {
-      // local first (instant UX)
-      await clearLiveDraftForUser(userId);
+  setBusy(true);
+  try {
+    await clearLiveDraftForUser(userId);
+    await clearAllMmLiveDraftKeysForUser(userId);
+    await clearServerDraft(userId);
 
-      // server too
-      await clearServerDraft(userId);
-
-      setDraft(null);
-      setOpen(false);
-    } finally {
-      setBusy(false);
-    }
+    setDraft(null);
+    setOpen(false);
+  } finally {
+    setBusy(false);
   }
+}
+
 
   function confirmDiscard() {
     Alert.alert(
@@ -200,7 +206,8 @@ export function ResumeWorkoutGate() {
               lineHeight: 18,
             }}
           >
-            We found an autosaved workout draft. Continue to pick up where you left off, or delete it to start fresh.
+            We found an autosaved workout draft. Continue to pick up where you
+            left off, or delete it to start fresh.
           </Text>
         </View>
       </Card>

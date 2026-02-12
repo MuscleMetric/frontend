@@ -108,8 +108,6 @@ export default function TabsLayout() {
           return;
         }
 
-        console.log("gate rpc ok:", g.data);
-
         const gate = g.data as unknown as OnboardingGateRow;
 
         if (gate?.required_stage === "stage2") {
