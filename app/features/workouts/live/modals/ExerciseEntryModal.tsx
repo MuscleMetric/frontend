@@ -150,8 +150,8 @@ export function ExerciseEntryModal(props: {
   const prDelta = useMemo(() => {
     if (cardio) return null;
     if (!bestNow) return null;
-    if (!exercise.bestE1rm) return null;
-    return bestNow.est - exercise.bestE1rm;
+    if (!exercise.bestE1rm6m) return null;
+    return bestNow.est - exercise.bestE1rm6m;
   }, [exercise, cardio, bestNow]);
 
   // --- superset ---
@@ -258,8 +258,11 @@ export function ExerciseEntryModal(props: {
     });
   }
 
+  const ENABLE_AUTOFILL = false;
+
   // ---- autofill ----
   useEffect(() => {
+    if (!ENABLE_AUTOFILL) return;
     if (!props.visible) return;
 
     // only autofill if empty
@@ -303,12 +306,42 @@ export function ExerciseEntryModal(props: {
     if (best.weight != null) commitWeightText(String(best.weight));
     if (best.reps != null) commitRepsText(String(best.reps));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [props.visible, exercise.exerciseId, setNumber]);
+  }, [ENABLE_AUTOFILL, props.visible, exercise.exerciseId, setNumber]);
 
   const lastSessionSets = exercise.lastSession?.sets ?? [];
   const lastCompletedAt = exercise.lastSession?.completedAt ?? null;
 
   const sheetRadius = 26;
+
+  const lastSessionVolume = useMemo(() => {
+    if (cardio) return null; // volume is strength-only for now
+    if (!Array.isArray(lastSessionSets) || lastSessionSets.length === 0)
+      return null;
+
+    // Sum reps * weight for the last session
+    let total = 0;
+
+    for (const s of lastSessionSets as any[]) {
+      const reps = s?.reps;
+      const weight = s?.weight;
+
+      if (reps == null || weight == null) continue;
+      if (!Number.isFinite(Number(reps)) || !Number.isFinite(Number(weight)))
+        continue;
+      if (Number(reps) <= 0 || Number(weight) < 0) continue;
+
+      total += Number(reps) * Number(weight);
+    }
+
+    // If nothing valid, return null so UI can show "—"
+    return total > 0 ? total : 0;
+  }, [cardio, lastSessionSets]);
+
+  const volDelta = useMemo(() => {
+    if (cardio) return null;
+    if (lastSessionVolume == null) return null;
+    return sessionVolume - lastSessionVolume;
+  }, [cardio, sessionVolume, lastSessionVolume]);
 
   return (
     <Modal
@@ -451,8 +484,10 @@ export function ExerciseEntryModal(props: {
                       ? { weight: bestNow.weight, reps: bestNow.reps }
                       : null
                   }
-                  bestE1rm={exercise.bestE1rm}
+                  volDelta={volDelta}
                   prDelta={prDelta}
+                  bestE1rm6m={(exercise as any).bestE1rm6m ?? null}
+                  bestSet6m={(exercise as any).bestSet6m ?? null}
                 />
               ) : null}
 

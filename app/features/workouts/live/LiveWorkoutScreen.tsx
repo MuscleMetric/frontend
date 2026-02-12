@@ -42,7 +42,10 @@ import {
 
 // ✅ NEW: add flow (full-screen route + return handler)
 import { setAddExercisesHandler } from "./add/addBus";
-import { pauseLivePersist, registerPersistControls } from "./persist/persistControl";
+import {
+  pauseLivePersist,
+  registerPersistControls,
+} from "./persist/persistControl";
 
 type Params = { workoutId?: string; planWorkoutId?: string };
 
@@ -219,7 +222,8 @@ export default function LiveWorkoutScreen() {
         sets: [],
       },
 
-      bestE1rm: null,
+      bestE1rm6m: null,
+      bestSet6m: null,
       totalVolumeAllTime: null,
 
       isDone: false,

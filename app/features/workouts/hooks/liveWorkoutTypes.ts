@@ -58,7 +58,13 @@ export type WorkoutLoadPayload = {
       }>;
     };
 
-    bestE1rm: number | null;
+    bestE1rm6m: number | null;
+    bestSet6m: {
+      completedAt: string | null;
+      weight: number | null;
+      reps: number | null;
+      e1rm: number | null;
+    } | null;
     totalVolumeAllTime: number | null;
   }>;
 };
@@ -87,7 +93,13 @@ export type LiveExerciseDraft = {
 
   prescription: WorkoutLoadPayload["exercises"][number]["prescription"];
   lastSession: WorkoutLoadPayload["exercises"][number]["lastSession"];
-  bestE1rm: number | null;
+  bestE1rm6m: number | null;
+  bestSet6m: {
+    completedAt: string | null;
+    weight: number | null;
+    reps: number | null;
+    e1rm: number | null;
+  } | null;
   totalVolumeAllTime: number | null;
 
   // live state

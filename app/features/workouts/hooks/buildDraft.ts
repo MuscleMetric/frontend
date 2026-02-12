@@ -1,4 +1,8 @@
-import type { LiveWorkoutDraft, WorkoutLoadPayload, LiveExerciseDraft } from "./liveWorkoutTypes";
+import type {
+  LiveWorkoutDraft,
+  WorkoutLoadPayload,
+  LiveExerciseDraft,
+} from "./liveWorkoutTypes";
 
 function nowIso() {
   return new Date().toISOString();
@@ -56,7 +60,8 @@ export function buildDraftFromBootstrap(args: {
 
       prescription: ex.prescription,
       lastSession: ex.lastSession,
-      bestE1rm: ex.bestE1rm,
+      bestE1rm6m: ex.bestE1rm6m ?? null,
+      bestSet6m: ex.bestSet6m ?? null,
       totalVolumeAllTime: ex.totalVolumeAllTime,
 
       isDone: false,
