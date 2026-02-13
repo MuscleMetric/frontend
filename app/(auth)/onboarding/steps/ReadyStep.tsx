@@ -89,7 +89,7 @@ const makeStyles = (colors: any) =>
       marginTop: 6,
     },
     sub: {
-      color: colors.subtle,
+      color: colors.textMuted,
       fontWeight: "700",
       textAlign: "center",
       lineHeight: 20,
@@ -120,5 +120,5 @@ const makeStyles = (colors: any) =>
     },
     syncBolt: { color: colors.primary, fontSize: 18 },
     syncTitle: { color: colors.text, fontWeight: "900" },
-    syncSub: { color: colors.subtle, fontWeight: "700", marginTop: 2 },
+    syncSub: { color: colors.textMuted, fontWeight: "700", marginTop: 2 },
   });

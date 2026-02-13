@@ -179,7 +179,7 @@ const makeStyles = (colors: any) =>
       letterSpacing: -0.8,
     },
     sub: {
-      color: colors.subtle,
+      color: colors.textMuted,
       marginTop: 10,
       fontSize: 14,
       lineHeight: 20,
@@ -188,7 +188,7 @@ const makeStyles = (colors: any) =>
     },
 
     sectionLabel: {
-      color: colors.subtle,
+      color: colors.textMuted,
       fontWeight: "900",
       letterSpacing: 1.1,
       fontSize: 12,
@@ -209,8 +209,8 @@ const makeStyles = (colors: any) =>
     },
     levelTitle: { color: colors.text, fontWeight: "900", fontSize: 16 },
     levelTitleActive: { color: colors.text },
-    levelDesc: { color: colors.subtle, marginTop: 4, fontWeight: "700" },
-    levelDescActive: { color: colors.subtle },
+    levelDesc: { color: colors.textMuted, marginTop: 4, fontWeight: "700" },
+    levelDescActive: { color: colors.textMuted },
 
     // ✅ 2x2 grid
     goalGrid: {

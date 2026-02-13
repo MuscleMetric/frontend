@@ -43,7 +43,7 @@ const makeStyles = (colors: any) =>
       marginBottom: 8,
     },
     label: {
-      color: colors.subtle,
+      color: colors.textMuted,
       fontSize: 11,
       fontWeight: "900",
       letterSpacing: 1.2,
@@ -53,7 +53,7 @@ const makeStyles = (colors: any) =>
     },
     right: {
       width: 80,
-      color: colors.subtle,
+      color: colors.textMuted,
       fontSize: 12,
       fontWeight: "800",
       textAlign: "right",

@@ -104,7 +104,7 @@ const makeStyles = (colors: any) =>
       paddingVertical: 6,
     },
     secondaryText: {
-      color: colors.subtle,
+      color: colors.textMuted,
       fontWeight: "700",
     },
   });
