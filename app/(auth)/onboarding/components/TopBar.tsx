@@ -113,14 +113,14 @@ const makeStyles = (colors: any) =>
       marginBottom: 8,
     },
     stepLabel: {
-      color: colors.subtle,
+      color: colors.textMuted,
       fontSize: 11,
       fontWeight: "900",
       letterSpacing: 1.2,
       textTransform: "uppercase",
     },
     rightLabel: {
-      color: colors.subtle,
+      color: colors.textMuted,
       fontSize: 12,
       fontWeight: "800",
     },

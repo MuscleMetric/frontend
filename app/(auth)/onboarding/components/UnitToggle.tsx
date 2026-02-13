@@ -69,7 +69,7 @@ const makeStyles = (colors: any) =>
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.onPrimaryBorder ?? "rgba(255,255,255,0.25)",
 
-      // subtle elevation / glow
+      // textMuted elevation / glow
       shadowColor: colors.primary,
       shadowOpacity: 0.25,
       shadowRadius: 8,
@@ -78,7 +78,7 @@ const makeStyles = (colors: any) =>
     },
 
     text: {
-      color: colors.textMuted ?? colors.subtle,
+      color: colors.textMuted ?? colors.textMuted,
       fontWeight: "900",
       fontSize: 12,
       letterSpacing: 0.4,

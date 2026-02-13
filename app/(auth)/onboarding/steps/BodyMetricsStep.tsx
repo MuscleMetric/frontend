@@ -418,7 +418,7 @@ const makeStyles = (colors: any) =>
       letterSpacing: -0.8,
     },
     sub: {
-      color: colors.subtle,
+      color: colors.textMuted,
       marginTop: 10,
       fontSize: 14,
       lineHeight: 20,
@@ -433,7 +433,7 @@ const makeStyles = (colors: any) =>
       marginBottom: 12,
     },
     metricLabel: {
-      color: colors.subtle,
+      color: colors.textMuted,
       fontWeight: "900",
       letterSpacing: 1.1,
       fontSize: 12,
@@ -485,7 +485,7 @@ const makeStyles = (colors: any) =>
       alignItems: "center",
     },
     rulerValue: {
-      color: colors.subtle,
+      color: colors.textMuted,
       fontWeight: "800",
     },
     rulerHint: {

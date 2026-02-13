@@ -47,7 +47,7 @@ export function AboutYouStep({
           <TextInput
             style={[styles.input, !!errors.fullName && styles.inputError]}
             placeholder="John Doe"
-            placeholderTextColor={colors.subtle}
+            placeholderTextColor={colors.textMuted}
             value={draft.fullName}
             onChangeText={(t) => onChange("fullName", t)}
             autoCapitalize="words"
@@ -59,7 +59,7 @@ export function AboutYouStep({
           <TextInput
             style={[styles.input, styles.readOnly]}
             placeholder="john.doe@musclemetric.com"
-            placeholderTextColor={colors.subtle}
+            placeholderTextColor={colors.textMuted}
             value={draft.email}
             editable={false}
           />
@@ -73,7 +73,7 @@ export function AboutYouStep({
             <Text
               style={[
                 styles.rowText,
-                { color: draft.dob ? colors.text : colors.subtle },
+                { color: draft.dob ? colors.text : colors.textMuted },
               ]}
             >
               {dobLabel}
@@ -129,7 +129,7 @@ const makeStyles = (colors: any) =>
       letterSpacing: -0.8,
     },
     sub: {
-      color: colors.subtle,
+      color: colors.textMuted,
       marginTop: 10,
       fontSize: 14,
       lineHeight: 20,
@@ -181,7 +181,7 @@ const makeStyles = (colors: any) =>
       fontWeight: "800",
     },
     chev: {
-      color: colors.subtle,
+      color: colors.textMuted,
       fontSize: 18,
       fontWeight: "900",
       marginTop: -2,

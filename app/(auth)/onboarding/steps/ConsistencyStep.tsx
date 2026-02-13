@@ -268,7 +268,7 @@ const makeStyles = (colors: any) =>
       letterSpacing: -0.8,
     },
     sub: {
-      color: colors.subtle,
+      color: colors.textMuted,
       marginTop: 10,
       fontSize: 14,
       lineHeight: 20,
@@ -283,7 +283,7 @@ const makeStyles = (colors: any) =>
       marginBottom: 12,
     },
     rowTitle: { color: colors.text, fontWeight: "900", fontSize: 16 },
-    miniValue: { color: colors.subtle, fontWeight: "900" },
+    miniValue: { color: colors.textMuted, fontWeight: "900" },
 
     badge: {
       paddingHorizontal: 10,
@@ -324,7 +324,7 @@ const makeStyles = (colors: any) =>
       shadowOffset: { width: 0, height: 8 },
       elevation: 4,
     },
-    weekText: { color: colors.subtle, fontWeight: "900" },
+    weekText: { color: colors.textMuted, fontWeight: "900" },
     weekTextActive: { color: "#fff" },
 
     stepsGrid: {
@@ -352,8 +352,8 @@ const makeStyles = (colors: any) =>
     },
     stepTileMain: { color: colors.text, fontWeight: "900", fontSize: 18 },
     stepTileMainActive: { color: colors.text },
-    stepTileSub: { color: colors.subtle, fontWeight: "800" },
-    stepTileSubActive: { color: colors.subtle },
+    stepTileSub: { color: colors.textMuted, fontWeight: "800" },
+    stepTileSubActive: { color: colors.textMuted },
 
     infoCard: {
       marginTop: 16,
@@ -377,7 +377,7 @@ const makeStyles = (colors: any) =>
       justifyContent: "center",
       marginTop: 2,
     },
-    infoText: { flex: 1, color: colors.subtle, fontWeight: "700", lineHeight: 18 },
+    infoText: { flex: 1, color: colors.textMuted, fontWeight: "700", lineHeight: 18 },
 
     error: { marginTop: 10, color: "#ef4444", fontSize: 12, fontWeight: "800" },
     errorBorder: { borderColor: "rgba(239,68,68,0.7)" },

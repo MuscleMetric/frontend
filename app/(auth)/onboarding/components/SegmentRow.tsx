@@ -78,7 +78,7 @@ const makeStyles = (colors: any) =>
       fontWeight: "900",
     },
     textIdle: {
-      color: colors.subtle,
+      color: colors.textMuted,
     },
     textActive: {
       color: "#fff",

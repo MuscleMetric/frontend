@@ -42,14 +42,14 @@ const makeStyles = (colors: any) =>
       marginBottom: 8,
     },
     label: {
-      color: colors.subtle,
+      color: colors.textMuted,
       fontSize: 12,
       fontWeight: "900",
       letterSpacing: 1.1,
       textTransform: "uppercase",
     },
     hint: {
-      color: colors.subtle,
+      color: colors.textMuted,
       fontSize: 12,
       fontWeight: "800",
     },
