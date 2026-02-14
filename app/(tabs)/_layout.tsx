@@ -8,7 +8,7 @@ import {
   LineChart,
   Dumbbell,
   User2,
-  BarChart3,
+  MessageCircle,
 } from "lucide-react-native";
 
 import { useAppTheme } from "../../lib/useAppTheme";
@@ -209,6 +209,18 @@ export default function TabsLayout() {
           }}
         />
 
+        {/* ✅ NEW: Social tab */}
+        <Tabs.Screen
+          name="social"
+          options={{
+            headerTitle: "Social",
+            tabBarLabel: "Social",
+            tabBarIcon: ({ color, size }) => (
+              <MessageCircle color={color} size={size} />
+            ),
+          }}
+        />
+
         <Tabs.Screen
           name="workout"
           options={{
@@ -217,18 +229,6 @@ export default function TabsLayout() {
             tabBarIcon: ({ color, size }) => (
               <Dumbbell color={color} size={size} />
             ),
-          }}
-        />
-
-        <Tabs.Screen
-          name="admin"
-          options={{
-            headerTitle: "Admin",
-            tabBarLabel: "Admin",
-            tabBarIcon: ({ color, size }) => (
-              <BarChart3 color={color} size={size} />
-            ),
-            href: isAdmin ? "admin" : null,
           }}
         />
 
