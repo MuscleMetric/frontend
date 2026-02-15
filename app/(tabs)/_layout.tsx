@@ -1,7 +1,13 @@
 // app/(tabs)/_layout.tsx
 import { useEffect, useMemo, useState } from "react";
 import { Tabs, router, usePathname } from "expo-router";
-import { View, Text, StyleSheet, ActivityIndicator } from "react-native";
+import {
+  View,
+  Text,
+  StyleSheet,
+  ActivityIndicator,
+  Pressable,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   House,
@@ -9,6 +15,9 @@ import {
   Dumbbell,
   User2,
   MessageCircle,
+  Search,
+  Bell,
+  Plus,
 } from "lucide-react-native";
 
 import { useAppTheme } from "../../lib/useAppTheme";
@@ -16,7 +25,13 @@ import { useAuth } from "../../lib/authContext";
 import { supabase } from "../../lib/supabase";
 import { ResumeWorkoutGate } from "@/app/features/workouts/components/ResumeWorkoutGate";
 
-function CustomHeader({ title }: { title: string }) {
+function CustomHeader({
+  title,
+  right,
+}: {
+  title: string;
+  right?: React.ReactNode;
+}) {
   const insets = useSafeAreaInsets();
   const { colors, typography, layout } = useAppTheme();
 
@@ -31,6 +46,9 @@ function CustomHeader({ title }: { title: string }) {
         <Text numberOfLines={1} style={styles.headerTitle}>
           {title}
         </Text>
+
+        {/* right actions */}
+        <View style={styles.headerRight}>{right}</View>
       </View>
     </View>
   );
@@ -209,7 +227,6 @@ export default function TabsLayout() {
           }}
         />
 
-        {/* ✅ NEW: Social tab */}
         <Tabs.Screen
           name="social"
           options={{
@@ -217,6 +234,35 @@ export default function TabsLayout() {
             tabBarLabel: "Social",
             tabBarIcon: ({ color, size }) => (
               <MessageCircle color={color} size={size} />
+            ),
+            headerRight: () => (
+              <View
+                style={{ flexDirection: "row", alignItems: "center", gap: 10 }}
+              >
+                <Pressable
+                  onPress={() => router.push("/features/social/search")}
+                  hitSlop={10}
+                  style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
+                >
+                  <Search size={20} color={colors.text} />
+                </Pressable>
+
+                <Pressable
+                  onPress={() => router.push("/features/social/inbox")}
+                  hitSlop={10}
+                  style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
+                >
+                  <Bell size={20} color={colors.text} />
+                </Pressable>
+
+                <Pressable
+                  onPress={() => router.push("/features/social/create")}
+                  hitSlop={10}
+                  style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
+                >
+                  <Plus size={22} color={colors.text} />
+                </Pressable>
+              </View>
             ),
           }}
         />
@@ -258,11 +304,22 @@ const makeStyles = (colors: any, typography: any, layout: any) =>
       height: 52,
       paddingHorizontal: layout.space.lg,
       justifyContent: "center",
+      flexDirection: "row",
+      alignItems: "center",
     },
+
     headerTitle: {
+      flex: 1,
       fontSize: typography.size.h2,
       lineHeight: typography.lineHeight.h2,
       fontFamily: typography.fontFamily.semibold,
       color: colors.text,
+    },
+
+    headerRight: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "flex-end",
+      gap: 10,
     },
   });
