@@ -1,5 +1,5 @@
 // app/(tabs)/_layout.tsx
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Tabs, router, usePathname } from "expo-router";
 import {
   View,
@@ -81,6 +81,30 @@ export default function TabsLayout() {
   const pathname = usePathname();
 
   const [checking, setChecking] = useState(true);
+
+  const [unreadCount, setUnreadCount] = useState<number>(0);
+
+  const loadUnreadCount = useCallback(async () => {
+    const res = await supabase.rpc("get_unread_notifications_count_v1");
+
+    console.log("unread rpc raw:", res.data);
+
+    if (res.error) {
+      console.log("unread count error:", res.error);
+      setUnreadCount(0);
+      return;
+    }
+
+    const n = Array.isArray(res.data)
+      ? Number(res.data[0]?.unread_count ?? 0)
+      : 0;
+    setUnreadCount(Number.isFinite(n) ? n : 0);
+  }, []);
+
+  useEffect(() => {
+    if (!session) return;
+    loadUnreadCount();
+  }, [session, pathname, loadUnreadCount]);
 
   const isAdmin = profile?.role === "admin";
 
@@ -261,7 +285,40 @@ export default function TabsLayout() {
                   hitSlop={10}
                   style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
                 >
-                  <Bell size={20} color={colors.text} />
+                  <View style={{ position: "relative" }}>
+                    <Bell size={20} color={colors.text} />
+
+                    {unreadCount > 0 ? (
+                      <View
+                        style={{
+                          position: "absolute",
+                          right: -6,
+                          top: -6,
+                          minWidth: 16,
+                          height: 16,
+                          paddingHorizontal: 4,
+                          borderRadius: 999,
+                          alignItems: "center",
+                          justifyContent: "center",
+                          backgroundColor: colors.primary,
+                          borderWidth: 1,
+                          borderColor: colors.bg,
+                        }}
+                      >
+                        <Text
+                          style={{
+                            color: colors.onPrimary,
+                            fontFamily: typography.fontFamily.semibold,
+                            fontSize: 10,
+                            lineHeight: 12,
+                          }}
+                          numberOfLines={1}
+                        >
+                          {unreadCount > 99 ? "99+" : String(unreadCount)}
+                        </Text>
+                      </View>
+                    ) : null}
+                  </View>
                 </Pressable>
 
                 <Pressable
