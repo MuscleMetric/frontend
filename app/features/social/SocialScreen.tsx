@@ -18,47 +18,6 @@ import { useAppTheme } from "@/lib/useAppTheme";
 // ✅ match your existing imports elsewhere
 import { supabase } from "../../../lib/supabase";
 
-import { Pressable } from "react-native";
-import { router } from "expo-router";
-
-function CreatePostCTA() {
-  const { colors, typography, layout } = useAppTheme();
-
-  return (
-    <Pressable
-      onPress={() => router.push("/features/social/create")}
-      style={({ pressed }) => ({
-        borderWidth: 1,
-        borderColor: colors.border,
-        backgroundColor: pressed ? colors.cardPressed : colors.surface,
-        borderRadius: layout.radius.lg,
-        padding: layout.space.lg,
-        marginBottom: layout.space.md,
-      })}
-    >
-      <Text
-        style={{
-          color: colors.text,
-          fontFamily: typography.fontFamily.semibold,
-          fontSize: typography.size.body,
-        }}
-      >
-        Create post
-      </Text>
-      <Text
-        style={{
-          marginTop: 4,
-          color: colors.textMuted,
-          fontFamily: typography.fontFamily.regular,
-          fontSize: typography.size.sub,
-        }}
-      >
-        Workout • PR • Text
-      </Text>
-    </Pressable>
-  );
-}
-
 type FeedRow = {
   post_id: string;
   user_id: string;
@@ -445,10 +404,6 @@ export default function SocialScreen() {
 
   return (
     <View style={styles.screen}>
-      <View style={styles.header}>
-        <CreatePostCTA />
-      </View>
-
       <FlatList
         data={rows}
         keyExtractor={(item) => item.post_id}

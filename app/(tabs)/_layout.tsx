@@ -185,9 +185,18 @@ export default function TabsLayout() {
                 (options.title as string) ??
                 "MuscleMetric"
               }
+              right={
+                typeof options.headerRight === "function"
+                  ? options.headerRight({
+                      tintColor: colors.text,
+                      pressColor: colors.cardPressed,
+                      pressOpacity: 0.6,
+                      canGoBack: router.canGoBack?.() ?? false,
+                    })
+                  : null
+              }
             />
           ),
-
           tabBarStyle: {
             backgroundColor: colors.surface,
             borderTopWidth: StyleSheet.hairlineWidth,
@@ -237,7 +246,7 @@ export default function TabsLayout() {
             ),
             headerRight: () => (
               <View
-                style={{ flexDirection: "row", alignItems: "center", gap: 10 }}
+                style={{ flexDirection: "row", alignItems: "center", gap: 20 }}
               >
                 <Pressable
                   onPress={() => router.push("/features/social/search")}
