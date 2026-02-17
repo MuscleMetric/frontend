@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   View,
   Text,
@@ -13,17 +19,25 @@ import { router } from "expo-router";
 import { useAppTheme } from "@/lib/useAppTheme";
 import { supabase } from "@/lib/supabase";
 
-type FollowState = "self" | "following" | "requested" | "none" | "blocked" | string;
+type FollowState =
+  | "self"
+  | "following"
+  | "requested"
+  | "none"
+  | "blocked"
+  | string;
 
 type SearchRow = {
   user_id: string;
   name: string | null;
+  username: string | null;
   follow_state: FollowState;
 };
 
 type RequestedRow = {
-  user_id: string; // target_id
+  user_id: string;
   name: string | null;
+  username: string | null;
   follow_state: "requested";
 };
 
@@ -32,7 +46,9 @@ function initialsFromName(name?: string | null) {
   if (!n) return "U";
   const parts = n.split(/\s+/);
   if (parts.length === 1) return parts[0].slice(0, 1).toUpperCase();
-  return (parts[0].slice(0, 1) + parts[parts.length - 1].slice(0, 1)).toUpperCase();
+  return (
+    parts[0].slice(0, 1) + parts[parts.length - 1].slice(0, 1)
+  ).toUpperCase();
 }
 
 function labelForFollowState(s: FollowState) {
@@ -70,7 +86,11 @@ export default function SearchScreen() {
           gap: layout.space.md,
         },
 
-        titleRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+        titleRow: {
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+        },
         title: {
           color: colors.text,
           fontFamily: typography.fontFamily.bold,
@@ -196,7 +216,12 @@ export default function SearchScreen() {
           fontSize: typography.size.meta,
         },
 
-        center: { flex: 1, alignItems: "center", justifyContent: "center", padding: layout.space.lg },
+        center: {
+          flex: 1,
+          alignItems: "center",
+          justifyContent: "center",
+          padding: layout.space.lg,
+        },
         empty: {
           color: colors.textMuted,
           fontFamily: typography.fontFamily.regular,
@@ -243,6 +268,7 @@ export default function SearchScreen() {
         const slim: SearchRow[] = data.map((r) => ({
           user_id: String(r.user_id),
           name: r.name ?? null,
+          username: r.username ?? null,
           follow_state: r.follow_state ?? "none",
         }));
         setRows(slim);
@@ -304,16 +330,26 @@ export default function SearchScreen() {
       if (pr.error) {
         console.log("profiles read error:", pr.error);
         // still show ids at least
-        setRequested(ids.map((id: string) => ({ user_id: id, name: null, follow_state: "requested" })));
+        setRequested(
+          ids.map((id: string) => ({
+            user_id: id,
+            name: null,
+            username: null,
+            follow_state: "requested",
+          }))
+        );
         setLoading(false);
         return;
       }
 
-      const byId = new Map<string, any>((pr.data ?? []).map((p: any) => [p.id, p]));
+      const byId = new Map<string, any>(
+        (pr.data ?? []).map((p: any) => [p.id, p])
+      );
       setRequested(
         ids.map((id: string) => ({
           user_id: id,
           name: byId.get(id)?.name ?? null,
+          username: null,
           follow_state: "requested",
         }))
       );
@@ -358,27 +394,39 @@ export default function SearchScreen() {
 
     // Optimistic update helper
     const updateInLists = (userId: string, nextState: FollowState) => {
-      setRows((prev) => prev.map((r) => (r.user_id === userId ? { ...r, follow_state: nextState } : r)));
-      setRequested((prev) =>
-        nextState === "requested"
-          ? prev
-          : prev.filter((r) => r.user_id !== userId) // remove from requested tab if cancelled/changed
+      setRows((prev) =>
+        prev.map((r) =>
+          r.user_id === userId ? { ...r, follow_state: nextState } : r
+        )
+      );
+      setRequested(
+        (prev) =>
+          nextState === "requested"
+            ? prev
+            : prev.filter((r) => r.user_id !== userId) // remove from requested tab if cancelled/changed
       );
     };
 
     try {
       if (state === "none") {
         updateInLists(item.user_id, "requested");
-        const res = await supabase.rpc("request_follow", { p_target: item.user_id });
+        const res = await supabase.rpc("request_follow", {
+          p_target: item.user_id,
+        });
         if (res.error) throw res.error;
         // res.data is 'following' or 'requested'
-        updateInLists(item.user_id, String(res.data ?? "requested") as FollowState);
+        updateInLists(
+          item.user_id,
+          String(res.data ?? "requested") as FollowState
+        );
         return;
       }
 
       if (state === "requested") {
         updateInLists(item.user_id, "none");
-        const res = await supabase.rpc("cancel_follow_request", { p_target: item.user_id });
+        const res = await supabase.rpc("cancel_follow_request", {
+          p_target: item.user_id,
+        });
         if (res.error) throw res.error;
         return;
       }
@@ -401,7 +449,10 @@ export default function SearchScreen() {
   const data = mode === "search" ? rows : requested;
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }} edges={["top", "left", "right"]}>
+    <SafeAreaView
+      style={{ flex: 1, backgroundColor: colors.bg }}
+      edges={["top", "left", "right"]}
+    >
       <View style={styles.screen}>
         <View style={styles.header}>
           <View style={styles.titleRow}>
@@ -412,7 +463,10 @@ export default function SearchScreen() {
           </View>
 
           <View style={styles.tabsRow}>
-            <Pressable onPress={() => setMode("search")} style={[styles.tab, mode === "search" && styles.tabOn]}>
+            <Pressable
+              onPress={() => setMode("search")}
+              style={[styles.tab, mode === "search" && styles.tabOn]}
+            >
               <Text style={styles.tabTxt}>Search</Text>
             </Pressable>
             <Pressable
@@ -427,7 +481,7 @@ export default function SearchScreen() {
             <TextInput
               value={q}
               onChangeText={setQ}
-              placeholder="Search by name…"
+              placeholder="Search by username…"
               placeholderTextColor={colors.textMuted}
               style={styles.input}
               autoCorrect={false}
@@ -456,10 +510,14 @@ export default function SearchScreen() {
               const initials = initialsFromName(item.name);
               const label = labelForFollowState(item.follow_state);
               const isPrimary = item.follow_state === "none";
-              const isDisabled = item.follow_state === "self" || item.follow_state === "blocked";
+              const isDisabled =
+                item.follow_state === "self" || item.follow_state === "blocked";
 
               return (
-                <Pressable onPress={() => openProfile(item.user_id)} style={styles.row}>
+                <Pressable
+                  onPress={() => openProfile(item.user_id)}
+                  style={styles.row}
+                >
                   <View style={styles.left}>
                     <View style={styles.avatar}>
                       <Text style={styles.avatarTxt}>{initials}</Text>
@@ -470,7 +528,7 @@ export default function SearchScreen() {
                         {item.name ?? "User"}
                       </Text>
                       <Text style={styles.sub} numberOfLines={1}>
-                        {String(item.follow_state)}
+                        {item.username ? `@${item.username}` : "—"}
                       </Text>
                     </View>
                   </View>

@@ -25,13 +25,14 @@ type RecentPostPreview = {
 type ProfileCardRow = {
   profile_id: string;
   name: string | null;
+  username: string | null;
   is_private: boolean;
   can_view: boolean;
   follow_state: "self" | "following" | "requested" | "none" | string;
   workouts_completed: number | null;
   followers_count: number | null;
   following_count: number | null;
-  recent_posts: RecentPostPreview[] | null; // RPC returns jsonb array
+  recent_posts: RecentPostPreview[] | null;
 };
 
 function initialsFromName(name?: string | null) {
@@ -83,6 +84,13 @@ export default function SocialProfileModal() {
           fontSize: typography.size.h2,
           lineHeight: typography.lineHeight.h2,
           flex: 1,
+        },
+        username: {
+          color: colors.textMuted,
+          fontFamily: typography.fontFamily.medium,
+          fontSize: typography.size.meta,
+          lineHeight: typography.lineHeight.meta,
+          marginBottom: 2,
         },
         closeBtn: {
           paddingHorizontal: 12,
@@ -451,9 +459,16 @@ export default function SocialProfileModal() {
                     </View>
 
                     <View style={styles.nameBlock}>
+                      {card.username ? (
+                        <Text style={styles.username} numberOfLines={1}>
+                          @{card.username}
+                        </Text>
+                      ) : null}
+
                       <Text style={styles.name} numberOfLines={1}>
                         {card.name ?? "User"}
                       </Text>
+
                       <Text style={styles.meta} numberOfLines={1}>
                         {card.is_private ? "Private" : "Public"}
                         {card.follow_state && card.follow_state !== "self"
