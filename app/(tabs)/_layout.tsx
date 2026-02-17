@@ -18,6 +18,7 @@ import {
   Search,
   Bell,
   Plus,
+  Settings,
 } from "lucide-react-native";
 
 import { useAppTheme } from "../../lib/useAppTheme";
@@ -351,6 +352,15 @@ export default function TabsLayout() {
             tabBarLabel: "Profile",
             tabBarIcon: ({ color, size }) => (
               <User2 color={color} size={size} />
+            ),
+            headerRight: () => (
+              <Pressable
+                onPress={() => router.push("/features/settings")}
+                hitSlop={10}
+                style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
+              >
+                <Settings size={20} color={colors.text} />
+              </Pressable>
             ),
           }}
         />
