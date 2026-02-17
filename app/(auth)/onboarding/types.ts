@@ -8,6 +8,7 @@ export type UnitHeight = "cm" | "ft";
 export type OnboardingDraft = {
   // about you
   fullName: string;
+  username: string;
   email: string;
   dob: Date | null;
   gender: Gender | null;
@@ -29,6 +30,7 @@ export type OnboardingDraft = {
 
 export type ErrorMap = Partial<Record<
   | "fullName"
+  | "username"
   | "dob"
   | "gender"
   | "height"
