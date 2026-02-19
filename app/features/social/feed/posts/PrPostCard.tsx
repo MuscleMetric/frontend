@@ -1,7 +1,7 @@
 // app/features/social/feed/posts/PrPostCard.tsx
 
 import React, { useMemo } from "react";
-import { View, Text, StyleSheet } from "react-native";
+import { View, Text, StyleSheet, ViewStyle } from "react-native";
 import { useAppTheme } from "@/lib/useAppTheme";
 import type { FeedRow } from "../types";
 import { UserMetaRow } from "../components/UserMetaRow";
@@ -10,8 +10,17 @@ import { fmtInt, toNumber } from "../utils/format";
 
 type Props = {
   item: FeedRow;
-  onToggleLike: (postId: string) => void;
-  onOpenComments: (post: FeedRow) => void;
+
+  // ✅ optional so modal can reuse without wiring actions
+  onToggleLike?: (postId: string) => void;
+  onOpenComments?: (post: FeedRow) => void;
+
+  // ✅ chrome toggles for modal reuse
+  showHeader?: boolean; // default true
+  showActions?: boolean; // default true
+
+  // ✅ allow modal to override spacing (e.g., remove marginBottom)
+  containerStyle?: ViewStyle;
 };
 
 type ParsedPr = {
@@ -49,7 +58,14 @@ function parsePrFromSnapshot(item: FeedRow): ParsedPr {
   return { exerciseName, value, unit, reps, delta, prevBest };
 }
 
-export function PrPostCard({ item, onToggleLike, onOpenComments }: Props) {
+export function PrPostCard({
+  item,
+  onToggleLike,
+  onOpenComments,
+  showHeader = true,
+  showActions = true,
+  containerStyle,
+}: Props) {
   const { colors, typography, layout } = useAppTheme();
 
   const styles = useMemo(
@@ -65,7 +81,7 @@ export function PrPostCard({ item, onToggleLike, onOpenComments }: Props) {
         },
 
         prWrap: {
-          marginTop: layout.space.lg,
+          marginTop: showHeader ? layout.space.lg : 0,
           borderRadius: layout.radius.lg,
           backgroundColor: colors.surface,
           alignItems: "center",
@@ -99,7 +115,7 @@ export function PrPostCard({ item, onToggleLike, onOpenComments }: Props) {
           textAlign: "center",
         },
 
-        // ✅ Make unit match exercise blue
+        // ✅ unit matches exercise blue
         unit: {
           color: colors.primary,
           fontFamily: typography.fontFamily.bold,
@@ -134,46 +150,45 @@ export function PrPostCard({ item, onToggleLike, onOpenComments }: Props) {
           lineHeight: typography.lineHeight.meta,
         },
 
-        // ✅ Caption moved below PR block
         caption: {
           marginTop: layout.space.md,
           color: colors.text,
           fontFamily: typography.fontFamily.regular,
           fontSize: typography.size.body,
           lineHeight: typography.lineHeight.body,
-          textAlign: "center", // ✅ centre it
-          paddingHorizontal: layout.space.md, // ✅ prevent long captions touching edges
+          textAlign: "center",
+          paddingHorizontal: layout.space.md,
         },
 
         actions: { marginTop: layout.space.lg },
       }),
-    [colors, typography, layout]
+    [colors, typography, layout, showHeader]
   );
 
   const pr = parsePrFromSnapshot(item);
 
   const exName = (pr.exerciseName ?? "Exercise").toUpperCase();
 
-  // ✅ don’t use truthy check; allow 0 safely (even though weight won't be 0)
   const valueLabel = pr.value == null ? "—" : fmtInt(pr.value);
   const unitLabel = pr.unit ?? "kg";
 
   const repsLabel = pr.reps != null ? `x ${fmtInt(pr.reps)}` : null;
 
-  // ✅ show delta based on pr_delta from snapshot
   const deltaLabel =
     pr.delta != null
       ? `${pr.delta > 0 ? "+" : ""}${fmtInt(pr.delta)} ${unitLabel} delta`
       : null;
 
   return (
-    <View style={styles.card}>
-      <UserMetaRow
-        name={item.user_name ?? "User"}
-        username={item.user_username}
-        createdAt={item.created_at}
-        subtitleLeft="New Personal Record"
-      />
+    <View style={[styles.card, containerStyle]}>
+      {showHeader ? (
+        <UserMetaRow
+          name={item.user_name ?? "User"}
+          username={item.user_username}
+          createdAt={item.created_at}
+          subtitleLeft="New Personal Record"
+        />
+      ) : null}
 
       <View style={styles.prWrap}>
         <Text style={styles.exercise} numberOfLines={2}>
@@ -196,16 +211,18 @@ export function PrPostCard({ item, onToggleLike, onOpenComments }: Props) {
 
       {!!item.caption && <Text style={styles.caption}>{item.caption}</Text>}
 
-      <View style={styles.actions}>
-        <FeedActionsRow
-          likeCount={item.like_count}
-          commentCount={item.comment_count}
-          viewerLiked={item.viewer_liked}
-          onPressLike={() => onToggleLike(item.post_id)}
-          onPressComments={() => onOpenComments(item)}
-          onPressShare={() => {}}
-        />
-      </View>
+      {showActions ? (
+        <View style={styles.actions}>
+          <FeedActionsRow
+            likeCount={item.like_count}
+            commentCount={item.comment_count}
+            viewerLiked={item.viewer_liked}
+            onPressLike={() => onToggleLike?.(item.post_id)}
+            onPressComments={() => onOpenComments?.(item)}
+            onPressShare={() => {}}
+          />
+        </View>
+      ) : null}
     </View>
   );
 }

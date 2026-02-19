@@ -1,24 +1,28 @@
 // app/features/social/feed/modals/PostModal.tsx
 
-import React, { useEffect, useMemo, useState } from "react";
-import { Modal, View, Text, Pressable, StyleSheet, ScrollView } from "react-native";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
+import {
+  Modal,
+  View,
+  Text,
+  StyleSheet,
+  Pressable,
+  FlatList,
+  KeyboardAvoidingView,
+  Platform,
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useAppTheme } from "@/lib/useAppTheme";
 import type { FeedRow } from "../types";
 import type { CommentRow, WorkoutDetailsPayload } from "./types";
 import { CommentsList } from "./CommentsList";
 import { CommentComposer } from "./CommentComposer";
-import { WorkoutDetails } from "./WorkoutDetails";
 
-export function PostModal({
-  visible,
-  post,
-  onClose,
+// ✅ reuse existing post cards for preview
+import { PrPostCard } from "../posts/PrPostCard";
+import { WorkoutPostCard } from "../posts/WorkoutPostCard";
 
-  // wiring hooks (we’ll implement next)
-  fetchComments,
-  addComment,
-  fetchWorkoutDetails,
-}: {
+type Props = {
   visible: boolean;
   post: FeedRow | null;
   onClose: () => void;
@@ -26,94 +30,156 @@ export function PostModal({
   fetchComments: (postId: string) => Promise<CommentRow[]>;
   addComment: (postId: string, body: string) => Promise<void>;
 
-  fetchWorkoutDetails?: (postId: string) => Promise<WorkoutDetailsPayload | null>;
-}) {
+  fetchWorkoutDetails?: (
+    postId: string
+  ) => Promise<WorkoutDetailsPayload | null>;
+
+  // ✅ actions
+  onToggleLike: (postId: string) => void;
+  onOpenComments?: (post: FeedRow) => void; // not used inside modal but kept optional
+};
+
+function getInitials(name: string) {
+  const parts = name.trim().split(" ").filter(Boolean);
+  if (parts.length === 0) return "?";
+  if (parts.length === 1) return parts[0][0].toUpperCase();
+  return (parts[0][0] + parts[1][0]).toUpperCase();
+}
+
+export function PostModal({
+  visible,
+  post,
+  onClose,
+  fetchComments,
+  addComment,
+  fetchWorkoutDetails, // reserved for later
+  onToggleLike,
+}: Props) {
   const { colors, typography, layout } = useAppTheme();
 
   const styles = useMemo(
     () =>
       StyleSheet.create({
-        backdrop: { flex: 1, backgroundColor: colors.bg },
+        backdrop: {
+          flex: 1,
+          backgroundColor: "rgba(0,0,0,0.55)",
+          justifyContent: "center",
+          alignItems: "center",
+          padding: layout.space.lg,
+        },
+
+        container: {
+          width: "100%",
+          maxWidth: 800,
+          height: "80%",
+          backgroundColor: colors.surface,
+          borderRadius: layout.radius.xl ?? 24,
+          overflow: "hidden",
+        },
+
+        safe: { flex: 1 },
 
         header: {
-          paddingTop: layout.space.lg,
           paddingHorizontal: layout.space.lg,
+          paddingTop: layout.space.md,
           paddingBottom: layout.space.md,
           borderBottomWidth: StyleSheet.hairlineWidth,
           borderBottomColor: colors.border,
+          backgroundColor: colors.surface,
           flexDirection: "row",
           alignItems: "center",
           justifyContent: "space-between",
+        },
+
+        headerLeftGroup: {
+          flexDirection: "row",
+          alignItems: "center",
+          flex: 1,
+        },
+
+        avatar: {
+          width: 38,
+          height: 38,
+          borderRadius: 19,
           backgroundColor: colors.bg,
-        },
-        title: {
-          color: colors.text,
-          fontFamily: typography.fontFamily.bold,
-          fontSize: typography.size.h2 ?? typography.size.h1,
-        },
-        close: {
-          paddingHorizontal: 12,
-          paddingVertical: 8,
-          borderRadius: 999,
           borderWidth: 1,
           borderColor: colors.border,
-          backgroundColor: colors.surface,
-        },
-        closeText: {
-          color: colors.textMuted,
-          fontFamily: typography.fontFamily.semibold,
-          fontSize: typography.size.meta,
+          alignItems: "center",
+          justifyContent: "center",
+          marginRight: layout.space.md,
         },
 
-        content: { flex: 1 },
-        inner: { paddingHorizontal: layout.space.lg, paddingVertical: layout.space.lg },
-
-        postTitle: {
+        avatarText: {
           color: colors.text,
           fontFamily: typography.fontFamily.semibold,
           fontSize: typography.size.body,
         },
-        postSub: {
-          marginTop: 4,
+
+        headerTextWrap: {
+          flex: 1,
+        },
+
+        headerHandle: {
           color: colors.textMuted,
           fontFamily: typography.fontFamily.medium,
           fontSize: typography.size.meta,
         },
 
-        caption: {
-          marginTop: layout.space.md,
+        headerName: {
           color: colors.text,
-          fontFamily: typography.fontFamily.regular,
+          fontFamily: typography.fontFamily.semibold,
           fontSize: typography.size.body,
-          lineHeight: typography.lineHeight.body,
-          textAlign: "center",
         },
 
-        commentsHeader: {
-          marginTop: layout.space.xl,
-          marginBottom: layout.space.md,
+        close: {
+          width: 38,
+          height: 38,
+          borderRadius: 19,
+          alignItems: "center",
+          justifyContent: "center",
+          borderWidth: 1,
+          borderColor: colors.border,
+          backgroundColor: colors.bg,
+        },
+
+        closeText: {
+          color: colors.textMuted,
+          fontSize: 16,
+          fontFamily: typography.fontFamily.semibold,
+        },
+
+        headerLeft: { flex: 1 },
+
+        listContent: {
+          paddingHorizontal: layout.space.lg,
+          paddingVertical: layout.space.lg,
+          gap: layout.space.md,
+        },
+
+        sectionTitleRow: {
+          marginTop: layout.space.md,
           flexDirection: "row",
           alignItems: "center",
           justifyContent: "space-between",
         },
-        commentsTitle: {
+        sectionTitle: {
           color: colors.text,
           fontFamily: typography.fontFamily.semibold,
           fontSize: typography.size.body,
         },
-        commentsCount: {
+        sectionMeta: {
           color: colors.textMuted,
           fontFamily: typography.fontFamily.medium,
           fontSize: typography.size.meta,
         },
 
-        commentsBox: {
+        commentsWrap: {
+          marginTop: layout.space.md,
           borderWidth: 1,
           borderColor: colors.border,
           borderRadius: layout.radius.lg,
-          backgroundColor: colors.surface,
+          backgroundColor: colors.bg,
           overflow: "hidden",
-          minHeight: 200,
         },
       }),
     [colors, typography, layout]
@@ -122,119 +188,151 @@ export function PostModal({
   const [comments, setComments] = useState<CommentRow[]>([]);
   const [loadingComments, setLoadingComments] = useState(false);
 
-  const [workoutDetails, setWorkoutDetails] = useState<WorkoutDetailsPayload | null>(null);
-  const [loadingWorkoutDetails, setLoadingWorkoutDetails] = useState(false);
+  const loadComments = useCallback(async () => {
+    if (!post) return;
+    setLoadingComments(true);
+    try {
+      const data = await fetchComments(post.post_id);
+      setComments(data);
+    } finally {
+      setLoadingComments(false);
+    }
+  }, [post, fetchComments]);
 
-  // load comments when modal opens
   useEffect(() => {
     if (!visible || !post) return;
-
-    let cancelled = false;
-    (async () => {
-      setLoadingComments(true);
-      try {
-        const data = await fetchComments(post.post_id);
-        if (!cancelled) setComments(data);
-      } finally {
-        if (!cancelled) setLoadingComments(false);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [visible, post, fetchComments]);
-
-  // lazy load workout details (only for workout posts)
-  useEffect(() => {
-    if (!visible || !post) return;
-    if (post.post_type !== "workout") return;
-    if (!fetchWorkoutDetails) return;
-
-    let cancelled = false;
-    (async () => {
-      setLoadingWorkoutDetails(true);
-      try {
-        const data = await fetchWorkoutDetails(post.post_id);
-        if (!cancelled) setWorkoutDetails(data);
-      } finally {
-        if (!cancelled) setLoadingWorkoutDetails(false);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [visible, post, fetchWorkoutDetails]);
+    loadComments();
+  }, [visible, post, loadComments]);
 
   if (!post) return null;
 
+  const handle = post.user_username ? `@${post.user_username}` : "@user";
+  const displayName = post.user_name ?? "User";
+
+  const renderPostPreview = () => {
+    // Render the same card designs inside the modal (no nested comments open)
+    if (post.post_type === "workout") {
+      return (
+        <WorkoutPostCard
+          item={post}
+          onToggleLike={onToggleLike}
+          onOpenComments={() => {}}
+          showHeader={false}
+          showActions={false}
+        />
+      );
+    }
+    if (post.post_type === "pr") {
+      return (
+        <PrPostCard
+          item={post}
+          onToggleLike={onToggleLike}
+          onOpenComments={() => {}}
+          showHeader={false}
+          showActions={false}
+        />
+      );
+    }
+    return null;
+  };
+
   return (
-    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      onRequestClose={onClose}
+    >
       <View style={styles.backdrop}>
-        <View style={styles.header}>
-          <Text style={styles.title}>Post</Text>
-          <Pressable style={styles.close} onPress={onClose} hitSlop={10}>
-            <Text style={styles.closeText}>Close</Text>
-          </Pressable>
-        </View>
+        <KeyboardAvoidingView
+          style={styles.container}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+        >
+          <SafeAreaView style={styles.safe}>
+            {/* HEADER: @username title, name under */}
+            <View style={styles.header}>
+              <View style={styles.headerLeftGroup}>
+                <View style={styles.avatar}>
+                  <Text style={styles.avatarText}>
+                    {getInitials(displayName)}
+                  </Text>
+                </View>
 
-        <View style={styles.content}>
-          <ScrollView contentContainerStyle={styles.inner}>
-            <Text style={styles.postTitle}>
-              {(post.post_type ?? "post").toUpperCase()}
-            </Text>
-            <Text style={styles.postSub}>
-              {post.user_name ?? "User"}
-              {post.user_username ? ` • @${post.user_username}` : ""}
-            </Text>
+                <View style={styles.headerTextWrap}>
+                  <Text style={styles.headerHandle} numberOfLines={1}>
+                    {handle}
+                  </Text>
+                  <Text style={styles.headerName} numberOfLines={1}>
+                    {displayName}
+                  </Text>
+                </View>
+              </View>
 
-            {!!post.caption && <Text style={styles.caption}>{post.caption}</Text>}
-
-            {/* Workout details section (workout posts only) */}
-            {post.post_type === "workout" ? (
-              <WorkoutDetails loading={loadingWorkoutDetails} data={workoutDetails} />
-            ) : null}
-
-            {/* Comments */}
-            <View style={styles.commentsHeader}>
-              <Text style={styles.commentsTitle}>Comments</Text>
-              <Text style={styles.commentsCount}>
-                {post.comment_count ?? comments.length}
-              </Text>
+              <Pressable onPress={onClose} style={styles.close} hitSlop={10}>
+                <Text style={styles.closeText}>✕</Text>
+              </Pressable>
             </View>
 
-            <View style={styles.commentsBox}>
-              <CommentsList comments={comments} loading={loadingComments} />
-            </View>
-          </ScrollView>
+            {/* SCROLL AREA: post preview + comments */}
+            <FlatList
+              data={comments}
+              keyExtractor={(c) => c.id}
+              contentContainerStyle={styles.listContent}
+              keyboardShouldPersistTaps="handled"
+              ListHeaderComponent={
+                <View>
+                  {renderPostPreview()}
 
-          <CommentComposer
-            onSubmit={async (body) => {
-              // optimistic insert (basic)
-              const tempId = `temp_${Date.now()}`;
-              const optimistic: CommentRow = {
-                id: tempId,
-                post_id: post.post_id,
-                user_id: "me",
-                user_name: "You",
-                user_username: null,
-                body,
-                created_at: new Date().toISOString(),
-              };
+                  <View style={styles.sectionTitleRow}>
+                    <Text style={styles.sectionTitle}>Comments</Text>
+                    <Text style={styles.sectionMeta}>
+                      {post.comment_count ?? comments.length}
+                    </Text>
+                  </View>
 
-              setComments((prev) => [optimistic, ...prev]);
-
-              try {
-                await addComment(post.post_id, body);
-              } catch (e) {
-                // revert if failed
-                setComments((prev) => prev.filter((c) => c.id !== tempId));
-                throw e;
+                  <View style={styles.commentsWrap}>
+                    {/* We use CommentsList for styling; it can render empty/loading nicely */}
+                    <CommentsList
+                      comments={comments}
+                      loading={loadingComments}
+                    />
+                  </View>
+                </View>
               }
-            }}
-          />
-        </View>
+              // We don’t actually render items here because CommentsList already renders them.
+              // This FlatList is the scroll container. Keep renderItem null:
+              renderItem={() => null}
+            />
+
+            {/* COMPOSER pinned */}
+            <CommentComposer
+              onSubmit={async (body) => {
+                // optimistic insert at top
+                const tempId = `temp_${Date.now()}`;
+                const optimistic: CommentRow = {
+                  id: tempId,
+                  post_id: post.post_id,
+                  user_id: "me",
+                  user_name: "You",
+                  user_username: null,
+                  body,
+                  created_at: new Date().toISOString(),
+                };
+
+                setComments((prev) => [optimistic, ...prev]);
+
+                try {
+                  await addComment(post.post_id, body);
+                  // refresh from server after sending (optional but keeps IDs correct)
+                  await loadComments();
+                } catch (e) {
+                  setComments((prev) => prev.filter((c) => c.id !== tempId));
+                  throw e;
+                }
+              }}
+            />
+          </SafeAreaView>
+        </KeyboardAvoidingView>
       </View>
     </Modal>
   );

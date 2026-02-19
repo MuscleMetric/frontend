@@ -9,8 +9,15 @@ type Props = {
   name: string;
   username?: string | null;
   createdAt: string;
-  subtitleLeft?: string | null; // e.g. "New Personal Record"
+  subtitleLeft?: string | null;
 };
+
+function getInitials(name: string) {
+  const parts = name.trim().split(" ").filter(Boolean);
+  if (parts.length === 0) return "?";
+  if (parts.length === 1) return parts[0][0].toUpperCase();
+  return (parts[0][0] + parts[1][0]).toUpperCase();
+}
 
 export function UserMetaRow(props: Props) {
   const { colors, typography, layout } = useAppTheme();
@@ -24,9 +31,32 @@ export function UserMetaRow(props: Props) {
           justifyContent: "space-between",
         },
 
-        left: {
+        leftGroup: {
+          flexDirection: "row",
+          alignItems: "flex-start",
           flex: 1,
-          paddingRight: layout.space.md,
+        },
+
+        avatar: {
+          width: 38,
+          height: 38,
+          borderRadius: 22,
+          backgroundColor: colors.bg,
+          borderWidth: 1,
+          borderColor: colors.border,
+          alignItems: "center",
+          justifyContent: "center",
+          marginRight: layout.space.md,
+        },
+
+        avatarText: {
+          color: colors.text,
+          fontFamily: typography.fontFamily.semibold,
+          fontSize: typography.size.body,
+        },
+
+        textWrap: {
+          flex: 1,
         },
 
         username: {
@@ -75,19 +105,26 @@ export function UserMetaRow(props: Props) {
   );
 
   const handle = props.username ? `@${props.username}` : null;
+  const initials = getInitials(props.name);
 
   return (
     <View style={styles.row}>
       {/* LEFT SIDE */}
-      <View style={styles.left}>
-        {!!handle && (
-          <Text style={styles.username} numberOfLines={1}>
-            {handle}
+      <View style={styles.leftGroup}>
+        <View style={styles.avatar}>
+          <Text style={styles.avatarText}>{initials}</Text>
+        </View>
+
+        <View style={styles.textWrap}>
+          {!!handle && (
+            <Text style={styles.username} numberOfLines={1}>
+              {handle}
+            </Text>
+          )}
+          <Text style={styles.name} numberOfLines={1}>
+            {props.name}
           </Text>
-        )}
-        <Text style={styles.name} numberOfLines={1}>
-          {props.name}
-        </Text>
+        </View>
       </View>
 
       {/* RIGHT SIDE */}
