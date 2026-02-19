@@ -9,33 +9,12 @@ import {
   hasSetData,
 } from "../state/selectors";
 
-function fmtNum(n: number, dp = 0) {
-  if (dp === 0) return `${Math.round(n)}`;
-  return n.toFixed(dp);
-}
+function fmtNum(n: number, maxDp = 2) {
+  // Round to maxDp (to avoid float noise like 55.499999)
+  const rounded = Number(n.toFixed(maxDp));
 
-function formatSetLine(ex: LiveExerciseDraft, setNumber: number) {
-  const type = (ex.type ?? "").toLowerCase();
-  const s = ex.sets.find((x) => x.setNumber === setNumber);
-  if (!s) return null;
-  if (!hasSetData(ex, s)) return null;
-
-  if (type === "cardio") {
-    const parts: string[] = [];
-    if (s.distance != null) parts.push(`${fmtNum(s.distance, 2)}km`);
-    if (s.timeSeconds != null) parts.push(`${fmtNum(s.timeSeconds)}s`);
-    if (!parts.length) return null;
-    return `${setNumber}. ${parts.join(" • ")}`;
-  }
-
-  const reps = s.reps;
-  const weight = s.weight;
-
-  if (reps != null && weight != null)
-    return `${setNumber}. ${reps} reps × ${fmtNum(weight)}kg`;
-  if (reps != null) return `${setNumber}. ${reps} reps`;
-  if (weight != null) return `${setNumber}. ${fmtNum(weight)}kg`;
-  return null;
+  // Convert back to string without forcing trailing zeros
+  return rounded.toString();
 }
 
 function dropLetter(dropIndex: number) {

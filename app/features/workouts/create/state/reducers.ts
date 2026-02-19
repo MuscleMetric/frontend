@@ -157,7 +157,10 @@ export function workoutDraftReducer(
 
     case "draft/addExercises": {
       const added = action.payload.exercises.map(makeDraftExercise);
-      const next = recomputeSupersetIndices([...state.exercises, ...added]);
+      const next = [...state.exercises, ...added];
+
+      console.log("Added:", added.length);
+      console.log("Final:", next.length);
 
       return {
         ...state,

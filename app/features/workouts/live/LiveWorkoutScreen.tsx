@@ -633,18 +633,99 @@ export default function LiveWorkoutScreen() {
             <Pressable
               onPress={() => {
                 // 1) register handler to receive selected IDs from /live/add
-                setAddExercisesHandler(({ selectedIds }) => {
+                setAddExercisesHandler(async ({ selectedIds }) => {
                   // IMPORTANT: clear immediately so it can’t fire twice
                   setAddExercisesHandler(null);
 
-                  if (!selectedIds?.length) return;
+                  const ids = (selectedIds ?? []).map(String).filter(Boolean);
+                  if (!ids.length) return;
 
-                  // safety: remove duplicates
-                  const uniqueNewIds = selectedIds.filter(
+                  // remove ones already in workout
+                  const uniqueNewIds = ids.filter(
                     (id) => !alreadyInIds.includes(id)
                   );
                   if (uniqueNewIds.length === 0) return;
 
+                  // 1) split into cached vs missing
+                  const cachedPicks: SwapPickerOption[] = [];
+                  const missingIds: string[] = [];
+
+                  for (const id of uniqueNewIds) {
+                    const cached = optionsById.get(id);
+                    if (cached) cachedPicks.push(cached);
+                    else missingIds.push(id);
+                  }
+
+                  // 2) fetch missing picks from DB (so newly created exercises work immediately)
+                  let fetchedPicks: SwapPickerOption[] = [];
+                  if (missingIds.length > 0) {
+                    const { data: exRows, error: exErr } = await supabase
+                      .from("exercises")
+                      .select("id,name,type,equipment,level,instructions")
+                      .in("id", missingIds);
+
+                    if (exErr) {
+                      console.warn(
+                        "add-exercises: failed to fetch exercises:",
+                        exErr
+                      );
+                    } else {
+                      // muscles (optional, but nice to keep parity)
+                      const { data: emRows, error: emErr } = await supabase
+                        .from("exercise_muscles")
+                        .select("exercise_id,muscle_id")
+                        .in("exercise_id", missingIds);
+
+                      if (emErr) {
+                        console.warn(
+                          "add-exercises: failed to fetch exercise_muscles:",
+                          emErr
+                        );
+                      }
+
+                      const muscleMap = new Map<string, string[]>();
+                      for (const r of emRows ?? []) {
+                        const exId = String((r as any).exercise_id);
+                        const mId = String((r as any).muscle_id);
+                        if (!muscleMap.has(exId)) muscleMap.set(exId, []);
+                        muscleMap.get(exId)!.push(mId);
+                      }
+
+                      fetchedPicks = (exRows ?? []).map((r: any) => ({
+                        id: String(r.id),
+                        name: r.name ?? "Exercise",
+                        type: r.type ?? null,
+                        equipment: r.equipment ?? null,
+                        level: r.level ?? null,
+                        instructions: r.instructions ?? null,
+                        muscleIds: (muscleMap.get(String(r.id)) ?? []).slice(
+                          0,
+                          3
+                        ),
+                        // these fields exist on SwapPickerOption in your app; safe defaults:
+                        isFavorite: false,
+                        sessionsCount: 0,
+                        setsCount: 0,
+                        lastUsedAt: null,
+                      }));
+                    }
+                  }
+
+                  // 3) update cache so next time it’s instant (optional but recommended)
+                  if (fetchedPicks.length > 0) {
+                    setSwapOptions((prev) => {
+                      const seen = new Set(prev.map((x) => x.id));
+                      const extras = fetchedPicks.filter(
+                        (x) => !seen.has(x.id)
+                      );
+                      return extras.length ? [...extras, ...prev] : prev;
+                    });
+                  }
+
+                  const picks = [...cachedPicks, ...fetchedPicks];
+                  if (picks.length === 0) return; // nothing resolvable
+
+                  // 4) now safely add them to the live draft
                   update((d) => {
                     const maxOrder =
                       d.exercises.reduce(
@@ -654,18 +735,12 @@ export default function LiveWorkoutScreen() {
 
                     let order = maxOrder + 1;
 
-                    const additions = uniqueNewIds
-                      .map((id) => optionsById.get(id))
-                      .filter(Boolean)
-                      .map((pick) =>
-                        makeNewLiveExerciseDraft({
-                          pick: pick as SwapPickerOption,
-                          orderIndex: order++,
-                        })
-                      );
-
-                    // if picker returned IDs we don't have cached yet, just ignore them
-                    if (additions.length === 0) return d;
+                    const additions = picks.map((pick) =>
+                      makeNewLiveExerciseDraft({
+                        pick,
+                        orderIndex: order++,
+                      })
+                    );
 
                     return {
                       ...d,

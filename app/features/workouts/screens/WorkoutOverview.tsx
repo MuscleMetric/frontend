@@ -414,41 +414,136 @@ export default function WorkoutOverviewScreen() {
           </Card>
 
           {/* Goal section (plan only) */}
-          {bootstrap.goals.length ? (
-            <Card>
-              <Section title="Today’s goal">
-                <View style={{ gap: layout.space.sm }}>
-                  {bootstrap.goals.map((g) => (
-                    <View
-                      key={g.id}
-                      style={{
-                        padding: layout.space.md,
-                        borderRadius: layout.radius.xl,
-                        borderWidth: 1,
-                        borderColor: colors.border,
-                        backgroundColor: colors.surface,
-                      }}
-                    >
-                      <Text
-                        style={{
-                          fontFamily: typography.fontFamily.semibold,
-                          color: colors.text,
-                        }}
-                      >
-                        {g.type} • {g.targetNumber}
-                        {g.unit ? ` ${g.unit}` : ""}
-                      </Text>
-                      {g.notes ? (
-                        <Text style={{ marginTop: 4, color: colors.textMuted }}>
-                          {toSingleLineCue(g.notes)}
-                        </Text>
-                      ) : null}
+          {(() => {
+            const todays = bootstrap.todaysGoals ?? [];
+            const legacy = bootstrap.goals ?? [];
+
+            // Prefer new structured payload
+            if (todays.length) {
+              return (
+                <Card>
+                  <Section title="Today’s goal">
+                    <View style={{ gap: layout.space.sm }}>
+                      {todays.map((g) => {
+                        const target = Math.round(Number(g.targetThisSession));
+                        const goal = Math.round(Number(g.goalWeight));
+                        const unit = g.unit || "kg";
+
+                        return (
+                          <View
+                            key={g.goalId}
+                            style={{
+                              padding: layout.space.md,
+                              borderRadius: layout.radius.xl,
+                              borderWidth: 1,
+                              borderColor: colors.border,
+                              backgroundColor: colors.surface,
+                              gap: 6,
+                            }}
+                          >
+                            <Text
+                              style={{
+                                fontFamily: typography.fontFamily.semibold,
+                                color: colors.text,
+                                fontSize: typography.size.body,
+                              }}
+                              numberOfLines={1}
+                            >
+                              {g.exerciseName}
+                            </Text>
+
+                            <View
+                              style={{
+                                flexDirection: "row",
+                                alignItems: "baseline",
+                                justifyContent: "space-between",
+                                gap: layout.space.md,
+                              }}
+                            >
+                              <Text
+                                style={{
+                                  fontFamily: typography.fontFamily.bold,
+                                  color: colors.text,
+                                  fontSize: typography.size.h2,
+                                  lineHeight: typography.lineHeight.h2,
+                                }}
+                              >
+                                {target.toLocaleString()} {unit}
+                              </Text>
+
+                              <Text
+                                style={{
+                                  fontFamily: typography.fontFamily.semibold,
+                                  color: colors.textMuted,
+                                  fontSize: typography.size.sub,
+                                }}
+                              >
+                                Goal {goal.toLocaleString()} {unit}
+                              </Text>
+                            </View>
+
+                            <Text
+                              style={{
+                                fontFamily: typography.fontFamily.regular,
+                                color: colors.textMuted,
+                                fontSize: typography.size.sub,
+                              }}
+                            >
+                              Session {g.sessionNumber} of {g.totalSessions} •{" "}
+                              {g.sessionsPerWeek}/week
+                            </Text>
+                          </View>
+                        );
+                      })}
                     </View>
-                  ))}
-                </View>
-              </Section>
-            </Card>
-          ) : null}
+                  </Section>
+                </Card>
+              );
+            }
+
+            // Fallback (legacy goals)
+            if (legacy.length) {
+              return (
+                <Card>
+                  <Section title="Today’s goal">
+                    <View style={{ gap: layout.space.sm }}>
+                      {legacy.map((g) => (
+                        <View
+                          key={g.id}
+                          style={{
+                            padding: layout.space.md,
+                            borderRadius: layout.radius.xl,
+                            borderWidth: 1,
+                            borderColor: colors.border,
+                            backgroundColor: colors.surface,
+                          }}
+                        >
+                          <Text
+                            style={{
+                              fontFamily: typography.fontFamily.semibold,
+                              color: colors.text,
+                            }}
+                          >
+                            {g.type} • {g.targetNumber}
+                            {g.unit ? ` ${g.unit}` : ""}
+                          </Text>
+                          {g.notes ? (
+                            <Text
+                              style={{ marginTop: 4, color: colors.textMuted }}
+                            >
+                              {toSingleLineCue(g.notes)}
+                            </Text>
+                          ) : null}
+                        </View>
+                      ))}
+                    </View>
+                  </Section>
+                </Card>
+              );
+            }
+
+            return null;
+          })()}
 
           {/* Exercises list */}
           <Section
@@ -491,7 +586,9 @@ export default function WorkoutOverviewScreen() {
                       title={e.name}
                       subtitle={subtitleParts.join(" • ")}
                       leftBadge={
-                        isDropset ? <Pill label="Dropset" tone="neutral" /> : null
+                        isDropset ? (
+                          <Pill label="Dropset" tone="neutral" />
+                        ) : null
                       }
                       rightNode={
                         vol ? (
@@ -571,7 +668,9 @@ export default function WorkoutOverviewScreen() {
                           title={e.name}
                           subtitle={subtitleParts.join(" • ")}
                           leftBadge={
-                            isDropset ? <Pill label="Dropset" tone="neutral" /> : null
+                            isDropset ? (
+                              <Pill label="Dropset" tone="neutral" />
+                            ) : null
                           }
                           rightNode={
                             vol ? (

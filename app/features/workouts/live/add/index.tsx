@@ -1,5 +1,5 @@
 // app/features/workouts/live/add/index.tsx
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useCallback } from "react";
 import { View, ActivityIndicator } from "react-native";
 import { useLocalSearchParams, router } from "expo-router";
 import { useAppTheme } from "@/lib/useAppTheme";
@@ -37,6 +37,14 @@ function muscleIdsToIntArray(ids: string[]): number[] {
   return out;
 }
 
+type PickerOption = {
+  id: string;
+  name: string;
+  type: string;
+  equipment: string | null;
+  muscleIds: string[];
+};
+
 export default function AddExercisesScreen() {
   const { colors } = useAppTheme();
   const { userId } = useAuth();
@@ -68,17 +76,37 @@ export default function AddExercisesScreen() {
     null
   );
 
-  const sheetOptions = useMemo(
-    () =>
-      options.map((o) => ({
-        id: o.id,
-        name: o.name,
-        type: o.type,
-        equipment: o.equipment,
-        muscleIds: o.muscleIds,
-      })),
-    [options]
-  );
+  // ✅ NEW: locally keep created exercises so they appear immediately (no refresh needed)
+  const [createdOptions, setCreatedOptions] = useState<PickerOption[]>([]);
+
+  // ✅ combine backend options + locally created ones, dedup by id
+  const sheetOptions: PickerOption[] = useMemo(() => {
+    const base = options.map((o) => ({
+      id: String(o.id),
+      name: String(o.name ?? ""),
+      type: String(o.type ?? "strength"),
+      equipment: (o.equipment ?? null) as string | null,
+      muscleIds: Array.isArray(o.muscleIds) ? o.muscleIds.map(String) : [],
+    }));
+
+    const merged = [...createdOptions, ...base];
+    const seen = new Set<string>();
+    const dedup: PickerOption[] = [];
+    for (const opt of merged) {
+      const id = String(opt.id);
+      if (seen.has(id)) continue;
+      seen.add(id);
+      dedup.push(opt);
+    }
+    return dedup;
+  }, [options, createdOptions]);
+
+  const upsertCreatedOption = useCallback((opt: PickerOption) => {
+    setCreatedOptions((prev) => {
+      if (prev.some((x) => x.id === opt.id)) return prev;
+      return [opt, ...prev];
+    });
+  }, []);
 
   if (loading) {
     return (
@@ -119,9 +147,6 @@ export default function AddExercisesScreen() {
       onCreateExercise={async ({ name, equipment, muscleIds, instructions }) => {
         if (!userId) throw new Error("Not signed in.");
 
-        // RPC does BOTH:
-        // 1) insert into exercises (type=strength, level=beginner, is_public=false, user_id=auth.uid())
-        // 2) insert into exercise_muscles (contribution int)
         const muscleIntIds = muscleIdsToIntArray((muscleIds ?? []).slice(0, 3));
 
         const { data, error } = await supabase.rpc("create_private_exercise", {
@@ -136,23 +161,36 @@ export default function AddExercisesScreen() {
         const newExerciseId = String(data);
         if (!newExerciseId) throw new Error("Create exercise failed.");
 
-        // Return what the picker expects so it can show + auto-select immediately
-        return {
+        // ✅ Build the option shape the picker uses and insert it locally
+        const created: PickerOption = {
           id: newExerciseId,
           name,
           type: "strength",
-          equipment,
+          equipment: equipment ?? null,
           muscleIds: muscleIntIds.map(String),
         };
+
+        upsertCreatedOption(created);
+
+        // ✅ Ensure it is truly selected (so confirm includes it)
+        setSelectedIds((prev) => {
+          const next = new Set(prev);
+          next.add(newExerciseId);
+          return Array.from(next);
+        });
+
+        // Return what the picker expects so it can show + auto-select immediately
+        return created;
       }}
       onClose={() => {
         setAddExercisesHandler(null);
         router.back();
       }}
       onConfirm={(ids) => {
-        const uniqueNew = (ids ?? []).filter(
-          (id) => !alreadyInIds.includes(id)
-        );
+        // ✅ Defensive: include locally selectedIds too (covers picker implementations that only return known option ids)
+        const combined = Array.from(new Set([...(ids ?? []), ...selectedIds])).map(String);
+
+        const uniqueNew = combined.filter((id) => !alreadyInIds.includes(id));
 
         emitAddExercisesResult({ selectedIds: uniqueNew });
 

@@ -3,6 +3,19 @@ import * as React from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { supabase } from "@/lib/supabase";
 
+type TodaysGoal = {
+  goalId: string;
+  exerciseId: string;
+  exerciseName: string;
+  unit: string; // usually "kg"
+  startWeight: number;
+  goalWeight: number;
+  sessionsPerWeek: number;
+  sessionNumber: number;
+  totalSessions: number;
+  targetThisSession: number;
+};
+
 type Bootstrap = {
   workout: {
     workoutId: string;
@@ -11,12 +24,15 @@ type Bootstrap = {
     imageKey: string | null;
     isPlanWorkout: boolean;
     planWorkoutId: string | null;
+    lastCompletedAt?: string | null; // ✅ from RPC workout object
   };
+
   headerStats: {
     avgDurationSeconds: number | null;
     avgTotalVolume: number | null;
     lastCompletedAt: string | null;
   };
+
   goals: Array<{
     id: string;
     type: string;
@@ -26,6 +42,10 @@ type Bootstrap = {
     exerciseId: string | null;
     notes: string | null;
   }>;
+
+  // ✅ NEW payload for the new “Today’s goal” UI
+  todaysGoals?: TodaysGoal[];
+
   exercises: Array<{
     workoutExerciseId: string;
     exerciseId: string;
@@ -136,7 +156,6 @@ export function useLiveWorkout(args: {
     setError(null);
 
     try {
-      // 1) fetch bootstrap data from RPC
       const { data, error: rpcErr } = await supabase.rpc(
         "get_workout_session_bootstrap",
         {
@@ -149,7 +168,6 @@ export function useLiveWorkout(args: {
 
       setBootstrap(data as Bootstrap);
 
-      // 2) read any existing local draft
       if (key) {
         const raw = await AsyncStorage.getItem(key);
         if (raw) {
@@ -247,7 +265,6 @@ export function useLiveWorkout(args: {
     draft,
     hadSavedDraft,
 
-    // ✅ Option A: expose refetch (and keep reload for backwards compatibility)
     refetch: load,
     reload: load,
 
