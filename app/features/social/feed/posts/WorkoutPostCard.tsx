@@ -12,6 +12,7 @@ import { WorkoutCover } from "@/ui/media/WorkoutCover";
 type Props = {
   item: FeedRow;
   onToggleLike: (postId: string) => void;
+  onOpenComments: (post: FeedRow) => void;
 };
 
 function upperOrFallback(s?: string | null, fallback = "WORKOUT") {
@@ -19,7 +20,7 @@ function upperOrFallback(s?: string | null, fallback = "WORKOUT") {
   return v.length ? v.toUpperCase() : fallback;
 }
 
-export function WorkoutPostCard({ item, onToggleLike }: Props) {
+export function WorkoutPostCard({ item, onToggleLike, onOpenComments }: Props) {
   const { colors, typography, layout } = useAppTheme();
 
   const styles = useMemo(
@@ -193,7 +194,7 @@ export function WorkoutPostCard({ item, onToggleLike }: Props) {
           commentCount={item.comment_count}
           viewerLiked={item.viewer_liked}
           onPressLike={() => onToggleLike(item.post_id)}
-          onPressComments={() => {}}
+          onPressComments={() => onOpenComments(item)}
           onPressShare={() => {}}
         />
       </View>

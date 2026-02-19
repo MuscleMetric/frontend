@@ -23,6 +23,7 @@ type Props = {
   contentPaddingTop?: number;
 
   onToggleLike: (postId: string) => void;
+  onOpenComments: (post: FeedRow) => void;
 };
 
 export function FeedList(props: Props) {
@@ -46,7 +47,11 @@ export function FeedList(props: Props) {
       data={props.rows}
       keyExtractor={(item) => item.post_id}
       renderItem={({ item }) => (
-        <FeedItem item={item} onToggleLike={props.onToggleLike} />
+        <FeedItem
+          item={item}
+          onToggleLike={props.onToggleLike}
+          onOpenComments={props.onOpenComments}
+        />
       )}
       contentContainerStyle={styles.content}
       refreshControl={

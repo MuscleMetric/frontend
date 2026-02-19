@@ -20,6 +20,9 @@ import { supabase } from "../../../lib/supabase";
 import { FeedList } from "./feed/FeedList";
 import type { FeedRow } from "./feed/types";
 
+import { PostModal } from "./feed/modals/PostModal";
+import type { CommentRow, WorkoutDetailsPayload } from "./feed/modals/types";
+
 export default function SocialScreen() {
   const { colors, typography, layout } = useAppTheme();
 
@@ -88,6 +91,38 @@ export default function SocialScreen() {
 
   // prevent double fetch on mount (StrictMode)
   const didInitialFetch = useRef(false);
+
+  const [postModalOpen, setPostModalOpen] = useState(false);
+  const [selectedPost, setSelectedPost] = useState<FeedRow | null>(null);
+
+  const openComments = useCallback((post: FeedRow) => {
+    setSelectedPost(post);
+    setPostModalOpen(true);
+  }, []);
+
+  const closeModal = useCallback(() => {
+    setPostModalOpen(false);
+    setSelectedPost(null);
+  }, []);
+
+  // ✅ TEMP stubs (we’ll replace with real RPCs next)
+  const fetchComments = useCallback(
+    async (_postId: string): Promise<CommentRow[]> => {
+      return [];
+    },
+    []
+  );
+
+  const addComment = useCallback(async (_postId: string, _body: string) => {
+    // no-op for now
+  }, []);
+
+  const fetchWorkoutDetails = useCallback(
+    async (_postId: string): Promise<WorkoutDetailsPayload | null> => {
+      return null;
+    },
+    []
+  );
 
   const applyCursorFrom = useCallback(
     (
@@ -282,7 +317,17 @@ export default function SocialScreen() {
         onEndReached={() => {
           if (rows.length >= PAGE_SIZE) loadMore();
         }}
-        onToggleLike={toggleLike} // ✅ add
+        onToggleLike={toggleLike}
+        onOpenComments={openComments}
+      />
+
+      <PostModal
+        visible={postModalOpen}
+        post={selectedPost}
+        onClose={closeModal}
+        fetchComments={fetchComments}
+        addComment={addComment}
+        fetchWorkoutDetails={fetchWorkoutDetails}
       />
     </View>
   );

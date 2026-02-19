@@ -11,6 +11,7 @@ import { fmtInt, toNumber } from "../utils/format";
 type Props = {
   item: FeedRow;
   onToggleLike: (postId: string) => void;
+  onOpenComments: (post: FeedRow) => void;
 };
 
 type ParsedPr = {
@@ -48,7 +49,7 @@ function parsePrFromSnapshot(item: FeedRow): ParsedPr {
   return { exerciseName, value, unit, reps, delta, prevBest };
 }
 
-export function PrPostCard({ item, onToggleLike }: Props) {
+export function PrPostCard({ item, onToggleLike, onOpenComments }: Props) {
   const { colors, typography, layout } = useAppTheme();
 
   const styles = useMemo(
@@ -201,7 +202,7 @@ export function PrPostCard({ item, onToggleLike }: Props) {
           commentCount={item.comment_count}
           viewerLiked={item.viewer_liked}
           onPressLike={() => onToggleLike(item.post_id)}
-          onPressComments={() => {}}
+          onPressComments={() => onOpenComments(item)}
           onPressShare={() => {}}
         />
       </View>

@@ -10,14 +10,15 @@ import { PrPostCard } from "./posts/PrPostCard";
 type Props = {
   item: FeedRow;
   onToggleLike: (postId: string) => void;
+  onOpenComments: (post: FeedRow) => void;
 };
 
-export function FeedItem({ item, onToggleLike }: Props) {
+export function FeedItem({ item, onToggleLike, onOpenComments }: Props) {
   if (item.post_type === "workout") {
-    return <WorkoutPostCard item={item} onToggleLike={onToggleLike} />;
+    return <WorkoutPostCard item={item} onToggleLike={onToggleLike} onOpenComments={onOpenComments} />;
   }
   if (item.post_type === "pr") {
-    return <PrPostCard item={item} onToggleLike={onToggleLike} />;
+    return <PrPostCard item={item} onToggleLike={onToggleLike} onOpenComments={onOpenComments} />;
   }
   return null;
 }
