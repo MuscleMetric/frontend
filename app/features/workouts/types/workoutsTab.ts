@@ -78,7 +78,7 @@ export type WorkoutsTabPayload = {
       weeklyComplete: boolean;
       imageKey: string | null;
       previewText: string;
-      lastDoneAt: string | null; // include last done (you asked for it)
+      lastDoneAt: string | null; 
     }>;
   };
 
