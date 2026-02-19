@@ -12,32 +12,39 @@ type Props = {
   item: FeedRow;
 };
 
-/**
- * We don’t want to assume your pr_snapshot shape,
- * but we still want a nice UI.
- *
- * Supported (optional) fields if present:
- * - pr_snapshot.value OR pr_snapshot.weight
- * - pr_snapshot.unit ("kg"/"lb"/"reps")
- * - pr_snapshot.reps
- * - pr_snapshot.delta_value OR pr_snapshot.delta
- * - pr_snapshot.delta_unit
- */
-function parsePr(snapshot: any) {
-  const valueRaw = snapshot?.value ?? snapshot?.weight ?? snapshot?.pr_value ?? null;
-  const repsRaw = snapshot?.reps ?? snapshot?.rep_count ?? null;
+type ParsedPr = {
+  exerciseName: string | null;
+  value: number | null;
+  unit: string; // "kg" for now
+  reps: number | null;
+  delta: number | null;
+  prevBest: number | null;
+};
 
-  const unit = (snapshot?.unit ?? snapshot?.weight_unit ?? "kg") as string;
+function parsePrFromSnapshot(item: FeedRow): ParsedPr {
+  const s: any = item.pr_snapshot ?? {};
 
-  const deltaRaw =
-    snapshot?.delta_value ?? snapshot?.delta ?? snapshot?.delta_amount ?? null;
-  const deltaUnit = (snapshot?.delta_unit ?? unit) as string;
+  // Prefer snapshot exercise_name, fallback to joined exercise_name
+  const exerciseName =
+    (s.exercise_name as string | undefined) ?? item.exercise_name ?? null;
 
-  const value = toNumber(valueRaw);
+  // Your real fields (from posts row example)
+  const recentBestWeight = s.recent_best_weight ?? s.recentBestWeight ?? null;
+  const prevBestWeight = s.prev_best_weight ?? s.prevBestWeight ?? null;
+  const prDelta = s.pr_delta ?? s.delta ?? null;
+
+  // Optional future fields (if you add reps later)
+  const repsRaw = s.recent_best_reps ?? s.reps ?? null;
+
+  const value = recentBestWeight == null ? null : toNumber(recentBestWeight);
+  const prevBest = prevBestWeight == null ? null : toNumber(prevBestWeight);
+  const delta = prDelta == null ? null : toNumber(prDelta);
   const reps = repsRaw == null ? null : Math.max(0, toNumber(repsRaw));
-  const delta = deltaRaw == null ? null : toNumber(deltaRaw);
 
-  return { value, unit, reps, delta, deltaUnit };
+  // If you later store unit in snapshot, read it here
+  const unit = (s.unit ?? "kg") as string;
+
+  return { exerciseName, value, unit, reps, delta, prevBest };
 }
 
 export function PrPostCard({ item }: Props) {
@@ -53,14 +60,6 @@ export function PrPostCard({ item }: Props) {
           borderRadius: layout.radius.xl ?? layout.radius.lg,
           padding: layout.space.lg,
           marginBottom: layout.space.md,
-        },
-
-        caption: {
-          marginTop: layout.space.sm,
-          color: colors.text,
-          fontFamily: typography.fontFamily.regular,
-          fontSize: typography.size.body,
-          lineHeight: typography.lineHeight.body,
         },
 
         prWrap: {
@@ -98,11 +97,12 @@ export function PrPostCard({ item }: Props) {
           textAlign: "center",
         },
 
+        // ✅ Make unit match exercise blue
         unit: {
-          color: colors.textMuted,
+          color: colors.primary,
           fontFamily: typography.fontFamily.bold,
-          fontSize: 18,
-          lineHeight: 22,
+          fontSize: 40,
+          lineHeight: 68,
           marginBottom: 8,
         },
 
@@ -122,7 +122,7 @@ export function PrPostCard({ item }: Props) {
           borderRadius: 999,
           borderWidth: 1,
           borderColor: colors.border,
-          backgroundColor: "rgba(34,197,94,0.12)", // soft green tint (light mode)
+          backgroundColor: "rgba(34,197,94,0.12)",
         },
 
         deltaText: {
@@ -132,23 +132,36 @@ export function PrPostCard({ item }: Props) {
           lineHeight: typography.lineHeight.meta,
         },
 
+        // ✅ Caption moved below PR block
+        caption: {
+          marginTop: layout.space.md,
+          color: colors.text,
+          fontFamily: typography.fontFamily.regular,
+          fontSize: typography.size.body,
+          lineHeight: typography.lineHeight.body,
+          textAlign: "center", // ✅ centre it
+          paddingHorizontal: layout.space.md, // ✅ prevent long captions touching edges
+        },
+
         actions: { marginTop: layout.space.lg },
       }),
     [colors, typography, layout]
   );
 
-  const exName = (item.exercise_name ?? "Exercise").toUpperCase();
-  const pr = parsePr(item.pr_snapshot);
+  const pr = parsePrFromSnapshot(item);
 
-  const valueLabel = pr.value ? fmtInt(pr.value) : "—";
+  const exName = (pr.exerciseName ?? "Exercise").toUpperCase();
+
+  // ✅ don’t use truthy check; allow 0 safely (even though weight won't be 0)
+  const valueLabel = pr.value == null ? "—" : fmtInt(pr.value);
   const unitLabel = pr.unit ?? "kg";
 
-  const repsLabel =
-    pr.reps != null ? `x ${fmtInt(pr.reps)}` : null;
+  const repsLabel = pr.reps != null ? `x ${fmtInt(pr.reps)}` : null;
 
+  // ✅ show delta based on pr_delta from snapshot
   const deltaLabel =
     pr.delta != null
-      ? `${pr.delta > 0 ? "+" : ""}${fmtInt(pr.delta)} ${pr.deltaUnit} delta`
+      ? `${pr.delta > 0 ? "+" : ""}${fmtInt(pr.delta)} ${unitLabel} delta`
       : null;
 
   return (
@@ -159,8 +172,6 @@ export function PrPostCard({ item }: Props) {
         createdAt={item.created_at}
         subtitleLeft="New Personal Record"
       />
-
-      {!!item.caption && <Text style={styles.caption}>{item.caption}</Text>}
 
       <View style={styles.prWrap}>
         <Text style={styles.exercise} numberOfLines={2}>
@@ -180,6 +191,8 @@ export function PrPostCard({ item }: Props) {
           </View>
         )}
       </View>
+
+      {!!item.caption && <Text style={styles.caption}>{item.caption}</Text>}
 
       <View style={styles.actions}>
         <FeedActionsRow

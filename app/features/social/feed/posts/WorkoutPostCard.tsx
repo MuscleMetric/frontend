@@ -1,12 +1,13 @@
 // app/features/social/feed/posts/WorkoutPostCard.tsx
 
 import React, { useMemo } from "react";
-import { View, Text, StyleSheet, ImageBackground } from "react-native";
+import { View, Text, StyleSheet } from "react-native";
 import { useAppTheme } from "@/lib/useAppTheme";
 import type { FeedRow } from "../types";
 import { UserMetaRow } from "../components/UserMetaRow";
 import { FeedActionsRow } from "../components/FeedActionsRow";
 import { fmtVolume, toNumber } from "../utils/format";
+import { WorkoutCover } from "@/ui/media/WorkoutCover";
 
 type Props = {
   item: FeedRow;
@@ -35,51 +36,12 @@ export function WorkoutPostCard({ item }: Props) {
         headerPad: {
           paddingHorizontal: layout.space.lg,
           paddingTop: layout.space.lg,
+          paddingBottom: layout.space.md,
         },
 
-        caption: {
-          marginTop: layout.space.sm,
-          color: colors.text,
-          fontFamily: typography.fontFamily.regular,
-          fontSize: typography.size.body,
-          lineHeight: typography.lineHeight.body,
-        },
-
-        heroWrap: {
-          marginTop: layout.space.md,
-          borderTopWidth: StyleSheet.hairlineWidth,
-          borderTopColor: colors.border,
-        },
-
-        hero: {
-          height: 210,
-          width: "100%",
-          backgroundColor: colors.bg, // fallback if no image
-          justifyContent: "flex-end",
-        },
-
-        heroFallback: {
-          ...StyleSheet.absoluteFillObject,
-          backgroundColor: colors.bg,
-        },
-
-        heroOverlay: {
-          ...StyleSheet.absoluteFillObject,
-          backgroundColor: "rgba(0,0,0,0.18)",
-        },
-
-        heroBottom: {
+        bannerWrap: {
           paddingHorizontal: layout.space.lg,
-          paddingBottom: layout.space.lg,
-        },
-
-        heroTitle: {
-          color: "#FFFFFF",
-          fontFamily: typography.fontFamily.bold,
-          fontSize: 28,
-          lineHeight: 32,
-          letterSpacing: 0.5,
-          textTransform: "uppercase",
+          paddingBottom: layout.space.md,
         },
 
         statsPill: {
@@ -141,6 +103,17 @@ export function WorkoutPostCard({ item }: Props) {
           lineHeight: typography.lineHeight.meta,
         },
 
+        caption: {
+          marginTop: layout.space.sm,
+          marginHorizontal: layout.space.lg,
+          color: colors.text,
+          fontFamily: typography.fontFamily.regular,
+          fontSize: typography.size.body,
+          lineHeight: typography.lineHeight.body,
+          textAlign: "center",
+          paddingHorizontal: layout.space.md,
+        },
+
         actionsPad: {
           paddingHorizontal: layout.space.lg,
           paddingBottom: layout.space.lg,
@@ -155,74 +128,73 @@ export function WorkoutPostCard({ item }: Props) {
   const sets = String(Math.max(0, toNumber(ws?.sets_count ?? 0)));
   const exercises = String(Math.max(0, toNumber(ws?.exercises_count ?? 0)));
 
-  // You don’t currently return an image key/url in get_feed.
-  // This makes the card ready when you add one later.
-  const key = ws?.workout_image_key ?? null;
-  const imageUri = key;
-
   const workoutTitle = upperOrFallback(ws?.workout_title, "WORKOUT");
+
+  // ✅ this is a key that maps to your local assets via resolveWorkoutImage()
+  const imageKey = ws?.workout_image_key ?? null;
 
   return (
     <View style={styles.card}>
+      {/* TOP META */}
       <View style={styles.headerPad}>
         <UserMetaRow
           name={item.user_name ?? "User"}
           username={item.user_username}
           createdAt={item.created_at}
         />
-
-        {!!item.caption && <Text style={styles.caption}>{item.caption}</Text>}
       </View>
 
-      <View style={styles.heroWrap}>
-        <ImageBackground
-          source={imageUri ? { uri: imageUri } : undefined}
-          resizeMode="cover"
-          style={styles.hero}
-        >
-          {!imageUri && <View style={styles.heroFallback} />}
-          <View style={styles.heroOverlay} />
-          <View style={styles.heroBottom}>
-            <Text style={styles.heroTitle} numberOfLines={1}>
-              {workoutTitle}
-            </Text>
-          </View>
-        </ImageBackground>
+      {/* BANNER */}
+      <View style={styles.bannerWrap}>
+        <WorkoutCover
+          imageKey={imageKey}
+          title={workoutTitle}
+          variant="banner"
+          height={190}
+          focusY={0.42}
+          zoom={1.05}
+          radius={layout.radius.lg}
+        />
+      </View>
 
-        <View style={styles.statsPill}>
-          <View style={styles.statCol}>
-            <Text style={styles.statLabel}>VOLUME</Text>
-            <View style={styles.statValueRow}>
-              <Text style={styles.statValue}>{volume}</Text>
-              <Text style={styles.unit}>kg</Text>
-            </View>
-          </View>
-
-          <View style={styles.divider} />
-
-          <View style={styles.statCol}>
-            <Text style={styles.statLabel}>SETS</Text>
-            <Text style={styles.statValue}>{sets}</Text>
-          </View>
-
-          <View style={styles.divider} />
-
-          <View style={styles.statCol}>
-            <Text style={styles.statLabel}>EXERCISES</Text>
-            <Text style={styles.statValue}>{exercises}</Text>
+      {/* STATS */}
+      <View style={styles.statsPill}>
+        <View style={styles.statCol}>
+          <Text style={styles.statLabel}>VOLUME</Text>
+          <View style={styles.statValueRow}>
+            <Text style={styles.statValue}>{volume}</Text>
+            <Text style={styles.unit}>kg</Text>
           </View>
         </View>
 
-        <View style={styles.actionsPad}>
-          <FeedActionsRow
-            likeCount={item.like_count}
-            commentCount={item.comment_count}
-            viewerLiked={item.viewer_liked}
-            onPressLike={() => {}}
-            onPressComments={() => {}}
-            onPressShare={() => {}}
-          />
+        <View style={styles.divider} />
+
+        <View style={styles.statCol}>
+          <Text style={styles.statLabel}>SETS</Text>
+          <Text style={styles.statValue}>{sets}</Text>
         </View>
+
+        <View style={styles.divider} />
+
+        <View style={styles.statCol}>
+          <Text style={styles.statLabel}>EXERCISES</Text>
+          <Text style={styles.statValue}>{exercises}</Text>
+        </View>
+      </View>
+
+      {/* ✅ CAPTION MOVED HERE + CENTERED */}
+      {!!item.caption && <Text style={styles.caption}>{item.caption}</Text>}
+
+      {/* ACTIONS */}
+      <View style={styles.actionsPad}>
+        <FeedActionsRow
+          likeCount={item.like_count}
+          commentCount={item.comment_count}
+          viewerLiked={item.viewer_liked}
+          onPressLike={() => {}}
+          onPressComments={() => {}}
+          onPressShare={() => {}}
+        />
       </View>
     </View>
   );
