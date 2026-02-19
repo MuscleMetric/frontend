@@ -1,7 +1,13 @@
 // app/features/social/feed/FeedList.tsx
 
 import React, { useMemo } from "react";
-import { FlatList, RefreshControl, ActivityIndicator, View, StyleSheet } from "react-native";
+import {
+  FlatList,
+  RefreshControl,
+  ActivityIndicator,
+  View,
+  StyleSheet,
+} from "react-native";
 import { useAppTheme } from "@/lib/useAppTheme";
 import { FeedRow } from "./types";
 import { FeedItem } from "./FeedItem";
@@ -15,6 +21,8 @@ type Props = {
   loadingMore: boolean;
 
   contentPaddingTop?: number;
+
+  onToggleLike: (postId: string) => void;
 };
 
 export function FeedList(props: Props) {
@@ -37,7 +45,9 @@ export function FeedList(props: Props) {
     <FlatList
       data={props.rows}
       keyExtractor={(item) => item.post_id}
-      renderItem={({ item }) => <FeedItem item={item} />}
+      renderItem={({ item }) => (
+        <FeedItem item={item} onToggleLike={props.onToggleLike} />
+      )}
       contentContainerStyle={styles.content}
       refreshControl={
         <RefreshControl

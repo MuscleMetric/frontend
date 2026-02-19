@@ -10,6 +10,7 @@ import { fmtInt, toNumber } from "../utils/format";
 
 type Props = {
   item: FeedRow;
+  onToggleLike: (postId: string) => void;
 };
 
 type ParsedPr = {
@@ -47,7 +48,7 @@ function parsePrFromSnapshot(item: FeedRow): ParsedPr {
   return { exerciseName, value, unit, reps, delta, prevBest };
 }
 
-export function PrPostCard({ item }: Props) {
+export function PrPostCard({ item, onToggleLike }: Props) {
   const { colors, typography, layout } = useAppTheme();
 
   const styles = useMemo(
@@ -199,7 +200,7 @@ export function PrPostCard({ item }: Props) {
           likeCount={item.like_count}
           commentCount={item.comment_count}
           viewerLiked={item.viewer_liked}
-          onPressLike={() => {}}
+          onPressLike={() => onToggleLike(item.post_id)}
           onPressComments={() => {}}
           onPressShare={() => {}}
         />

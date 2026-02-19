@@ -11,6 +11,7 @@ import { WorkoutCover } from "@/ui/media/WorkoutCover";
 
 type Props = {
   item: FeedRow;
+  onToggleLike: (postId: string) => void;
 };
 
 function upperOrFallback(s?: string | null, fallback = "WORKOUT") {
@@ -18,7 +19,7 @@ function upperOrFallback(s?: string | null, fallback = "WORKOUT") {
   return v.length ? v.toUpperCase() : fallback;
 }
 
-export function WorkoutPostCard({ item }: Props) {
+export function WorkoutPostCard({ item, onToggleLike }: Props) {
   const { colors, typography, layout } = useAppTheme();
 
   const styles = useMemo(
@@ -191,7 +192,7 @@ export function WorkoutPostCard({ item }: Props) {
           likeCount={item.like_count}
           commentCount={item.comment_count}
           viewerLiked={item.viewer_liked}
-          onPressLike={() => {}}
+          onPressLike={() => onToggleLike(item.post_id)}
           onPressComments={() => {}}
           onPressShare={() => {}}
         />

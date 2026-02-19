@@ -1,6 +1,18 @@
 // app/features/social/SocialScreen.tsx
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { View, Text, ActivityIndicator, RefreshControl, StyleSheet } from "react-native";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import {
+  View,
+  Text,
+  ActivityIndicator,
+  RefreshControl,
+  StyleSheet,
+} from "react-native";
 import { useAppTheme } from "@/lib/useAppTheme";
 import { supabase } from "../../../lib/supabase";
 
@@ -78,7 +90,11 @@ export default function SocialScreen() {
   const didInitialFetch = useRef(false);
 
   const applyCursorFrom = useCallback(
-    (data: FeedRow[], fallbackCreatedAt: string | null, fallbackId: string | null) => {
+    (
+      data: FeedRow[],
+      fallbackCreatedAt: string | null,
+      fallbackId: string | null
+    ) => {
       const last = data[data.length - 1];
       setCursorCreatedAt(last?.created_at ?? fallbackCreatedAt);
       setCursorId(last?.post_id ?? fallbackId);
@@ -168,6 +184,63 @@ export default function SocialScreen() {
     loadInitial();
   }, [loadInitial]);
 
+  const toggleLike = useCallback(
+    async (postId: string) => {
+      // 1) optimistic update
+      let prevLiked = false;
+      setRows((prev) =>
+        prev.map((r) => {
+          if (r.post_id !== postId) return r;
+          prevLiked = r.viewer_liked;
+          const nextLiked = !r.viewer_liked;
+          return {
+            ...r,
+            viewer_liked: nextLiked,
+            like_count: Math.max(0, r.like_count + (nextLiked ? 1 : -1)),
+          };
+        })
+      );
+
+      // 2) server toggle + reconcile
+      const res = await supabase.rpc("toggle_post_like", { p_post_id: postId });
+
+      if (res.error) {
+        console.log("toggle_post_like error:", res.error);
+
+        // revert on failure
+        setRows((prev) =>
+          prev.map((r) => {
+            if (r.post_id !== postId) return r;
+            return {
+              ...r,
+              viewer_liked: prevLiked,
+              like_count: Math.max(
+                0,
+                r.like_count + (prevLiked ? 1 : -1) - (!prevLiked ? 1 : -1)
+              ),
+            };
+          })
+        );
+        return;
+      }
+
+      const row = (res.data?.[0] ?? null) as {
+        liked: boolean;
+        like_count: number;
+      } | null;
+      if (!row) return;
+
+      setRows((prev) =>
+        prev.map((r) =>
+          r.post_id !== postId
+            ? r
+            : { ...r, viewer_liked: row.liked, like_count: row.like_count }
+        )
+      );
+    },
+    [setRows]
+  );
+
   // -------- UI states --------
   if (loading) {
     return (
@@ -189,7 +262,11 @@ export default function SocialScreen() {
 
         {/* still allow pull-to-refresh even on error */}
         <View style={{ flex: 1 }}>
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.text} />
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.text}
+          />
         </View>
       </View>
     );
@@ -203,9 +280,9 @@ export default function SocialScreen() {
         onRefresh={onRefresh}
         loadingMore={loadingMore}
         onEndReached={() => {
-          // only load more if we got at least a full page
           if (rows.length >= PAGE_SIZE) loadMore();
         }}
+        onToggleLike={toggleLike} // ✅ add
       />
     </View>
   );
