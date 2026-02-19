@@ -18,17 +18,36 @@ import { useAppTheme } from "@/lib/useAppTheme";
 // ✅ match your existing imports elsewhere
 import { supabase } from "../../../lib/supabase";
 
+type WorkoutSnapshot = {
+  workout_history_id: string;
+  workout_id: string | null;
+  workout_title: string | null;
+  completed_at: string | null;
+  duration_seconds: number | null;
+  exercises_count: number;
+  sets_count: number;
+  total_volume: number | string; // may arrive as number or string depending on SQL numeric casting
+};
+
 type FeedRow = {
   post_id: string;
   user_id: string;
   user_name: string | null;
+  user_username: string | null; // ✅ NEW
+
   post_type: "workout" | "pr" | "text" | string;
   visibility: "public" | "followers" | "private" | string;
   caption: string | null;
   created_at: string;
+
   workout_history_id: string | null;
+  workout_snapshot: WorkoutSnapshot | null; // ✅ NEW
+
   exercise_id: string | null;
+  exercise_name: string | null; // ✅ NEW
+
   pr_snapshot: any | null;
+
   like_count: number;
   comment_count: number;
   viewer_liked: boolean;
