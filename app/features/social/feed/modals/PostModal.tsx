@@ -33,10 +33,6 @@ type Props = {
   fetchWorkoutDetails?: (
     postId: string
   ) => Promise<WorkoutDetailsPayload | null>;
-
-  // ✅ actions
-  onToggleLike: (postId: string) => void;
-  onOpenComments?: (post: FeedRow) => void; // not used inside modal but kept optional
 };
 
 function getInitials(name: string) {
@@ -53,7 +49,6 @@ export function PostModal({
   fetchComments,
   addComment,
   fetchWorkoutDetails, // reserved for later
-  onToggleLike,
 }: Props) {
   const { colors, typography, layout } = useAppTheme();
 
@@ -215,7 +210,6 @@ export function PostModal({
       return (
         <WorkoutPostCard
           item={post}
-          onToggleLike={onToggleLike}
           onOpenComments={() => {}}
           showHeader={false}
           showActions={false}
@@ -226,7 +220,6 @@ export function PostModal({
       return (
         <PrPostCard
           item={post}
-          onToggleLike={onToggleLike}
           onOpenComments={() => {}}
           showHeader={false}
           showActions={false}

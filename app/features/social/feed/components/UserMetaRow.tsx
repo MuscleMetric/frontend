@@ -38,8 +38,8 @@ export function UserMetaRow(props: Props) {
         },
 
         avatar: {
-          width: 38,
-          height: 38,
+          width: 44,
+          height: 44,
           borderRadius: 22,
           backgroundColor: colors.bg,
           borderWidth: 1,

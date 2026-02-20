@@ -6,6 +6,14 @@ import { useAppTheme } from "@/lib/useAppTheme";
 import type { CommentRow } from "./types";
 import { fmtTs } from "../utils/format";
 
+function getInitials(name?: string | null) {
+  if (!name) return "?";
+  const parts = name.trim().split(" ").filter(Boolean);
+  if (parts.length === 0) return "?";
+  if (parts.length === 1) return parts[0][0].toUpperCase();
+  return (parts[0][0] + parts[1][0]).toUpperCase();
+}
+
 export function CommentsList({
   comments,
   loading,
@@ -33,22 +41,44 @@ export function CommentsList({
         },
 
         row: {
-          paddingVertical: layout.space.md,
-          borderBottomWidth: StyleSheet.hairlineWidth,
-          borderBottomColor: colors.border,
+          flexDirection: "row",
+          paddingVertical: layout.space.sm,
+          paddingLeft: layout.space.sm,
         },
 
-        top: { flexDirection: "row", alignItems: "baseline", gap: 8 },
+        avatar: {
+          width: 38,
+          height: 38,
+          borderRadius: 19,
+          backgroundColor: colors.bg,
+          borderWidth: 1,
+          borderColor: colors.border,
+          alignItems: "center",
+          justifyContent: "center",
+          marginRight: layout.space.md,
+        },
+
+        avatarText: {
+          color: colors.text,
+          fontFamily: typography.fontFamily.semibold,
+          fontSize: typography.size.meta,
+        },
+
+        content: {
+          flex: 1,
+        },
+
+        topRow: {
+          flexDirection: "row",
+          alignItems: "baseline",
+        },
+
         name: {
           color: colors.text,
           fontFamily: typography.fontFamily.semibold,
           fontSize: typography.size.meta,
         },
-        username: {
-          color: colors.textMuted,
-          fontFamily: typography.fontFamily.medium,
-          fontSize: typography.size.meta,
-        },
+
         time: {
           marginLeft: "auto",
           color: colors.textMuted,
@@ -57,11 +87,17 @@ export function CommentsList({
         },
 
         body: {
-          marginTop: 6,
+          marginTop: 4,
           color: colors.text,
           fontFamily: typography.fontFamily.regular,
           fontSize: typography.size.body,
           lineHeight: typography.lineHeight.body,
+        },
+
+        divider: {
+          height: StyleSheet.hairlineWidth,
+          backgroundColor: colors.border,
+          marginTop: layout.space.xs,
         },
 
         loadingText: {
@@ -95,24 +131,28 @@ export function CommentsList({
       data={comments}
       keyExtractor={(c) => c.id}
       renderItem={({ item }) => {
-        const handle = item.user_username ? `@${item.user_username}` : null;
+        const initials = getInitials(item.user_name);
         return (
-          <View style={styles.row}>
-            <View style={styles.top}>
-              <Text style={styles.name} numberOfLines={1}>
-                {item.user_name ?? "User"}
-              </Text>
-              {!!handle && (
-                <Text style={styles.username} numberOfLines={1}>
-                  {handle}
-                </Text>
-              )}
-              <Text style={styles.time} numberOfLines={1}>
-                {fmtTs(item.created_at)}
-              </Text>
+          <View>
+            <View style={styles.row}>
+              <View style={styles.avatar}>
+                <Text style={styles.avatarText}>{initials}</Text>
+              </View>
+
+              <View style={styles.content}>
+                <View style={styles.topRow}>
+                  <Text style={styles.name} numberOfLines={1}>
+                    {item.user_name ?? "User"}
+                  </Text>
+
+
+                </View>
+
+                <Text style={styles.body}>{item.body}</Text>
+              </View>
             </View>
 
-            <Text style={styles.body}>{item.body}</Text>
+            <View style={styles.divider} />
           </View>
         );
       }}

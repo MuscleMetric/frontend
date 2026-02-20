@@ -105,17 +105,51 @@ export default function SocialScreen() {
     setSelectedPost(null);
   }, []);
 
-  // ✅ TEMP stubs (we’ll replace with real RPCs next)
   const fetchComments = useCallback(
-    async (_postId: string): Promise<CommentRow[]> => {
-      return [];
+    async (postId: string): Promise<CommentRow[]> => {
+      const res = await supabase.rpc("get_post_comments", {
+        p_post_id: postId,
+        p_limit: 50,
+      });
+      if (res.error) throw res.error;
+      return (res.data ?? []) as CommentRow[];
     },
     []
   );
 
-  const addComment = useCallback(async (_postId: string, _body: string) => {
-    // no-op for now
+  const bumpCommentCount = useCallback((postId: string, delta: number) => {
+    setRows((prev) =>
+      prev.map((r) =>
+        r.post_id !== postId
+          ? r
+          : { ...r, comment_count: Math.max(0, (r.comment_count ?? 0) + delta) }
+      )
+    );
+
+    setSelectedPost((prev) =>
+      !prev || prev.post_id !== postId
+        ? prev
+        : {
+            ...prev,
+            comment_count: Math.max(0, (prev.comment_count ?? 0) + delta),
+          }
+    );
   }, []);
+
+  const addComment = useCallback(
+    async (postId: string, body: string) => {
+      const res = await supabase.rpc("add_post_comment", {
+        p_post_id: postId,
+        p_body: body,
+      });
+
+      if (res.error) throw res.error;
+
+      // ✅ update counts locally (no refetch)
+      bumpCommentCount(postId, +1);
+    },
+    [bumpCommentCount]
+  );
 
   const fetchWorkoutDetails = useCallback(
     async (_postId: string): Promise<WorkoutDetailsPayload | null> => {
