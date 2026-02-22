@@ -7,7 +7,6 @@ import ActivityCard from "../../ui/ActivityCard";
 import FavouriteAchievementsCard from "../../ui/FavouriteAchievementsCard";
 import RecentPlansCard from "../../ui/RecentPlansCard";
 import RecentHistoryCard from "../../ui/RecentHistoryCard";
-import SettingsSection from "../../ui/SettingsSection";
 import { useAppTheme } from "@/lib/useAppTheme";
 import { View } from "react-native";
 
@@ -21,7 +20,6 @@ export default function NoPlanProfile({ data }: { data: ProfileOverview }) {
       <FavouriteAchievementsCard data={data} />
       <RecentPlansCard data={data} />
       <RecentHistoryCard data={data} />
-      <SettingsSection />
     </View>
   );
 }

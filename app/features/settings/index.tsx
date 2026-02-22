@@ -1,13 +1,12 @@
+// app/features/settings/SettingsScreen.tsx
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   View,
   Text,
   StyleSheet,
-  Pressable,
-  TextInput,
   ActivityIndicator,
-  Switch,
-  Alert,
+  ScrollView,
+  Pressable,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
@@ -16,20 +15,55 @@ import { ChevronLeft } from "lucide-react-native";
 import { useAppTheme } from "@/lib/useAppTheme";
 import { supabase } from "@/lib/supabase";
 
-type SettingsRow = {
+import { ProfileHeaderCard } from "./components/ProfileHeaderCard";
+import { SectionHeader } from "./components/SectionHeader";
+import { SettingsCard } from "./components/SettingsCard";
+import { SettingsRow } from "./components/SettingsRow";
+import { ToggleRow } from "./components/ToggleRow";
+import { SegmentedRow } from "./components/SegmentedRow";
+
+type Visibility = "public" | "followers" | "private";
+type Units = "kg" | "lb";
+
+type SettingsOverview = {
   user_id: string;
   name: string | null;
   username: string | null;
-  username_lower: string | null;
-  is_private: boolean;
+  email: string | null;
+
+  height_cm: number | null;
+  weight_kg: number | null;
+  date_of_birth: string | null;
+
+  unit_weight: "kg" | "lb" | string;
+  unit_height: "cm" | "ft_in" | string;
+  experience_level: string | null;
+  primary_goal: string | null;
+
+  visibility: Visibility;
+
+  notif_workout_reminders: boolean;
+  notif_goal_progress: boolean;
+  notif_social_activity: boolean;
 };
 
-type UsernameCheckRow = {
-  normalized: string;
-  is_valid: boolean;
-  is_available: boolean;
-  reason: string | null;
-};
+function fmtDateLabel(iso?: string | null) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (!Number.isFinite(d.getTime())) return "—";
+  return d.toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function titleCase(s?: string | null) {
+  if (!s) return "—";
+  const clean = s.replace(/_/g, " ").trim();
+  if (!clean) return "—";
+  return clean.replace(/\b\w/g, (c) => c.toUpperCase());
+}
 
 export default function SettingsScreen() {
   const { colors, typography, layout } = useAppTheme();
@@ -38,6 +72,7 @@ export default function SettingsScreen() {
     () =>
       StyleSheet.create({
         screen: { flex: 1, backgroundColor: colors.bg },
+
         header: {
           paddingHorizontal: layout.space.lg,
           paddingTop: layout.space.sm,
@@ -47,6 +82,7 @@ export default function SettingsScreen() {
           gap: 10,
           borderBottomWidth: StyleSheet.hairlineWidth,
           borderBottomColor: colors.border,
+          backgroundColor: colors.bg,
         },
         headerTitle: {
           flex: 1,
@@ -66,111 +102,41 @@ export default function SettingsScreen() {
           backgroundColor: colors.surface,
         },
 
-        body: { padding: layout.space.lg, gap: layout.space.lg },
+        content: {
+          paddingHorizontal: layout.space.lg,
+          paddingTop: layout.space.lg,
+          paddingBottom: layout.space.xxl,
+          gap: 18,
+        },
 
-        card: {
-          borderWidth: 1,
-          borderColor: colors.border,
-          backgroundColor: colors.surface,
-          borderRadius: layout.radius.lg,
+        loadingWrap: {
+          flex: 1,
+          alignItems: "center",
+          justifyContent: "center",
           padding: layout.space.lg,
-          gap: 10,
-        },
-
-        label: {
-          color: colors.textMuted,
-          fontFamily: typography.fontFamily.semibold,
-          fontSize: typography.size.meta,
-          letterSpacing: 0.6,
-          textTransform: "uppercase",
-        },
-
-        input: {
-          borderWidth: 1,
-          borderColor: colors.border,
-          backgroundColor: colors.bg,
-          borderRadius: layout.radius.md,
-          paddingHorizontal: 12,
-          paddingVertical: 10,
-          color: colors.text,
-          fontFamily: typography.fontFamily.regular,
-          fontSize: typography.size.body,
-        },
-
-        helper: {
-          color: colors.textMuted,
-          fontFamily: typography.fontFamily.regular,
-          fontSize: typography.size.meta,
-          lineHeight: typography.lineHeight.meta,
-        },
-        helperOk: { color: colors.primary },
-        helperBad: { color: colors.danger },
-
-        row: {
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 12,
-        },
-
-        btn: {
-          borderWidth: 1,
-          borderColor: colors.border,
-          backgroundColor: colors.primary,
-          borderRadius: layout.radius.md,
-          paddingVertical: 12,
-          alignItems: "center",
-        },
-        btnText: {
-          color: colors.onPrimary,
-          fontFamily: typography.fontFamily.semibold,
-          fontSize: typography.size.body,
-        },
-        ghost: {
-          borderWidth: 1,
-          borderColor: colors.border,
-          backgroundColor: colors.surface,
-          borderRadius: layout.radius.md,
-          paddingVertical: 12,
-          alignItems: "center",
-        },
-        ghostText: {
-          color: colors.text,
-          fontFamily: typography.fontFamily.semibold,
-          fontSize: typography.size.body,
         },
       }),
-    [colors, typography, layout]
+    [colors, typography, layout],
   );
 
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-
-  const [settings, setSettings] = useState<SettingsRow | null>(null);
-
-  const [username, setUsername] = useState("");
-  const [usernameCheck, setUsernameCheck] = useState<UsernameCheckRow | null>(null);
-  const [checkingName, setCheckingName] = useState(false);
-
-  const [isPrivate, setIsPrivate] = useState(false);
+  const [data, setData] = useState<SettingsOverview | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
-    const res = await supabase.rpc("get_settings_v1");
+
+    const res = await supabase.rpc("get_settings_overview");
     if (res.error) {
-      console.log("get settings error:", res.error);
-      setSettings(null);
+      console.log("get_settings_overview error:", res.error);
+      setData(null);
       setLoading(false);
       return;
     }
 
-    const row = Array.isArray(res.data) ? (res.data[0] as SettingsRow | undefined) : undefined;
-    setSettings(row ?? null);
-
-    const u = row?.username ?? "";
-    setUsername(u);
-    setIsPrivate(!!row?.is_private);
-
+    const row = Array.isArray(res.data)
+      ? (res.data[0] as SettingsOverview | undefined)
+      : undefined;
+    setData(row ?? null);
     setLoading(false);
   }, []);
 
@@ -178,189 +144,198 @@ export default function SettingsScreen() {
     load();
   }, [load]);
 
-  // Debounced availability check
-  useEffect(() => {
-    let alive = true;
-    const t = setTimeout(async () => {
-      if (!settings) return;
-
-      const trimmed = username.trim();
-      if (!trimmed) {
-        setUsernameCheck(null);
-        return;
-      }
-
-      // if unchanged, don’t spam check
-      if ((settings.username ?? "").trim() === trimmed) {
-        setUsernameCheck({
-          normalized: settings.username_lower ?? trimmed.toLowerCase(),
-          is_valid: true,
-          is_available: true,
-          reason: null,
-        });
-        return;
-      }
-
-      setCheckingName(true);
-      const res = await supabase.rpc("check_username_available_v1", { p_username: trimmed });
-      if (!alive) return;
+  const onChangeVisibility = useCallback(
+    async (next: Visibility) => {
+      setData((prev) => (prev ? { ...prev, visibility: next } : prev)); // optimistic
+      const res = await supabase.rpc("set_profile_visibility_v1", {
+        p_visibility: next,
+      });
 
       if (res.error) {
-        console.log("check username error:", res.error);
-        setUsernameCheck(null);
-      } else {
-        const r = Array.isArray(res.data) ? (res.data[0] as UsernameCheckRow | undefined) : undefined;
-        setUsernameCheck(r ?? null);
-      }
-      setCheckingName(false);
-    }, 350);
-
-    return () => {
-      alive = false;
-      clearTimeout(t);
-    };
-  }, [username, settings]);
-
-  const saveUsername = useCallback(async () => {
-    if (!settings) return;
-
-    const trimmed = username.trim();
-    if (!trimmed) {
-      Alert.alert("Username required", "Please set a username.");
-      return;
-    }
-
-    // quick gate: only allow save if check says OK (or unchanged)
-    const unchanged = (settings.username ?? "").trim() === trimmed;
-    const ok = unchanged || (!!usernameCheck?.is_valid && !!usernameCheck?.is_available);
-
-    if (!ok) {
-      Alert.alert("Username not available", "Please choose another username.");
-      return;
-    }
-
-    setSaving(true);
-    const res = await supabase.rpc("set_username_v1", { p_username: trimmed });
-    if (res.error) {
-      console.log("set username error:", res.error);
-      Alert.alert("Couldn’t save username", res.error.message ?? "Try again.");
-      setSaving(false);
-      return;
-    }
-
-    await load();
-    setSaving(false);
-    Alert.alert("Saved", "Username updated.");
-  }, [settings, username, usernameCheck, load]);
-
-  const savePrivacy = useCallback(
-    async (next: boolean) => {
-      setIsPrivate(next); // optimistic
-      const res = await supabase.rpc("set_privacy_v1", { p_is_private: next });
-      if (res.error) {
-        console.log("privacy error:", res.error);
-        // revert
-        setIsPrivate((v) => !v);
-        Alert.alert("Couldn’t update privacy", res.error.message ?? "Try again.");
+        console.log("set_profile_visibility_v1 error:", res.error);
+        // reload to revert accurately
+        await load();
       }
     },
-    []
+    [load],
   );
 
-  const usernameHint = useMemo(() => {
-    if (!username.trim()) return { text: "3–10 chars, a–z 0–9 _ (no spaces).", tone: "muted" as const };
-    if (checkingName) return { text: "Checking…", tone: "muted" as const };
-    if (!usernameCheck) return { text: "3–10 chars, a–z 0–9 _ (no spaces).", tone: "muted" as const };
+  const toggleNotif = useCallback(
+    async (
+      key:
+        | "notif_workout_reminders"
+        | "notif_goal_progress"
+        | "notif_social_activity",
+      next: boolean,
+    ) => {
+      setData((prev) => (prev ? { ...prev, [key]: next } : prev)); // optimistic
 
-    if (!usernameCheck.is_valid) {
-      const reason = usernameCheck.reason ?? "invalid";
-      return { text: `Not allowed (${reason}).`, tone: "bad" as const };
-    }
-    if (!usernameCheck.is_available) return { text: "Username taken.", tone: "bad" as const };
-    return { text: "Looks good.", tone: "ok" as const };
-  }, [username, usernameCheck, checkingName]);
+      const res = await supabase.rpc("set_notification_pref_v1", {
+        p_key: key,
+        p_value: next,
+      });
 
-  const canSave =
-    !!settings &&
-    !!username.trim() &&
-    (((settings.username ?? "").trim() === username.trim()) ||
-      (!!usernameCheck?.is_valid && !!usernameCheck?.is_available)) &&
-    !saving;
+      if (res.error) {
+        console.log("set_notification_pref_v1 error:", res.error);
+        await load();
+      }
+    },
+    [load],
+  );
+
+  if (loading) {
+    return (
+      <SafeAreaView
+        style={{ flex: 1, backgroundColor: colors.bg }}
+        edges={["top", "left", "right"]}
+      >
+        <View style={styles.screen}>
+          <View style={styles.header}>
+            <View style={styles.backBtn} />
+            <Text style={styles.headerTitle}>Settings</Text>
+          </View>
+          <View style={styles.loadingWrap}>
+            <ActivityIndicator />
+          </View>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  const displayName = data?.name ?? "User";
+  const handle = data?.username ?? "username";
+  const email = data?.email ?? "—";
+
+  const heightLabel = data?.height_cm != null ? `${data.height_cm} cm` : "—";
+  const weightLabel = data?.weight_kg != null ? `${data.weight_kg} kg` : "—";
+  const dobLabel = fmtDateLabel(data?.date_of_birth);
+  const unitsLabel = (data?.unit_weight ?? "kg").toUpperCase();
+  const expLabel = titleCase(data?.experience_level);
+  const goalLabel = titleCase(data?.primary_goal);
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }} edges={["top", "left", "right"]}>
+    <SafeAreaView
+      style={{ flex: 1, backgroundColor: colors.bg }}
+      edges={["top", "left", "right"]}
+    >
       <View style={styles.screen}>
         <View style={styles.header}>
           <Pressable
             onPress={() => router.back()}
-            style={({ pressed }) => [styles.backBtn, { opacity: pressed ? 0.6 : 1 }]}
+            style={({ pressed }) => [
+              styles.backBtn,
+              { opacity: pressed ? 0.6 : 1 },
+            ]}
             hitSlop={10}
           >
             <ChevronLeft size={18} color={colors.text} />
           </Pressable>
+
           <Text style={styles.headerTitle}>Settings</Text>
         </View>
 
-        {loading ? (
-          <View style={[styles.body, { flex: 1, justifyContent: "center", alignItems: "center" }]}>
-            <ActivityIndicator />
-          </View>
-        ) : (
-          <View style={styles.body}>
-            <View style={styles.card}>
-              <Text style={styles.label}>Username</Text>
-              <TextInput
-                value={username}
-                onChangeText={setUsername}
-                autoCapitalize="none"
-                autoCorrect={false}
-                placeholder="e.g. Harry"
-                placeholderTextColor={colors.textMuted}
-                style={styles.input}
-              />
+        <ScrollView
+          contentContainerStyle={styles.content}
+          showsVerticalScrollIndicator={false}
+        >
+          <ProfileHeaderCard
+            name={displayName}
+            username={handle}
+            onPressEdit={() => {
+              // TODO: open edit profile route/modal
+            }}
+          />
 
-              <Text
-                style={[
-                  styles.helper,
-                  usernameHint.tone === "ok" && styles.helperOk,
-                  usernameHint.tone === "bad" && styles.helperBad,
-                ]}
-              >
-                {usernameHint.text}
-              </Text>
+          <SectionHeader title="ACCOUNT" />
+          <SettingsCard>
+            <SettingsRow label="Username" value={handle} onPress={() => {}} />
+            <SettingsRow label="Email" value={email} onPress={() => {}} />
+            <SettingsRow label="Change Password" onPress={() => {}} last />
+          </SettingsCard>
 
-              <Pressable
-                style={[styles.btn, { opacity: canSave ? 1 : 0.5 }]}
-                onPress={saveUsername}
-                disabled={!canSave}
-              >
-                {saving ? <ActivityIndicator /> : <Text style={styles.btnText}>Save username</Text>}
-              </Pressable>
-            </View>
+          <SectionHeader title="PERSONAL INFO" />
+          <SettingsCard>
+            <SettingsRow
+              label="Height"
+              value={heightLabel}
+              onPress={() => {}}
+            />
+            <SettingsRow
+              label="Weight"
+              value={weightLabel}
+              onPress={() => {}}
+            />
+            <SettingsRow
+              label="Date of Birth"
+              value={dobLabel}
+              onPress={() => {}}
+            />
+            <SettingsRow label="Units" value={unitsLabel} onPress={() => {}} />
+            <SettingsRow
+              label="Experience Level"
+              value={expLabel}
+              onPress={() => {}}
+            />
+            <SettingsRow
+              label="Primary Goal"
+              value={goalLabel}
+              onPress={() => {}}
+              last
+            />
+          </SettingsCard>
 
-            <View style={styles.card}>
-              <Text style={styles.label}>Privacy</Text>
-              <View style={styles.row}>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ color: colors.text, fontFamily: typography.fontFamily.medium, fontSize: typography.size.body }}>
-                    Private account
-                  </Text>
-                  <Text style={styles.helper}>
-                    If private, only followers can see your posts.
-                  </Text>
-                </View>
-                <Switch
-                  value={isPrivate}
-                  onValueChange={savePrivacy}
-                />
-              </View>
-            </View>
+          <SectionHeader title="NOTIFICATIONS" />
+          <SettingsCard>
+            <ToggleRow
+              label="Workout Reminders"
+              value={!!data?.notif_workout_reminders}
+              onValueChange={(v) => toggleNotif("notif_workout_reminders", v)}
+            />
+            <ToggleRow
+              label="Goal Progress"
+              value={!!data?.notif_goal_progress}
+              onValueChange={(v) => toggleNotif("notif_goal_progress", v)}
+            />
+            <ToggleRow
+              label="Social Activity"
+              value={!!data?.notif_social_activity}
+              onValueChange={(v) => toggleNotif("notif_social_activity", v)}
+              last
+            />
+          </SettingsCard>
 
-            <Pressable style={styles.ghost} onPress={() => router.back()}>
-              <Text style={styles.ghostText}>Back</Text>
-            </Pressable>
-          </View>
-        )}
+          <SectionHeader title="PRIVACY" />
+          <SettingsCard>
+            <SegmentedRow
+              label="Profile Visibility"
+              value={(data?.visibility ?? "public") as Visibility}
+              options={[
+                { key: "public", label: "Public" },
+                { key: "followers", label: "Followers" },
+                { key: "private", label: "Private" },
+              ]}
+              onChange={onChangeVisibility}
+            />
+          </SettingsCard>
+
+          <SectionHeader title="HELP & LEGAL" />
+          <SettingsCard>
+            <SettingsRow label="Help & Support" onPress={() => {}} />
+            <SettingsRow label="Privacy Policy" onPress={() => {}} />
+            <SettingsRow label="Terms & Conditions" onPress={() => {}} last />
+          </SettingsCard>
+
+          <SectionHeader title="DANGER ZONE" tone="danger" />
+          <SettingsCard tone="danger">
+            <SettingsRow label="Log Out" tone="danger" onPress={() => {}} />
+            <SettingsRow
+              label="Delete Account"
+              tone="danger"
+              onPress={() => {}}
+              last
+            />
+          </SettingsCard>
+        </ScrollView>
       </View>
     </SafeAreaView>
   );
