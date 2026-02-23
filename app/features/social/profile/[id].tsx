@@ -26,7 +26,7 @@ type ProfileCardRow = {
   profile_id: string;
   name: string | null;
   username: string | null;
-  is_private: boolean;
+  visibility: "public" | "followers" | "private" | string;
   can_view: boolean;
   follow_state: "self" | "following" | "requested" | "none" | string;
   workouts_completed: number | null;
@@ -278,7 +278,7 @@ export default function SocialProfileModal() {
           fontSize: typography.size.meta,
         },
       }),
-    [colors, typography, layout]
+    [colors, typography, layout],
   );
 
   const [loading, setLoading] = useState(true);
@@ -293,11 +293,11 @@ export default function SocialProfileModal() {
     setLoading(true);
 
     const res = await supabase
-      .rpc("get_profile_card_v1", { p_profile_id: String(id) })
+      .rpc("get_profile_overview_v1", { p_profile_id: String(id) })
       .single();
 
     if (res.error) {
-      console.log("get_profile_card_v1 error:", res.error);
+      console.log("get_profile_overview_v1 error:", res.error);
       setErr(res.error.message ?? "Failed to load profile");
       setCard(null);
       setLoading(false);
@@ -331,7 +331,10 @@ export default function SocialProfileModal() {
     if (card.follow_state === "following") return "Following";
     if (card.follow_state === "requested") return "Requested";
     // none
-    return card.is_private ? "Request" : "Follow";
+    if (card.visibility === "public") return "Follow";
+    if (card.visibility === "followers") return "Follow";
+    if (card.visibility === "private") return "Request";
+    return "Follow";
   }, [card]);
 
   const followActionStyle = useMemo(() => {
@@ -470,7 +473,11 @@ export default function SocialProfileModal() {
                       </Text>
 
                       <Text style={styles.meta} numberOfLines={1}>
-                        {card.is_private ? "Private" : "Public"}
+                        {card.visibility === "public"
+                          ? "Public"
+                          : card.visibility === "followers"
+                            ? "Followers Only"
+                            : "Private"}
                         {card.follow_state && card.follow_state !== "self"
                           ? ` • ${card.follow_state}`
                           : ""}
