@@ -15,6 +15,7 @@ import PostSuccessSheet from "./success/PostSuccessSheet";
 
 const RPC_CREATE_POST_BOOTSTRAP = "get_create_post_bootstrap_v1";
 const RPC_GET_WORKOUT_FOR_POST = "get_workout_for_post_v1";
+const RPC_CREATE_POST_V2 = "create_post_v2";
 
 // map bootstrap workouts -> WorkoutSelection shape
 function mapBootstrapWorkoutToSelection(item: any, unit: "kg" | "lb") {
@@ -143,18 +144,37 @@ export default function CreatePostFlow() {
       {state.step === "edit_workout" && (
         <EditWorkoutPostScreen
           workout={state.workout}
-          workoutDetail={workoutDetail} // ✅ pass full sets/exercises
+          workoutDetail={workoutDetail} 
           draft={state.workoutDraft}
           onBack={actions.back}
           onChangeAudience={actions.setAudience}
           onChangeCaption={actions.setWorkoutCaption}
           onPost={async () => {
+            if (!state.workout?.workoutHistoryId) return;
+
             actions.publishStart();
 
-            // TODO: replace with create_post_v2 (workout) call
-            setTimeout(() => {
-              actions.publishSuccess("temp-id");
-            }, 600);
+            const { data: postId, error } = await supabase.rpc(
+              RPC_CREATE_POST_V2,
+              {
+                p_caption: state.workoutDraft.caption ?? null,
+                p_exercise_id: null,
+                p_post_type: "workout",
+                p_pr_reps: null,
+                p_pr_weight: null,
+                p_visibility: state.workoutDraft.audience,
+                p_workout_history_id: state.workout.workoutHistoryId,
+              },
+            );
+
+            if (error) {
+              console.error("create_post_v2 error:", error);
+              actions.publishError(error.message);
+              return;
+            }
+
+            // ✅ real UUID from DB insert
+            actions.publishSuccess(postId);
           }}
           posting={state.publishStatus === "publishing"}
         />

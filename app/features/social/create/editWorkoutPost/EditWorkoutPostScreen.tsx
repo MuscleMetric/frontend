@@ -11,11 +11,9 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAppTheme } from "@/lib/useAppTheme";
 import { Icon } from "@/ui/icons/Icon";
+import { useAuth } from "@/lib/authContext";
 
-import type {
-  WorkoutSelection,
-  WorkoutPostDraft,
-} from "../state/createPostTypes";
+import type { WorkoutSelection, WorkoutPostDraft } from "../state/createPostTypes";
 import AudiencePill from "../shared/AudiencePill";
 import PrimaryActionButton from "../shared/PrimaryActionButton";
 import WorkoutPostPreviewCard from "./WorkoutPostPreviewCard";
@@ -29,6 +27,7 @@ type WorkoutDetail = {
   duration_seconds: number | null;
   volume_kg: number;
   sets_count: number;
+  workout_image_key?: string | null; // ✅ if/when RPC includes it
   exercises: Array<{
     workout_exercise_history_id: string;
     exercise_id: string;
@@ -62,6 +61,7 @@ type Props = {
 export default function EditWorkoutPostScreen(props: Props) {
   const { colors, typography } = useAppTheme();
   const insets = useSafeAreaInsets();
+  const { profile } = useAuth(); // ✅ get viewer name/username from auth context
 
   const styles = useMemo(
     () =>
@@ -113,8 +113,8 @@ export default function EditWorkoutPostScreen(props: Props) {
           fontWeight: "700",
         },
         audienceRow: {
-          marginTop: 8,
-          alignItems: "flex-start",
+          marginVertical: 8,
+          alignItems: "center",
         },
         footer: {
           paddingHorizontal: 16,
@@ -188,11 +188,7 @@ export default function EditWorkoutPostScreen(props: Props) {
               onPress={props.onBack}
               activeOpacity={0.85}
             >
-              <Icon
-                name={"chevron-back" as any}
-                size={18}
-                color={colors.text}
-              />
+              <Icon name={"chevron-back" as any} size={18} color={colors.text} />
             </TouchableOpacity>
             <View style={styles.titleWrap}>
               <Text style={styles.title}>Create Post</Text>
@@ -223,11 +219,7 @@ export default function EditWorkoutPostScreen(props: Props) {
               onPress={props.onBack}
               activeOpacity={0.85}
             >
-              <Icon
-                name={"chevron-back" as any}
-                size={18}
-                color={colors.text}
-              />
+              <Icon name={"chevron-back" as any} size={18} color={colors.text} />
             </TouchableOpacity>
 
             <View style={styles.titleWrap}>
@@ -264,6 +256,9 @@ export default function EditWorkoutPostScreen(props: Props) {
     };
   });
 
+  const viewerName = profile?.name?.trim() ? profile.name : "You";
+  const viewerUsername = (profile as any)?.username ?? null; // ✅ after authContext adds username
+
   return (
     <View style={styles.screen}>
       <View style={styles.header}>
@@ -278,9 +273,7 @@ export default function EditWorkoutPostScreen(props: Props) {
 
           <View style={styles.titleWrap}>
             <Text style={styles.title}>Edit Post</Text>
-            <Text style={styles.subtitle}>
-              Share your session with your community
-            </Text>
+            <Text style={styles.subtitle}>Share your session with your community</Text>
           </View>
 
           <View style={{ width: 42 }} />
@@ -291,11 +284,6 @@ export default function EditWorkoutPostScreen(props: Props) {
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
-        <WorkoutPostPreviewCard
-          workout={props.workout}
-          caption={props.draft.caption}
-        />
-
         <Text style={styles.sectionLabel}>Audience</Text>
         <View style={styles.audienceRow}>
           <AudiencePill
@@ -303,6 +291,13 @@ export default function EditWorkoutPostScreen(props: Props) {
             onChange={props.onChangeAudience}
           />
         </View>
+
+        <WorkoutPostPreviewCard
+          workout={props.workout}
+          caption={props.draft.caption}
+          viewerName={viewerName}
+          viewerUsername={viewerUsername}
+        />
 
         <WorkoutCaptionBox
           value={props.draft.caption}

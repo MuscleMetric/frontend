@@ -111,6 +111,12 @@ export type CreatePostState = {
 
   // UX helpers
   workoutSearchQuery: string;
+
+  // in CreatePostState type
+  viewer: {
+    name: string;
+    username: string | null;
+  } | null;
 };
 
 export type CreatePostAction =
@@ -140,4 +146,6 @@ export type CreatePostAction =
   | { type: "PUBLISH_START" }
   | { type: "PUBLISH_SUCCESS"; createdPostId: string }
   | { type: "PUBLISH_ERROR"; message: string }
-  | { type: "CLEAR_PUBLISH_ERROR" };
+  | { type: "CLEAR_PUBLISH_ERROR" }
+  | { type: "SET_VIEWER"; viewer: { name: string; username: string | null } }
+  | { type: "CLEAR_VIEWER" };

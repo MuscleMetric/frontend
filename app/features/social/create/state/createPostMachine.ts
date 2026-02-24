@@ -35,6 +35,8 @@ export const initialCreatePostState: CreatePostState = {
   createdPostId: null,
 
   workoutSearchQuery: "",
+
+  viewer: null,
 };
 
 /**
@@ -194,6 +196,12 @@ export function createPostReducer(
     case "CLEAR_PUBLISH_ERROR":
       return { ...state, publishStatus: "idle", publishError: null };
 
+    case "SET_VIEWER":
+      return { ...state, viewer: action.viewer };
+
+    case "CLEAR_VIEWER":
+      return { ...state, viewer: null };
+
     default:
       return state;
   }
@@ -253,6 +261,11 @@ export function useCreatePostMachine(
       publishError: (message: string) =>
         dispatch({ type: "PUBLISH_ERROR", message }),
       clearPublishError: () => dispatch({ type: "CLEAR_PUBLISH_ERROR" }),
+
+      setViewer: (viewer: { name: string; username: string | null }) =>
+        dispatch({ type: "SET_VIEWER", viewer }),
+
+      clearViewer: () => dispatch({ type: "CLEAR_VIEWER" }),
     };
   }, []);
 

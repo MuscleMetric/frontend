@@ -14,6 +14,7 @@ import type {
 
 import WorkoutPostPreviewCard from "../editWorkoutPost/WorkoutPostPreviewCard";
 import PrPostPreviewCard from "../editPrPost/PrPostPreviewCard";
+import { useAuth } from "@/lib/authContext";
 
 type Props = {
   postType: PostType | null;
@@ -33,24 +34,24 @@ export default function PostSuccessPreviewCard({
   prDraft,
 }: Props) {
   const { colors } = useAppTheme();
+  const { profile } = useAuth();
+
+  const viewerName = profile?.name?.trim() ? profile.name : "You";
+  const viewerUsername = (profile as any)?.username ?? null;
 
   if (postType === "workout" && workout) {
     return (
       <WorkoutPostPreviewCard
         workout={workout}
         caption={workoutDraft.caption}
-        templateId={workoutDraft.templateId}
+        viewerName={viewerName}
+        viewerUsername={viewerUsername}
       />
     );
   }
 
   if (postType === "pr" && pr) {
-    return (
-      <PrPostPreviewCard
-        pr={pr}
-        caption={prDraft.caption}
-      />
-    );
+    return <PrPostPreviewCard pr={pr} caption={prDraft.caption} />;
   }
 
   return (
