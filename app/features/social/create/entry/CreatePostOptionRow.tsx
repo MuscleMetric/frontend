@@ -74,7 +74,7 @@ export default function CreatePostOptionRow({
       </View>
 
       <View style={styles.chevron}>
-        <Icon name={"chevron-right" as any} size={18} color={colors.textMuted} />
+        <Icon name={"chevron-forward" as any} size={18} color={colors.textMuted} />
       </View>
     </TouchableOpacity>
   );

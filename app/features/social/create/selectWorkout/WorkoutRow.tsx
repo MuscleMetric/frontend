@@ -65,7 +65,7 @@ export default function WorkoutRow({ workout, selected, onPress }: Props) {
         right: {
           marginLeft: 12,
           alignItems: "flex-end",
-          justifyContent: "space-between",
+          justifyContent: "center",
           height: 56,
         },
         check: {
@@ -130,13 +130,11 @@ export default function WorkoutRow({ workout, selected, onPress }: Props) {
         <View style={styles.right}>
           <View style={styles.check}>
             {selected ? (
-              <Icon name={"check" as any} size={16} color={colors.onPrimary} />
+              <Icon name={"checkmark" as any} size={16} color={colors.onPrimary} />
             ) : (
               <View />
             )}
           </View>
-
-          <Icon name={"chevron-right" as any} size={18} color={colors.textMuted} />
         </View>
       )}
     </TouchableOpacity>

@@ -65,15 +65,12 @@ export type PrSelection = {
   imageUri?: null;
 };
 
-export type WorkoutPostTemplateId = "cinematic" | "clean" | "stats";
-
 /**
  * Draft data for each post type editor.
  * Keep this minimal: preview must match final payload later, but that snapshot
  * gets assembled right before publish.
  */
 export type WorkoutPostDraft = {
-  templateId: WorkoutPostTemplateId;
   caption: string;
   audience: Audience;
 };
@@ -135,7 +132,6 @@ export type CreatePostAction =
 
   // editor changes
   | { type: "SET_AUDIENCE"; audience: Audience }
-  | { type: "SET_WORKOUT_TEMPLATE"; templateId: WorkoutPostTemplateId }
   | { type: "SET_WORKOUT_CAPTION"; caption: string }
   | { type: "SET_PR_CAPTION"; caption: string }
   | { type: "SET_TEXT_BODY"; text: string }

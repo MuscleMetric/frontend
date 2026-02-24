@@ -107,7 +107,7 @@ export default function CreatePostSheet({ visible, onClose, onChoose }: Props) {
             <CreatePostOptionRow
               title="Workout Post"
               subtitle="Share a completed session"
-              iconName="dumbbell"
+              iconName="barbell-outline"
               onPress={() => onChoose("workout")}
             />
             <CreatePostOptionRow
@@ -119,7 +119,7 @@ export default function CreatePostSheet({ visible, onClose, onChoose }: Props) {
             <CreatePostOptionRow
               title="Text Post"
               subtitle="Share an update with your circle"
-              iconName="message-square"
+              iconName="chatbubble-outline"
               onPress={() => onChoose("text")}
             />
           </View>

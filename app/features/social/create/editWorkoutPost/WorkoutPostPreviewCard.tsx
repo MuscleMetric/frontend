@@ -3,16 +3,19 @@
 import React, { useMemo } from "react";
 import { View, Text, StyleSheet, ImageBackground } from "react-native";
 import { useAppTheme } from "@/lib/useAppTheme";
-import type { WorkoutSelection, WorkoutPostTemplateId } from "../state/createPostTypes";
-import { formatDateShort, formatDuration, formatNumber } from "../shared/formatters";
+import type { WorkoutSelection } from "../state/createPostTypes";
+import {
+  formatDateShort,
+  formatDuration,
+  formatNumber,
+} from "../shared/formatters";
 
 type Props = {
   workout: WorkoutSelection;
   caption?: string;
-  templateId: WorkoutPostTemplateId;
 };
 
-export default function WorkoutPostPreviewCard({ workout, caption, templateId }: Props) {
+export default function WorkoutPostPreviewCard({ workout, caption }: Props) {
   const { colors, typography } = useAppTheme();
 
   const styles = useMemo(
@@ -62,7 +65,9 @@ export default function WorkoutPostPreviewCard({ workout, caption, templateId }:
           borderRadius: 16,
           paddingVertical: 10,
           paddingHorizontal: 12,
-          backgroundColor: workout.imageUri ? "rgba(255,255,255,0.14)" : colors.surface,
+          backgroundColor: workout.imageUri
+            ? "rgba(255,255,255,0.14)"
+            : colors.surface,
           borderWidth: workout.imageUri ? 0 : 1,
           borderColor: colors.border,
         },
@@ -89,7 +94,9 @@ export default function WorkoutPostPreviewCard({ workout, caption, templateId }:
           marginTop: 12,
           borderRadius: 16,
           padding: 12,
-          backgroundColor: workout.imageUri ? "rgba(255,255,255,0.12)" : colors.surface,
+          backgroundColor: workout.imageUri
+            ? "rgba(255,255,255,0.12)"
+            : colors.surface,
           borderWidth: workout.imageUri ? 0 : 1,
           borderColor: colors.border,
         },
@@ -124,19 +131,17 @@ export default function WorkoutPostPreviewCard({ workout, caption, templateId }:
         },
         bottomSafe: { height: 4 },
       }),
-    [colors, typography, workout.imageUri]
+    [colors, typography, workout.imageUri],
   );
 
   const duration = formatDuration(workout.durationSeconds);
   const sets = workout.totalSets == null ? "--" : String(workout.totalSets);
   const volume =
-    workout.totalVolume == null ? "--" : `${formatNumber(workout.totalVolume)} ${workout.volumeUnit ?? ""}`.trim();
+    workout.totalVolume == null
+      ? "--"
+      : `${formatNumber(workout.totalVolume)} ${workout.volumeUnit ?? ""}`.trim();
 
   const top = (workout.topExercises ?? []).slice(0, 3);
-
-  // Template behavior (kept subtle; actual visuals should remain premium + minimal)
-  const showExercises = templateId !== "stats";
-  const bigVolume = templateId !== "clean";
 
   const content = (
     <View>
@@ -160,36 +165,41 @@ export default function WorkoutPostPreviewCard({ workout, caption, templateId }:
 
         <View style={styles.statBox}>
           <Text style={styles.statLabel}>Volume</Text>
-          <Text style={bigVolume ? styles.statValue : styles.statValueSmall} numberOfLines={1}>
+          <Text
+            style={volume ? styles.statValue : styles.statValueSmall}
+            numberOfLines={1}
+          >
             {volume}
           </Text>
         </View>
       </View>
 
-      {showExercises && (
-        <View style={styles.listWrap}>
-          <Text style={styles.listTitle}>Top exercises</Text>
-          {top.length ? (
-            top.map((e) => (
-              <View key={e.exerciseId} style={styles.listItem}>
-                <Text style={styles.listLeft} numberOfLines={1}>
-                  {e.name}
-                </Text>
-                <Text style={styles.listRight}>
-                  {e.volume == null ? "--" : formatNumber(e.volume)}
-                </Text>
-              </View>
-            ))
-          ) : (
-            <View style={styles.listItem}>
-              <Text style={styles.listLeft}>—</Text>
-              <Text style={styles.listRight}>—</Text>
+      <View style={styles.listWrap}>
+        <Text style={styles.listTitle}>Top exercises</Text>
+        {top.length ? (
+          top.map((e) => (
+            <View key={e.exerciseId} style={styles.listItem}>
+              <Text style={styles.listLeft} numberOfLines={1}>
+                {e.name}
+              </Text>
+              <Text style={styles.listRight}>
+                {e.volume == null ? "--" : formatNumber(e.volume)}
+              </Text>
             </View>
-          )}
-        </View>
-      )}
+          ))
+        ) : (
+          <View style={styles.listItem}>
+            <Text style={styles.listLeft}>—</Text>
+            <Text style={styles.listRight}>—</Text>
+          </View>
+        )}
+      </View>
 
-      {!!caption?.trim() && <Text style={styles.caption} numberOfLines={3}>{caption.trim()}</Text>}
+      {!!caption?.trim() && (
+        <Text style={styles.caption} numberOfLines={3}>
+          {caption.trim()}
+        </Text>
+      )}
       <View style={styles.bottomSafe} />
     </View>
   );
@@ -197,7 +207,10 @@ export default function WorkoutPostPreviewCard({ workout, caption, templateId }:
   if (workout.imageUri) {
     return (
       <View style={styles.card}>
-        <ImageBackground source={{ uri: workout.imageUri }} style={styles.image}>
+        <ImageBackground
+          source={{ uri: workout.imageUri }}
+          style={styles.image}
+        >
           <View style={styles.overlay} />
           {content}
         </ImageBackground>

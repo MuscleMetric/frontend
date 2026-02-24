@@ -6,11 +6,9 @@ import type {
   CreatePostAction,
   CreatePostState,
   PostType,
-  WorkoutPostTemplateId,
 } from "./createPostTypes";
 
-const DEFAULT_AUDIENCE: Audience = "followers";
-const DEFAULT_WORKOUT_TEMPLATE: WorkoutPostTemplateId = "cinematic";
+const DEFAULT_AUDIENCE: Audience = "public";
 
 export const initialCreatePostState: CreatePostState = {
   step: "sheet",
@@ -20,7 +18,6 @@ export const initialCreatePostState: CreatePostState = {
   pr: null,
 
   workoutDraft: {
-    templateId: DEFAULT_WORKOUT_TEMPLATE,
     caption: "",
     audience: DEFAULT_AUDIENCE,
   },
@@ -59,7 +56,7 @@ function canGoBack(state: CreatePostState): boolean {
 
 export function createPostReducer(
   state: CreatePostState,
-  action: CreatePostAction
+  action: CreatePostAction,
 ): CreatePostState {
   switch (action.type) {
     case "RESET_ALL":
@@ -69,7 +66,13 @@ export function createPostReducer(
       return { ...initialCreatePostState, step: "sheet" };
 
     case "OPEN_SHEET":
-      return { ...state, step: "sheet", publishStatus: "idle", publishError: null, createdPostId: null };
+      return {
+        ...state,
+        step: "sheet",
+        publishStatus: "idle",
+        publishError: null,
+        createdPostId: null,
+      };
 
     case "CHOOSE_POST_TYPE": {
       const step = stepForPostType(action.postType);
@@ -79,8 +82,8 @@ export function createPostReducer(
         action.postType === "workout"
           ? { pr: null }
           : action.postType === "pr"
-          ? { workout: null }
-          : { workout: null, pr: null };
+            ? { workout: null }
+            : { workout: null, pr: null };
 
       return {
         ...state,
@@ -125,8 +128,6 @@ export function createPostReducer(
       return {
         ...state,
         workout: action.workout,
-        // once selected, user can proceed to editor
-        step: "edit_workout",
       };
 
     case "CLEAR_WORKOUT_SELECTION":
@@ -149,16 +150,16 @@ export function createPostReducer(
         };
       }
       if (state.postType === "pr") {
-        return { ...state, prDraft: { ...state.prDraft, audience: action.audience } };
+        return {
+          ...state,
+          prDraft: { ...state.prDraft, audience: action.audience },
+        };
       }
-      return { ...state, textDraft: { ...state.textDraft, audience: action.audience } };
-    }
-
-    case "SET_WORKOUT_TEMPLATE":
       return {
         ...state,
-        workoutDraft: { ...state.workoutDraft, templateId: action.templateId },
+        textDraft: { ...state.textDraft, audience: action.audience },
       };
+    }
 
     case "SET_WORKOUT_CAPTION":
       return {
@@ -167,7 +168,10 @@ export function createPostReducer(
       };
 
     case "SET_PR_CAPTION":
-      return { ...state, prDraft: { ...state.prDraft, caption: action.caption } };
+      return {
+        ...state,
+        prDraft: { ...state.prDraft, caption: action.caption },
+      };
 
     case "SET_TEXT_BODY":
       return { ...state, textDraft: { ...state.textDraft, text: action.text } };
@@ -200,12 +204,12 @@ export function createPostReducer(
  * Keeps all create-post flow state in one place.
  */
 export function useCreatePostMachine(
-  overrideInitial?: Partial<CreatePostState>
+  overrideInitial?: Partial<CreatePostState>,
 ) {
-  const [state, dispatch] = React.useReducer(
-    createPostReducer,
-    { ...initialCreatePostState, ...(overrideInitial ?? {}) }
-  );
+  const [state, dispatch] = React.useReducer(createPostReducer, {
+    ...initialCreatePostState,
+    ...(overrideInitial ?? {}),
+  });
 
   const actions = React.useMemo(() => {
     return {
@@ -226,7 +230,8 @@ export function useCreatePostMachine(
         if (!workout) return;
         dispatch({ type: "SELECT_WORKOUT", workout });
       },
-      clearWorkoutSelection: () => dispatch({ type: "CLEAR_WORKOUT_SELECTION" }),
+      clearWorkoutSelection: () =>
+        dispatch({ type: "CLEAR_WORKOUT_SELECTION" }),
 
       selectPr: (pr: CreatePostState["pr"]) => {
         if (!pr) return;
@@ -234,18 +239,19 @@ export function useCreatePostMachine(
       },
       clearPrSelection: () => dispatch({ type: "CLEAR_PR_SELECTION" }),
 
-      setAudience: (audience: Audience) => dispatch({ type: "SET_AUDIENCE", audience }),
-      setWorkoutTemplate: (templateId: WorkoutPostTemplateId) =>
-        dispatch({ type: "SET_WORKOUT_TEMPLATE", templateId }),
+      setAudience: (audience: Audience) =>
+        dispatch({ type: "SET_AUDIENCE", audience }),
       setWorkoutCaption: (caption: string) =>
         dispatch({ type: "SET_WORKOUT_CAPTION", caption }),
-      setPrCaption: (caption: string) => dispatch({ type: "SET_PR_CAPTION", caption }),
+      setPrCaption: (caption: string) =>
+        dispatch({ type: "SET_PR_CAPTION", caption }),
       setTextBody: (text: string) => dispatch({ type: "SET_TEXT_BODY", text }),
 
       publishStart: () => dispatch({ type: "PUBLISH_START" }),
       publishSuccess: (createdPostId: string) =>
         dispatch({ type: "PUBLISH_SUCCESS", createdPostId }),
-      publishError: (message: string) => dispatch({ type: "PUBLISH_ERROR", message }),
+      publishError: (message: string) =>
+        dispatch({ type: "PUBLISH_ERROR", message }),
       clearPublishError: () => dispatch({ type: "CLEAR_PUBLISH_ERROR" }),
     };
   }, []);

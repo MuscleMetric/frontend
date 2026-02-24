@@ -16,16 +16,19 @@ import { Icon } from "@/ui/icons/Icon";
 import type { WorkoutSelection } from "../state/createPostTypes";
 import PrimaryActionButton from "../shared/PrimaryActionButton";
 import WorkoutRow from "./WorkoutRow";
-import { useWorkoutSearch } from "./useWorkoutSearch";
 
 type Props = {
+  // ✅ Already filtered server-side by get_create_post_bootstrap_v1 (via parent)
   workouts: WorkoutSelection[];
   selectedWorkoutId: string | null;
   onSelect: (workout: WorkoutSelection) => void;
 
   onBack: () => void;
+
+  // ✅ Parent should call get_workout_for_post_v1 on Next, then route to edit_workout
   onNext: () => void;
 
+  // ✅ Query drives server-side search (bootstrap), not local filtering
   query: string;
   onChangeQuery: (q: string) => void;
 
@@ -126,14 +129,16 @@ export default function SelectWorkoutScreen(props: Props) {
     [colors, typography, layout, insets.top, insets.bottom]
   );
 
-  const filtered = useWorkoutSearch(props.workouts, props.query);
-
   return (
     <View style={styles.screen}>
       <View style={styles.header}>
         <View style={styles.topRow}>
-          <TouchableOpacity style={styles.backBtn} onPress={props.onBack} activeOpacity={0.85}>
-            <Icon name={"chevron-left" as any} size={18} color={colors.text} />
+          <TouchableOpacity
+            style={styles.backBtn}
+            onPress={props.onBack}
+            activeOpacity={0.85}
+          >
+            <Icon name={"chevron-back" as any} size={18} color={colors.text} />
           </TouchableOpacity>
 
           <View style={styles.titleWrap}>
@@ -161,7 +166,7 @@ export default function SelectWorkoutScreen(props: Props) {
       </View>
 
       <FlatList
-        data={filtered}
+        data={props.workouts}
         keyExtractor={(item) => item.workoutHistoryId}
         contentContainerStyle={styles.list}
         ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
@@ -173,12 +178,14 @@ export default function SelectWorkoutScreen(props: Props) {
           />
         )}
         ListEmptyComponent={
-          <View style={styles.empty}>
-            <Text style={styles.emptyTitle}>No workouts found</Text>
-            <Text style={styles.emptySub}>
-              Try a different search, or complete a workout first.
-            </Text>
-          </View>
+          props.loading ? null : (
+            <View style={styles.empty}>
+              <Text style={styles.emptyTitle}>No workouts found</Text>
+              <Text style={styles.emptySub}>
+                Try a different search, or complete a workout first.
+              </Text>
+            </View>
+          )
         }
       />
 
@@ -186,7 +193,7 @@ export default function SelectWorkoutScreen(props: Props) {
         <PrimaryActionButton
           label="Next"
           onPress={props.onNext}
-          disabled={!props.selectedWorkoutId || props.loading}
+          disabled={!props.selectedWorkoutId || !!props.loading}
           loading={props.loading}
         />
       </View>
