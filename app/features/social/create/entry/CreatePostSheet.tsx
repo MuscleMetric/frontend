@@ -116,12 +116,6 @@ export default function CreatePostSheet({ visible, onClose, onChoose }: Props) {
               iconName="trophy"
               onPress={() => onChoose("pr")}
             />
-            <CreatePostOptionRow
-              title="Text Post"
-              subtitle="Share an update with your circle"
-              iconName="chatbubble-outline"
-              onPress={() => onChoose("text")}
-            />
           </View>
         </Pressable>
       </Pressable>

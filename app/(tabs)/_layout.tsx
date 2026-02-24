@@ -38,7 +38,7 @@ function CustomHeader({
 
   const styles = useMemo(
     () => makeStyles(colors, typography, layout),
-    [colors, typography, layout]
+    [colors, typography, layout],
   );
 
   return (
@@ -323,7 +323,12 @@ export default function TabsLayout() {
                 </Pressable>
 
                 <Pressable
-                  onPress={() => router.push("/features/social/create")}
+                  onPress={() =>
+                    router.push({
+                      pathname: "/(tabs)/social",
+                      params: { openCreate: "1" },
+                    })
+                  }
                   hitSlop={10}
                   style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
                 >

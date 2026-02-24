@@ -15,6 +15,8 @@ import {
 } from "react-native";
 import { useAppTheme } from "@/lib/useAppTheme";
 import { supabase } from "../../../lib/supabase";
+import { useLocalSearchParams, router } from "expo-router";
+import CreatePostSheet from "@/app/features/social/create/entry/CreatePostSheet";
 
 // ✅ NEW feed module
 import { FeedList } from "./feed/FeedList";
@@ -74,7 +76,7 @@ export default function SocialScreen() {
           textAlign: "center",
         },
       }),
-    [colors, typography, layout]
+    [colors, typography, layout],
   );
 
   const PAGE_SIZE = 20;
@@ -95,6 +97,18 @@ export default function SocialScreen() {
   const [postModalOpen, setPostModalOpen] = useState(false);
   const [selectedPost, setSelectedPost] = useState<FeedRow | null>(null);
 
+  const params = useLocalSearchParams<{ openCreate?: string }>();
+  const [createSheetOpen, setCreateSheetOpen] = useState(false);
+
+  useEffect(() => {
+    if (params.openCreate === "1") {
+      setCreateSheetOpen(true);
+
+      // clear param so it doesn't reopen
+      router.setParams({ openCreate: undefined });
+    }
+  }, [params.openCreate]);
+
   const openComments = useCallback((post: FeedRow) => {
     setSelectedPost(post);
     setPostModalOpen(true);
@@ -114,7 +128,7 @@ export default function SocialScreen() {
       if (res.error) throw res.error;
       return (res.data ?? []) as CommentRow[];
     },
-    []
+    [],
   );
 
   const bumpCommentCount = useCallback((postId: string, delta: number) => {
@@ -122,8 +136,11 @@ export default function SocialScreen() {
       prev.map((r) =>
         r.post_id !== postId
           ? r
-          : { ...r, comment_count: Math.max(0, (r.comment_count ?? 0) + delta) }
-      )
+          : {
+              ...r,
+              comment_count: Math.max(0, (r.comment_count ?? 0) + delta),
+            },
+      ),
     );
 
     setSelectedPost((prev) =>
@@ -132,7 +149,7 @@ export default function SocialScreen() {
         : {
             ...prev,
             comment_count: Math.max(0, (prev.comment_count ?? 0) + delta),
-          }
+          },
     );
   }, []);
 
@@ -148,27 +165,27 @@ export default function SocialScreen() {
       // ✅ update counts locally (no refetch)
       bumpCommentCount(postId, +1);
     },
-    [bumpCommentCount]
+    [bumpCommentCount],
   );
 
   const fetchWorkoutDetails = useCallback(
     async (_postId: string): Promise<WorkoutDetailsPayload | null> => {
       return null;
     },
-    []
+    [],
   );
 
   const applyCursorFrom = useCallback(
     (
       data: FeedRow[],
       fallbackCreatedAt: string | null,
-      fallbackId: string | null
+      fallbackId: string | null,
     ) => {
       const last = data[data.length - 1];
       setCursorCreatedAt(last?.created_at ?? fallbackCreatedAt);
       setCursorId(last?.post_id ?? fallbackId);
     },
-    []
+    [],
   );
 
   const loadInitial = useCallback(async () => {
@@ -267,7 +284,7 @@ export default function SocialScreen() {
             viewer_liked: nextLiked,
             like_count: Math.max(0, r.like_count + (nextLiked ? 1 : -1)),
           };
-        })
+        }),
       );
 
       // 2) server toggle + reconcile
@@ -285,10 +302,10 @@ export default function SocialScreen() {
               viewer_liked: prevLiked,
               like_count: Math.max(
                 0,
-                r.like_count + (prevLiked ? 1 : -1) - (!prevLiked ? 1 : -1)
+                r.like_count + (prevLiked ? 1 : -1) - (!prevLiked ? 1 : -1),
               ),
             };
-          })
+          }),
         );
         return;
       }
@@ -303,11 +320,11 @@ export default function SocialScreen() {
         prev.map((r) =>
           r.post_id !== postId
             ? r
-            : { ...r, viewer_liked: row.liked, like_count: row.like_count }
-        )
+            : { ...r, viewer_liked: row.liked, like_count: row.like_count },
+        ),
       );
     },
-    [setRows]
+    [setRows],
   );
 
   // -------- UI states --------
@@ -362,6 +379,19 @@ export default function SocialScreen() {
         fetchComments={fetchComments}
         addComment={addComment}
         fetchWorkoutDetails={fetchWorkoutDetails}
+      />
+
+      <CreatePostSheet
+        visible={createSheetOpen}
+        onClose={() => setCreateSheetOpen(false)}
+        onChoose={(type) => {
+          setCreateSheetOpen(false);
+
+          router.push({
+            pathname: "/features/social/create",
+            params: { type },
+          });
+        }}
       />
     </View>
   );

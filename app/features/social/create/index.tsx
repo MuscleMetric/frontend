@@ -2,7 +2,7 @@
 
 import React from "react";
 import { View } from "react-native";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { supabase } from "@/lib/supabase";
 
 import { useCreatePostMachine } from "./state/createPostMachine";
@@ -16,6 +16,10 @@ import PostSuccessSheet from "./success/PostSuccessSheet";
 const RPC_CREATE_POST_BOOTSTRAP = "get_create_post_bootstrap_v1";
 const RPC_GET_WORKOUT_FOR_POST = "get_workout_for_post_v1";
 const RPC_CREATE_POST_V2 = "create_post_v2";
+
+type RouteParams = {
+  type?: "workout" | "pr";
+};
 
 // map bootstrap workouts -> WorkoutSelection shape
 function mapBootstrapWorkoutToSelection(item: any, unit: "kg" | "lb") {
@@ -42,6 +46,9 @@ function mapBootstrapWorkoutToSelection(item: any, unit: "kg" | "lb") {
 
 export default function CreatePostFlow() {
   const router = useRouter();
+  const params = useLocalSearchParams<RouteParams>();
+  const routeType = params.type;
+
   const { state, actions } = useCreatePostMachine();
 
   const [workouts, setWorkouts] = React.useState<any[]>([]);
@@ -50,6 +57,17 @@ export default function CreatePostFlow() {
   // full workout detail for the edit screen (exercises + sets)
   const [workoutDetail, setWorkoutDetail] = React.useState<any | null>(null);
   const [loadingWorkoutDetail, setLoadingWorkoutDetail] = React.useState(false);
+
+  // ✅ On mount: if route param says what flow, jump into it.
+  React.useEffect(() => {
+    if (!routeType) return;
+
+    // if we're already in the right flow, do nothing
+    if (state.postType === routeType) return;
+
+    actions.choosePostType(routeType);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routeType]);
 
   async function loadBootstrap(query: string | null) {
     setLoadingWorkouts(true);
@@ -89,8 +107,6 @@ export default function CreatePostFlow() {
       return false;
     }
 
-    console.log("Workout detail RPC result:", data);
-
     setWorkoutDetail(data);
     return true;
   }
@@ -114,10 +130,13 @@ export default function CreatePostFlow() {
     if (state.step === "select_workout") setWorkoutDetail(null);
   }, [state.step]);
 
+  const showFallbackSheet = state.step === "sheet" && !routeType;
+
   return (
     <View style={{ flex: 1 }}>
+      {/* ✅ Fallback only (deep link without param). Normal path: sheet is on SocialScreen */}
       <CreatePostSheet
-        visible={state.step === "sheet"}
+        visible={showFallbackSheet}
         onClose={() => router.back()}
         onChoose={(type) => actions.choosePostType(type)}
       />
@@ -126,8 +145,8 @@ export default function CreatePostFlow() {
         <SelectWorkoutScreen
           workouts={workouts}
           selectedWorkoutId={state.workout?.workoutHistoryId ?? null}
-          onSelect={(w) => actions.selectWorkout(w)}
-          onBack={actions.back}
+          onSelect={(w) => actions.selectWorkout(w)} 
+          onBack={() => router.replace("/(tabs)/social")}
           onNext={async () => {
             const id = state.workout?.workoutHistoryId;
             if (!id) return;
@@ -144,7 +163,7 @@ export default function CreatePostFlow() {
       {state.step === "edit_workout" && (
         <EditWorkoutPostScreen
           workout={state.workout}
-          workoutDetail={workoutDetail} 
+          workoutDetail={workoutDetail}
           draft={state.workoutDraft}
           onBack={actions.back}
           onChangeAudience={actions.setAudience}
@@ -164,7 +183,7 @@ export default function CreatePostFlow() {
                 p_pr_weight: null,
                 p_visibility: state.workoutDraft.audience,
                 p_workout_history_id: state.workout.workoutHistoryId,
-              },
+              }
             );
 
             if (error) {
@@ -173,7 +192,6 @@ export default function CreatePostFlow() {
               return;
             }
 
-            // ✅ real UUID from DB insert
             actions.publishSuccess(postId);
           }}
           posting={state.publishStatus === "publishing"}
@@ -189,6 +207,7 @@ export default function CreatePostFlow() {
           onChangeCaption={actions.setPrCaption}
           onPost={async () => {
             actions.publishStart();
+            // TODO: wire PR create_post_v2 branch later
             setTimeout(() => {
               actions.publishSuccess("temp-id");
             }, 600);
