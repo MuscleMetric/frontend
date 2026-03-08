@@ -15,6 +15,8 @@ export type CreatePostStep =
   | "sheet"
   | "select_workout"
   | "edit_workout"
+  | "select_pr_exercise"
+  | "select_pr_event"
   | "edit_pr"
   | "success";
 

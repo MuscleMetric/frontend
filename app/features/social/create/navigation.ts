@@ -17,14 +17,15 @@ export const CREATE_POST_STEPS: CreatePostStep[] = [
   "sheet",
   "select_workout",
   "edit_workout",
+  "select_pr_exercise",
+  "select_pr_event",
   "edit_pr",
   "success",
 ];
 
 export function nextStepForPostType(postType: PostType): CreatePostStep {
   if (postType === "workout") return "select_workout";
-  if (postType === "pr") return "edit_pr";
-  // text flow can be added later; for now route to edit_pr or create a new step "edit_text"
+  if (postType === "pr") return "select_pr_exercise";
   return "edit_pr";
 }
 

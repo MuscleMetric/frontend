@@ -16,12 +16,15 @@ import PostSuccessSheet from "./success/PostSuccessSheet";
 const RPC_CREATE_POST_BOOTSTRAP = "get_create_post_bootstrap_v1";
 const RPC_GET_WORKOUT_FOR_POST = "get_workout_for_post_v1";
 const RPC_CREATE_POST_V2 = "create_post_v2";
+const RPC_GET_PR_EXERCISES = "get_pr_exercises_v1";
+
+// you will create this next
+const RPC_GET_EXERCISE_PR_EVENTS = "get_exercise_pr_events_v1";
 
 type RouteParams = {
   type?: "workout" | "pr";
 };
 
-// map bootstrap workouts -> WorkoutSelection shape
 function mapBootstrapWorkoutToSelection(item: any, unit: "kg" | "lb") {
   return {
     workoutHistoryId: item.workout_history_id,
@@ -37,10 +40,24 @@ function mapBootstrapWorkoutToSelection(item: any, unit: "kg" | "lb") {
       name: x.name,
       volume: null,
     })),
-
-    // ✅ now supported by bootstrap
     imageKey: item.workout_image_key ?? null,
     imageUri: null,
+  };
+}
+
+function mapPrExerciseToSelection(exercise: any) {
+  return {
+    id: `${exercise.exercise_id}:${exercise.best_weight}:${exercise.best_reps}:${exercise.best_achieved_at}`,
+    exerciseId: exercise.exercise_id,
+    exerciseName: exercise.exercise_name,
+    value: exercise.best_weight,
+    reps: exercise.best_reps,
+    unit: "kg",
+    achievedAt: exercise.best_achieved_at,
+    deltaValue: exercise.delta_weight ?? null,
+    previousValue: exercise.previous_best_weight ?? null,
+    estimated1RM: exercise.estimated_1rm ?? null,
+    workoutHistoryId: exercise.workout_history_id ?? null,
   };
 }
 
@@ -54,15 +71,55 @@ export default function CreatePostFlow() {
   const [workouts, setWorkouts] = React.useState<any[]>([]);
   const [loadingWorkouts, setLoadingWorkouts] = React.useState(false);
 
-  // full workout detail for the edit screen (exercises + sets)
   const [workoutDetail, setWorkoutDetail] = React.useState<any | null>(null);
   const [loadingWorkoutDetail, setLoadingWorkoutDetail] = React.useState(false);
 
-  // ✅ On mount: if route param says what flow, jump into it.
+  const [prExercises, setPrExercises] = React.useState<any[]>([]);
+  const [loadingPrExercises, setLoadingPrExercises] = React.useState(false);
+
+  const [selectedPrExerciseId, setSelectedPrExerciseId] = React.useState<
+    string | null
+  >(null);
+
+  const [prSearchQuery, setPrSearchQuery] = React.useState("");
+
+  async function loadPrExercises() {
+    setLoadingPrExercises(true);
+
+    const { data, error } = await supabase.rpc(RPC_GET_PR_EXERCISES, {
+      p_query: null,
+      p_limit: 50,
+    });
+
+    setLoadingPrExercises(false);
+
+    if (error) {
+      console.error("get_pr_exercises_v1 error:", error);
+      setPrExercises([]);
+      return;
+    }
+
+    setPrExercises(data?.items ?? []);
+  }
+
+  const filteredPrExercises = React.useMemo(() => {
+    const q = prSearchQuery.trim().toLowerCase();
+    if (!q) return prExercises;
+
+    return prExercises.filter((item) =>
+      String(item.exercise_name ?? "")
+        .toLowerCase()
+        .includes(q),
+    );
+  }, [prExercises, prSearchQuery]);
+
+  React.useEffect(() => {
+    if (state.step !== "select_pr_exercise") return;
+    loadPrExercises();
+  }, [state.step]);
+
   React.useEffect(() => {
     if (!routeType) return;
-
-    // if we're already in the right flow, do nothing
     if (state.postType === routeType) return;
 
     actions.choosePostType(routeType);
@@ -74,7 +131,7 @@ export default function CreatePostFlow() {
 
     const { data, error } = await supabase.rpc(RPC_CREATE_POST_BOOTSTRAP, {
       p_workout_limit: 50,
-      p_pr_limit: 0, // we don't need PRs yet
+      p_pr_limit: 0,
       p_query: query && query.trim() ? query : null,
     });
 
@@ -111,30 +168,34 @@ export default function CreatePostFlow() {
     return true;
   }
 
-  // Load bootstrap when entering select_workout
   React.useEffect(() => {
     if (state.step !== "select_workout") return;
     loadBootstrap(state.workoutSearchQuery ?? null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.step]);
 
-  // Reload bootstrap on search while on select_workout
   React.useEffect(() => {
     if (state.step !== "select_workout") return;
     loadBootstrap(state.workoutSearchQuery ?? null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.workoutSearchQuery, state.step]);
 
-  // Clear detail when returning to selector (so edit always uses correct selected workout)
   React.useEffect(() => {
-    if (state.step === "select_workout") setWorkoutDetail(null);
+    if (state.step === "select_workout") {
+      setWorkoutDetail(null);
+    }
+
+    if (state.step === "select_pr_exercise") {
+      setSelectedPrExerciseId(null);
+    } else {
+      setPrSearchQuery("");
+    }
   }, [state.step]);
 
   const showFallbackSheet = state.step === "sheet" && !routeType;
 
   return (
     <View style={{ flex: 1 }}>
-      {/* ✅ Fallback only (deep link without param). Normal path: sheet is on SocialScreen */}
       <CreatePostSheet
         visible={showFallbackSheet}
         onClose={() => router.back()}
@@ -145,7 +206,7 @@ export default function CreatePostFlow() {
         <SelectWorkoutScreen
           workouts={workouts}
           selectedWorkoutId={state.workout?.workoutHistoryId ?? null}
-          onSelect={(w) => actions.selectWorkout(w)} 
+          onSelect={(w) => actions.selectWorkout(w)}
           onBack={() => router.replace("/(tabs)/social")}
           onNext={async () => {
             const id = state.workout?.workoutHistoryId;
@@ -183,7 +244,7 @@ export default function CreatePostFlow() {
                 p_pr_weight: null,
                 p_visibility: state.workoutDraft.audience,
                 p_workout_history_id: state.workout.workoutHistoryId,
-              }
+              },
             );
 
             if (error) {
@@ -198,19 +259,56 @@ export default function CreatePostFlow() {
         />
       )}
 
-      {state.step === "edit_pr" && (
+      {(state.step === "select_pr_exercise" || state.step === "edit_pr") && (
         <EditPrPostScreen
+          mode={state.step === "select_pr_exercise" ? "select" : "compose"}
           pr={state.pr}
           draft={state.prDraft}
-          onBack={actions.back}
+          query={prSearchQuery}
+          onChangeQuery={setPrSearchQuery}
+          exercises={filteredPrExercises}
+          selectedExerciseId={selectedPrExerciseId}
+          onSelectExercise={(exercise) => {
+            setSelectedPrExerciseId(exercise.exercise_id);
+            actions.selectPr(mapPrExerciseToSelection(exercise) as any);
+          }}
+          onContinueFromSelection={() => {
+            if (!state.pr) return;
+            actions.goto("edit_pr");
+          }}
+          loadingExercises={loadingPrExercises}
+          onBack={
+            state.step === "select_pr_exercise"
+              ? () => router.replace("/(tabs)/social")
+              : actions.back
+          }
           onChangeAudience={actions.setAudience}
           onChangeCaption={actions.setPrCaption}
           onPost={async () => {
+            if (!state.pr) return;
+
             actions.publishStart();
-            // TODO: wire PR create_post_v2 branch later
-            setTimeout(() => {
-              actions.publishSuccess("temp-id");
-            }, 600);
+
+            const { data: postId, error } = await supabase.rpc(
+              RPC_CREATE_POST_V2,
+              {
+                p_caption: state.prDraft.caption ?? null,
+                p_exercise_id: state.pr.exerciseId,
+                p_post_type: "pr",
+                p_pr_reps: state.pr.reps,
+                p_pr_weight: state.pr.value,
+                p_visibility: state.prDraft.audience,
+                p_workout_history_id: state.pr.workoutHistoryId ?? null,
+              },
+            );
+
+            if (error) {
+              console.error("create_post_v2 PR error:", error);
+              actions.publishError(error.message);
+              return;
+            }
+
+            actions.publishSuccess(postId);
           }}
           posting={state.publishStatus === "publishing"}
         />
@@ -220,9 +318,7 @@ export default function CreatePostFlow() {
         visible={state.step === "success"}
         onClose={() => router.replace("/(tabs)/social")}
         onViewFeed={() => router.replace("/(tabs)/social")}
-        onShareExternally={() => {
-          // TODO: implement share logic
-        }}
+        onShareExternally={() => {}}
         postType={state.postType}
         workout={state.workout}
         workoutDraft={state.workoutDraft}

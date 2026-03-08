@@ -48,7 +48,7 @@ export const initialCreatePostState: CreatePostState = {
  */
 function stepForPostType(postType: PostType): CreatePostState["step"] {
   if (postType === "workout") return "select_workout";
-  if (postType === "pr") return "edit_pr";
+  if (postType === "pr") return "select_pr_exercise";
   return "edit_pr"; // temporary: treat text as later; you can add edit_text step if needed
 }
 
