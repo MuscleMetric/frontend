@@ -18,6 +18,7 @@ export type UserRole = "user" | "pt" | "admin";
 export type Profile = {
   id: string;
   name: string | null;
+  username: string | null; // ✅ add this
   email: string | null;
   onboarding_step: number;
   onboarding_completed_at: string | null;
@@ -52,7 +53,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const { data, error } = await supabase
       .from("profiles")
       .select(
-        "id, name, email, role, onboarding_step, onboarding_completed_at, onboarding_dismissed_at"
+        "id, name, username, email, role, onboarding_step, onboarding_completed_at, onboarding_dismissed_at",
       )
       .eq("id", userId)
       .single();
@@ -66,6 +67,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const safe: Profile = {
       id: data.id,
       name: data.name ?? null,
+      username: data.username ?? null, // ✅ add
       email: data.email ?? null,
       role: (data.role as UserRole) ?? null,
       onboarding_step: Number(data.onboarding_step ?? 0),
@@ -117,7 +119,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const { data, error } = await supabase.auth.getSession();
         if (!mounted) return;
 
-        const sess = error ? null : data.session ?? null;
+        const sess = error ? null : (data.session ?? null);
         setSession(sess);
         setLoading(false); // ✅ don't block on profile
 
@@ -142,7 +144,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         if (sess?.user?.id) fetchProfile(sess.user.id);
         else setProfile(null);
-      }
+      },
     );
 
     return () => {

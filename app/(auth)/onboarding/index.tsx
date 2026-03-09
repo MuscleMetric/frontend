@@ -20,6 +20,7 @@ import { ReadyStep } from "./steps/ReadyStep";
 
 const DEFAULT_DRAFT: OnboardingDraft = {
   fullName: "",
+  username: "",
   email: "",
   dob: null,
   gender: null,
@@ -78,6 +79,48 @@ export default function OnboardingIndex() {
     }));
   }, [session]);
 
+  async function ensureUsernameOk(): Promise<true | string> {
+    const raw = (draft.username ?? "").trim();
+
+    // Let your schema catch empty, but we can short-circuit too
+    if (!raw) return "Add a username";
+
+    const res = await supabase
+      .rpc("check_username_available_v1", { p_username: raw })
+      .single();
+
+    if (res.error) {
+      return res.error.message ?? "Failed to check username";
+    }
+
+    const row = res.data as any;
+    // row: normalized, is_valid, is_available, reason
+
+    if (!row?.is_valid) {
+      // map their reason to a nice message
+      if (row.reason === "too_short")
+        return "Username must be at least 3 characters";
+      if (row.reason === "too_long")
+        return "Username must be 13 characters or less";
+      if (row.reason === "no_spaces") return "Username can’t contain spaces";
+      if (row.reason === "invalid_chars")
+        return "Only letters, numbers, and underscores";
+      return "Invalid username";
+    }
+
+    if (!row?.is_available) {
+      return "That username is taken";
+    }
+
+    // optional: normalize draft to canonical normalized value
+    // This keeps draft consistent with DB logic
+    if (row.normalized && row.normalized !== draft.username) {
+      setDraft((p) => ({ ...p, username: row.normalized }));
+    }
+
+    return true;
+  }
+
   function onChange<K extends keyof OnboardingDraft>(
     key: K,
     value: OnboardingDraft[K]
@@ -87,6 +130,7 @@ export default function OnboardingIndex() {
     setErrors((e) => {
       const next = { ...e };
       if (key === "fullName") delete next.fullName;
+      if (key === "username") delete (next as any).username;
       if (key === "dob") delete next.dob;
       if (key === "gender") delete next.gender;
       if (key === "heightCm") delete next.height;
@@ -111,10 +155,20 @@ export default function OnboardingIndex() {
     setStep((s) => (s - 1) as any);
   }
 
-  function next() {
+  async function next() {
     const map = validateStep(draft, step);
     setErrors(map);
     if (hasErrors(map)) return;
+
+    // ✅ extra gate only on Step 0
+    if (step === 0) {
+      const ok = await ensureUsernameOk();
+      if (ok !== true) {
+        setErrors((e) => ({ ...(e as any), username: ok }));
+        return;
+      }
+    }
+
     setStep((s) => (s + 1) as any);
   }
 
@@ -131,6 +185,13 @@ export default function OnboardingIndex() {
 
     try {
       setSaving(true);
+
+      // ✅ Save username through your canonical RPC
+      const uRes = await supabase
+        .rpc("set_username_v1", { p_username: draft.username })
+        .single();
+
+      if (uRes.error) throw uRes.error;
 
       const u = session.user;
       const meta = (u.user_metadata || {}) as any;
@@ -172,6 +233,27 @@ export default function OnboardingIndex() {
 
       setStep(4); // Ready screen
     } catch (e: any) {
+      
+      const msg = String(e?.message ?? "");
+      if (msg.includes("username_")) {
+        const m: any = {};
+        if (msg.includes("username_too_short"))
+          m.username = "Username must be at least 3 characters";
+        else if (msg.includes("username_too_long"))
+          m.username = "Username must be 13 characters or less";
+        else if (msg.includes("username_no_spaces"))
+          m.username = "Username can’t contain spaces";
+        else if (msg.includes("username_invalid_chars"))
+          m.username = "Only letters, numbers, and underscores";
+        else if (msg.includes("username_taken"))
+          m.username = "That username is taken";
+        else m.username = "Invalid username";
+        setErrors((prev) => ({ ...(prev as any), ...m }));
+        setStep(0); // bounce them back to step 0 where the field is
+        setSaving(false);
+        return;
+      }
+
       console.warn("Onboarding save failed:", e);
       Alert.alert(
         "Onboarding failed",

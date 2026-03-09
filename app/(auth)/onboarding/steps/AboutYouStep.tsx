@@ -1,6 +1,14 @@
-import React, { useMemo } from "react";
-import { View, Text, TextInput, Pressable, StyleSheet } from "react-native";
+import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import {
+  View,
+  Text,
+  TextInput,
+  Pressable,
+  StyleSheet,
+  ActivityIndicator,
+} from "react-native";
 import { useAppTheme } from "../../../../lib/useAppTheme";
+import { supabase } from "@/lib/supabase";
 import type { ErrorMap, Gender, OnboardingDraft } from "../types";
 
 import { Stepper } from "../components/Stepper";
@@ -8,19 +16,60 @@ import { Field } from "../components/Field";
 import { SegmentRow } from "../components/SegmentRow";
 import { PrimaryCTA } from "../components/PrimaryCTA";
 
+type UsernameCheckRow = {
+  normalized: string;
+  is_valid: boolean;
+  is_available: boolean;
+  reason: string | null;
+};
+
+type UsernameStatus =
+  | { kind: "idle" }
+  | { kind: "checking" }
+  | { kind: "available"; normalized: string }
+  | { kind: "taken"; normalized: string }
+  | { kind: "invalid"; normalized: string; reason: string | null }
+  | { kind: "error"; message: string };
+
+function normalizeUsernameInput(raw: string) {
+  // Keep only a-z 0-9 _ , lowercased, trimmed, no spaces
+  const v = (raw ?? "").toLowerCase().trim();
+  // remove spaces entirely, then strip invalid chars
+  return v.replace(/\s+/g, "").replace(/[^a-z0-9_]/g, "");
+}
+
+function usernameHintFromReason(reason: string | null) {
+  switch (reason) {
+    case "too_short":
+      return "Username must be at least 3 characters";
+    case "too_long":
+      return "Username must be 13 characters or less";
+    case "no_spaces":
+      return "No spaces allowed";
+    case "invalid_chars":
+      return "Only letters, numbers, and underscores";
+    case "taken":
+      return "That username is taken";
+    default:
+      return null;
+  }
+}
+
 export function AboutYouStep({
   draft,
   errors,
   onChange,
   onOpenDob,
   onNext,
-  // stepper labels passed from hub so it stays coherent
   stepLabel = "STEP 1 OF 4",
   progress = 0.25,
 }: {
   draft: OnboardingDraft;
   errors: ErrorMap;
-  onChange: <K extends keyof OnboardingDraft>(key: K, value: OnboardingDraft[K]) => void;
+  onChange: <K extends keyof OnboardingDraft>(
+    key: K,
+    value: OnboardingDraft[K]
+  ) => void;
   onOpenDob: () => void;
   onNext: () => void;
   stepLabel?: string;
@@ -30,6 +79,89 @@ export function AboutYouStep({
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
   const dobLabel = draft.dob ? formatDob(draft.dob) : "Tap to select";
+
+  const [uStatus, setUStatus] = useState<UsernameStatus>({ kind: "idle" });
+  const lastChecked = useRef<string>("");
+
+  const checkUsername = useCallback(
+    async (username: string) => {
+      const norm = normalizeUsernameInput(username);
+
+      // if empty, just reset UI state (validation will catch it if required)
+      if (!norm) {
+        setUStatus({ kind: "idle" });
+        lastChecked.current = "";
+        return;
+      }
+
+      // avoid re-checking same value
+      if (lastChecked.current === norm) return;
+
+      setUStatus({ kind: "checking" });
+
+      const res = await supabase
+        .rpc("check_username_available_v1", { p_username: norm })
+        .single();
+
+      if (res.error) {
+        setUStatus({ kind: "error", message: res.error.message ?? "Failed to check username" });
+        return;
+      }
+
+      const row = res.data as unknown as UsernameCheckRow;
+
+      lastChecked.current = row.normalized ?? norm;
+
+      if (!row.is_valid) {
+        setUStatus({
+          kind: "invalid",
+          normalized: row.normalized ?? norm,
+          reason: row.reason ?? "invalid",
+        });
+        return;
+      }
+
+      if (row.is_available) {
+        setUStatus({ kind: "available", normalized: row.normalized ?? norm });
+      } else {
+        setUStatus({ kind: "taken", normalized: row.normalized ?? norm });
+      }
+    },
+    []
+  );
+
+  // Debounce username availability check
+  useEffect(() => {
+    const norm = normalizeUsernameInput((draft as any).username ?? "");
+    // Keep the input in sync with normalization (optional but helps)
+    // Only rewrite if user typed invalid chars/spaces
+    if ((draft as any).username != null && (draft as any).username !== norm) {
+      onChange("username" as any, norm as any);
+    }
+
+    const t = setTimeout(() => {
+      checkUsername(norm);
+    }, 350);
+
+    return () => clearTimeout(t);
+  }, [checkUsername, (draft as any).username, onChange]);
+
+  const usernameHelper = useMemo(() => {
+    if (uStatus.kind === "idle") return "3–13 characters • letters, numbers, underscores";
+    if (uStatus.kind === "checking") return "Checking availability…";
+    if (uStatus.kind === "available") return `@${uStatus.normalized} is available`;
+    if (uStatus.kind === "taken") return `@${uStatus.normalized} is taken`;
+    if (uStatus.kind === "invalid") return usernameHintFromReason(uStatus.reason) ?? "Invalid username";
+    if (uStatus.kind === "error") return uStatus.message;
+    return null;
+  }, [uStatus]);
+
+  const usernameHelperTone = useMemo(() => {
+    // style choices
+    if (uStatus.kind === "available") return "ok";
+    if (uStatus.kind === "checking" || uStatus.kind === "idle") return "neutral";
+    return "bad";
+  }, [uStatus.kind]);
 
   return (
     <View style={styles.page}>
@@ -53,6 +185,47 @@ export function AboutYouStep({
             autoCapitalize="words"
             returnKeyType="next"
           />
+        </Field>
+
+        {/* ✅ Username field */}
+        <Field label="USERNAME" error={(errors as any).username}>
+          <View style={[styles.input, styles.rowInput, !!(errors as any).username && styles.inputError]}>
+            <View style={styles.leftIcon}>
+              <Text style={styles.leftIconText}>@</Text>
+            </View>
+
+            <TextInput
+              style={[styles.rowText, { color: colors.text }]}
+              placeholder="yourname"
+              placeholderTextColor={colors.textMuted}
+              value={(draft as any).username ?? ""}
+              onChangeText={(t) => onChange("username" as any, normalizeUsernameInput(t) as any)}
+              autoCapitalize="none"
+              autoCorrect={false}
+              textContentType="username"
+              returnKeyType="next"
+            />
+
+            {uStatus.kind === "checking" ? (
+              <ActivityIndicator />
+            ) : uStatus.kind === "available" ? (
+              <Text style={styles.okMark}>✓</Text>
+            ) : uStatus.kind === "taken" || uStatus.kind === "invalid" || uStatus.kind === "error" ? (
+              <Text style={styles.badMark}>!</Text>
+            ) : null}
+          </View>
+
+          {!!usernameHelper && (
+            <Text
+              style={[
+                styles.helper,
+                usernameHelperTone === "ok" && styles.helperOk,
+                usernameHelperTone === "bad" && styles.helperBad,
+              ]}
+            >
+              {usernameHelper}
+            </Text>
+          )}
         </Field>
 
         <Field label="EMAIL ADDRESS">
@@ -88,7 +261,7 @@ export function AboutYouStep({
             onChange={(g) => onChange("gender", g)}
             options={[
               { value: "male", label: "Male" },
-              { value: "female", label: "Female" }
+              { value: "female", label: "Female" },
             ]}
             error={!!errors.gender}
           />
@@ -105,7 +278,6 @@ export function AboutYouStep({
 }
 
 function formatDob(d: Date) {
-  // "Oct 24, 1994"
   return d.toLocaleDateString(undefined, {
     month: "short",
     day: "2-digit",
@@ -174,17 +346,48 @@ const makeStyles = (colors: any) =>
     leftIconText: {
       fontSize: 14,
       opacity: 0.9,
+      color: colors.textMuted,
+      fontWeight: "900",
+      marginTop: -1,
     },
     rowText: {
       flex: 1,
       fontSize: 14,
       fontWeight: "800",
+      paddingVertical: 0,
+      color: colors.text,
     },
     chev: {
       color: colors.textMuted,
       fontSize: 18,
       fontWeight: "900",
       marginTop: -2,
+    },
+
+    helper: {
+      marginTop: 8,
+      fontSize: 12,
+      fontWeight: "700",
+      color: colors.textMuted,
+    },
+    helperOk: {
+      color: "rgba(34,197,94,0.95)", // green-ish
+    },
+    helperBad: {
+      color: "rgba(239,68,68,0.95)", // red-ish
+    },
+
+    okMark: {
+      fontWeight: "900",
+      color: "rgba(34,197,94,0.95)",
+      fontSize: 16,
+      marginLeft: 6,
+    },
+    badMark: {
+      fontWeight: "900",
+      color: "rgba(239,68,68,0.95)",
+      fontSize: 16,
+      marginLeft: 6,
     },
 
     arrow: { color: "#fff", fontWeight: "900", fontSize: 16, marginTop: -1 },

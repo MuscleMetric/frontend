@@ -6,7 +6,6 @@ import OnboardingCard from "../../ui/OnboardingCard";
 import ActivityCard from "../../ui/ActivityCard";
 import FavouriteAchievementsCard from "../../ui/FavouriteAchievementsCard";
 import RecentHistoryCard from "../../ui/RecentHistoryCard";
-import SettingsSection from "../../ui/SettingsSection";
 import { useAppTheme } from "@/lib/useAppTheme";
 import { View } from "react-native";
 
@@ -19,7 +18,6 @@ export default function NewUserProfile({ data }: { data: ProfileOverview }) {
       <ActivityCard data={data} showPlanned={false} />
       <FavouriteAchievementsCard data={data} />
       <RecentHistoryCard data={data} />
-      <SettingsSection />
     </View>
   );
 }

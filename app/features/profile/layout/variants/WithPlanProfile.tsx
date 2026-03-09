@@ -7,7 +7,6 @@ import ActivityCard from "../../ui/ActivityCard";
 import FavouriteAchievementsCard from "../../ui/FavouriteAchievementsCard";
 import RecentHistoryCard from "../../ui/RecentHistoryCard";
 import RecentPostsCard from "../../ui/RecentPostsCard";
-import SettingsSection from "../../ui/SettingsSection";
 import RecentPlansCard from "../../ui/RecentPlansCard";
 import { useAppTheme } from "@/lib/useAppTheme";
 import { View } from "react-native";
@@ -23,7 +22,6 @@ export default function WithPlanProfile({ data }: { data: ProfileOverview }) {
       <RecentHistoryCard data={data} />
       <RecentPostsCard data={data} />
       <RecentPlansCard data={data} />
-      <SettingsSection />
     </View>
   );
 }

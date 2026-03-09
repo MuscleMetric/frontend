@@ -5,7 +5,6 @@ import { router } from "expo-router";
 import { useAppTheme } from "@/lib/useAppTheme";
 import { Card, Icon } from "@/ui";
 import type { ProfileOverview } from "../data/profileTypes";
-import { Pencil } from "lucide-react-native";
 
 function formatMonthYear(iso: string) {
   try {
@@ -53,7 +52,9 @@ function initialsFromName(name?: string | null) {
   if (!n) return "U";
   const parts = n.split(/\s+/);
   if (parts.length === 1) return parts[0].slice(0, 1).toUpperCase();
-  return (parts[0].slice(0, 1) + parts[parts.length - 1].slice(0, 1)).toUpperCase();
+  return (
+    parts[0].slice(0, 1) + parts[parts.length - 1].slice(0, 1)
+  ).toUpperCase();
 }
 
 function formatInt(n: number | null | undefined) {
@@ -66,7 +67,11 @@ export default function ProfileHeaderCard({ data }: { data: ProfileOverview }) {
   const { colors, typography, layout } = useAppTheme();
 
   const name = data.user.name ?? "User";
-  const joinedText = useMemo(() => formatMonthYear(data.user.joined_at), [data.user.joined_at]);
+  const handle = data.user.username ? `@${data.user.username}` : null;
+  const joinedText = useMemo(
+    () => formatMonthYear(data.user.joined_at),
+    [data.user.joined_at]
+  );
   const initials = useMemo(() => initialsFromName(name), [name]);
 
   const levelLabel = formatLevel(data.user.level);
@@ -113,6 +118,14 @@ export default function ProfileHeaderCard({ data }: { data: ProfileOverview }) {
           fontSize: typography.size.h2,
           lineHeight: typography.lineHeight.h2,
           color: colors.text,
+        },
+
+        username: {
+          marginTop: 2,
+          fontFamily: typography.fontFamily.semibold,
+          fontSize: typography.size.sub,
+          lineHeight: typography.lineHeight.sub,
+          color: colors.textMuted,
         },
 
         meta: {
@@ -189,9 +202,16 @@ export default function ProfileHeaderCard({ data }: { data: ProfileOverview }) {
             </View>
 
             <View style={styles.nameBlock}>
+              {handle ? (
+                <Text style={styles.username} numberOfLines={1}>
+                  {handle}
+                </Text>
+              ) : null}
+
               <Text style={styles.title} numberOfLines={1}>
                 {name}
               </Text>
+
               <Text style={styles.meta} numberOfLines={1}>
                 {levelLabel} · {goalLabel}
               </Text>
@@ -202,10 +222,14 @@ export default function ProfileHeaderCard({ data }: { data: ProfileOverview }) {
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Edit profile"
-            onPress={() => router.push("/features/profile/settings/EditProfile")}
+            onPress={() =>
+              router.push("/features/profile/settings/EditProfile")
+            }
             style={({ pressed }) => [
               styles.iconBtn,
-              { backgroundColor: pressed ? colors.cardPressed : colors.surface },
+              {
+                backgroundColor: pressed ? colors.cardPressed : colors.surface,
+              },
             ]}
             hitSlop={layout.hitSlop}
           >

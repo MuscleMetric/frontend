@@ -14,6 +14,8 @@ export type ProfileOverview = {
     level: string | null;
     primary_goal: string | null;
     is_private: boolean;
+    username: string | null;
+    username_lower: string | null;
   };
 
   counts: {
