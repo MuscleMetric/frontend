@@ -11,51 +11,61 @@ import { fmtInt, toNumber } from "../utils/format";
 type Props = {
   item: FeedRow;
 
-  // ✅ optional so modal can reuse without wiring actions
   onToggleLike?: (postId: string) => void;
   onOpenComments?: (post: FeedRow) => void;
 
-  // ✅ chrome toggles for modal reuse
-  showHeader?: boolean; // default true
-  showActions?: boolean; // default true
-
-  // ✅ allow modal to override spacing (e.g., remove marginBottom)
+  showHeader?: boolean;
+  showActions?: boolean;
   containerStyle?: ViewStyle;
 };
 
 type ParsedPr = {
   exerciseName: string | null;
   value: number | null;
-  unit: string; // "kg" for now
+  unit: string;
   reps: number | null;
   delta: number | null;
   prevBest: number | null;
+  estimated1RM: number | null;
 };
 
 function parsePrFromSnapshot(item: FeedRow): ParsedPr {
   const s: any = item.pr_snapshot ?? {};
 
-  // Prefer snapshot exercise_name, fallback to joined exercise_name
   const exerciseName =
     (s.exercise_name as string | undefined) ?? item.exercise_name ?? null;
 
-  // Your real fields (from posts row example)
-  const recentBestWeight = s.recent_best_weight ?? s.recentBestWeight ?? null;
-  const prevBestWeight = s.prev_best_weight ?? s.prevBestWeight ?? null;
-  const prDelta = s.pr_delta ?? s.delta ?? null;
+  // ✅ Prefer new snapshot shape first, then fall back to old shape
+  const weightRaw =
+    s.weight ?? s.recent_best_weight ?? s.recentBestWeight ?? null;
 
-  // Optional future fields (if you add reps later)
-  const repsRaw = s.recent_best_reps ?? s.reps ?? null;
+  const prevBestRaw =
+    s.previous_best_weight ?? s.prev_best_weight ?? s.prevBestWeight ?? null;
 
-  const value = recentBestWeight == null ? null : toNumber(recentBestWeight);
-  const prevBest = prevBestWeight == null ? null : toNumber(prevBestWeight);
-  const delta = prDelta == null ? null : toNumber(prDelta);
+  const deltaRaw = s.delta_weight ?? s.pr_delta ?? s.delta ?? null;
+
+  const repsRaw = s.reps ?? s.recent_best_reps ?? null;
+
+  const estimated1RMRaw = s.estimated_1rm ?? s.estimated1RM ?? null;
+
+  const value = weightRaw == null ? null : toNumber(weightRaw);
+  const prevBest = prevBestRaw == null ? null : toNumber(prevBestRaw);
+  const delta = deltaRaw == null ? null : toNumber(deltaRaw);
   const reps = repsRaw == null ? null : Math.max(0, toNumber(repsRaw));
+  const estimated1RM =
+    estimated1RMRaw == null ? null : toNumber(estimated1RMRaw);
 
-  // If you later store unit in snapshot, read it here
   const unit = (s.unit ?? "kg") as string;
 
-  return { exerciseName, value, unit, reps, delta, prevBest };
+  return {
+    exerciseName,
+    value,
+    unit,
+    reps,
+    delta,
+    prevBest,
+    estimated1RM,
+  };
 }
 
 export function PrPostCard({
@@ -115,7 +125,6 @@ export function PrPostCard({
           textAlign: "center",
         },
 
-        // ✅ unit matches exercise blue
         unit: {
           color: colors.primary,
           fontFamily: typography.fontFamily.bold,
@@ -130,6 +139,15 @@ export function PrPostCard({
           fontFamily: typography.fontFamily.semibold,
           fontSize: 16,
           lineHeight: 20,
+          textAlign: "center",
+        },
+
+        secondary: {
+          marginTop: 10,
+          color: colors.textMuted,
+          fontFamily: typography.fontFamily.medium,
+          fontSize: typography.size.body,
+          lineHeight: typography.lineHeight.body,
           textAlign: "center",
         },
 
@@ -162,21 +180,24 @@ export function PrPostCard({
 
         actions: { marginTop: layout.space.lg },
       }),
-    [colors, typography, layout, showHeader]
+    [colors, typography, layout, showHeader],
   );
 
   const pr = parsePrFromSnapshot(item);
 
   const exName = (pr.exerciseName ?? "Exercise").toUpperCase();
-
   const valueLabel = pr.value == null ? "—" : fmtInt(pr.value);
   const unitLabel = pr.unit ?? "kg";
-
   const repsLabel = pr.reps != null ? `x ${fmtInt(pr.reps)}` : null;
+
+  const estimatedLabel =
+    pr.estimated1RM != null
+      ? `Estimated 1RM: ${fmtInt(pr.estimated1RM)} ${unitLabel}`
+      : null;
 
   const deltaLabel =
     pr.delta != null
-      ? `${pr.delta > 0 ? "+" : ""}${fmtInt(pr.delta)} ${unitLabel} delta`
+      ? `${pr.delta > 0 ? "+" : ""}${fmtInt(pr.delta)} ${unitLabel} over previous best`
       : null;
 
   return (
@@ -198,9 +219,12 @@ export function PrPostCard({
         <View style={styles.bigRow}>
           <Text style={styles.bigValue}>{valueLabel}</Text>
           <Text style={styles.unit}>{unitLabel}</Text>
+          {!!repsLabel && <Text style={styles.reps}>{repsLabel} reps</Text>}
         </View>
 
-        {!!repsLabel && <Text style={styles.reps}>{repsLabel}</Text>}
+        {!!estimatedLabel && (
+          <Text style={styles.secondary}>{estimatedLabel}</Text>
+        )}
 
         {!!deltaLabel && (
           <View style={styles.deltaChip}>
