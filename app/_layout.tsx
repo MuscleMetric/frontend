@@ -9,7 +9,7 @@ import {
 } from "expo-router";
 import * as Linking from "expo-linking";
 import { ThemeProvider } from "@react-navigation/native";
-import { useColorScheme, View, StyleSheet } from "react-native";
+import { useColorScheme, View, StyleSheet, Platform } from "react-native";
 import { LightTheme, DarkTheme } from "./theme";
 import { StatusBar } from "expo-status-bar";
 import { supabase } from "../lib/supabase";
@@ -18,9 +18,21 @@ import { AuthProvider, useAuth } from "../lib/authContext";
 import { SplashScreen } from "./_components/splashScreen";
 import "react-native-get-random-values";
 import * as Sentry from "@sentry/react-native";
+import * as Notifications from "expo-notifications";
 import { initSentry } from "./sentry";
+import { registerForPushNotificationsAsync } from "@/lib/notifications/registerForPushNotifications";
+import { saveDeviceToken } from "@/lib/notifications/saveDeviceToken";
 
 initSentry();
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowBanner: true,
+    shouldShowList: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
 
 export default function RootLayout() {
   const scheme = useColorScheme();
@@ -29,10 +41,10 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <AuthProvider>
-          <ThemeProvider value={theme}>
-            <StatusBar style={scheme === "dark" ? "light" : "dark"} />
-            <RootNavigator />
-          </ThemeProvider>
+        <ThemeProvider value={theme}>
+          <StatusBar style={scheme === "dark" ? "light" : "dark"} />
+          <RootNavigator />
+        </ThemeProvider>
       </AuthProvider>
     </GestureHandlerRootView>
   );
@@ -46,7 +58,7 @@ function RootNavigator() {
   const navState = useRootNavigationState();
   const navReady = !!navState?.key;
 
-  // ✅ Route breadcrumbs (expo-router segments)
+  // Route breadcrumbs
   useEffect(() => {
     if (!navReady) return;
 
@@ -67,6 +79,45 @@ function RootNavigator() {
       Sentry.setUser(null);
     }
   }, [session?.user?.id]);
+
+  // Push registration
+  useEffect(() => {
+    let cancelled = false;
+
+    const registerPush = async () => {
+      const userId = session?.user?.id;
+      if (!userId || loading) return;
+
+      try {
+        const result = await registerForPushNotificationsAsync();
+
+        if (!result.granted || !result.expoPushToken || cancelled) {
+          return;
+        }
+
+        await saveDeviceToken({
+          userId,
+          token: result.expoPushToken,
+          platform: Platform.OS === "ios" ? "ios" : "android",
+        });
+
+        console.log("Push token saved successfully");
+      } catch (error) {
+        console.log("push registration error:", error);
+        Sentry.captureException(error, {
+          tags: { area: "notifications", action: "register_push_token" },
+        });
+      }
+    };
+
+    if (navReady && !loading && session?.user?.id) {
+      registerPush();
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [navReady, loading, session?.user?.id]);
 
   // Deep links + exchangeCodeForSession
   useEffect(() => {
@@ -114,7 +165,6 @@ function RootNavigator() {
 
   return (
     <View style={{ flex: 1 }}>
-      {/* ✅ ALWAYS render a navigator */}
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="(auth)" />
         <Stack.Screen name="(tabs)" />
@@ -130,7 +180,6 @@ function RootNavigator() {
         />
       </Stack>
 
-      {/* ✅ Splash as overlay (doesn't break router mounting) */}
       {showSplash ? (
         <View style={StyleSheet.absoluteFill} pointerEvents="auto">
           <SplashScreen />
