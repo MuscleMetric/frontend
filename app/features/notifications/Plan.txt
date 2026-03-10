@@ -1,0 +1,795 @@
+Notifications implementation plan
+Goal of this branch
+
+By the end of this branch, MuscleMetric should support:
+
+in-app notifications in the notifications hub
+
+push notifications to the actual phone
+
+correct deep-link navigation when tapping a notification
+
+read/unread state
+
+stable handling for:
+
+followed you
+
+follow request received
+
+follow request accepted
+
+post liked
+
+post commented
+
+user you follow posted a PR
+
+user you follow posted a workout
+
+Phase 0 — define the system before touching code
+What to decide first
+
+Lock these rules before building:
+
+Notification types
+
+Use fixed internal keys:
+
+followed_you
+
+follow_request_received
+
+follow_request_accepted
+
+post_liked
+
+post_commented
+
+following_posted_pr
+
+following_posted_workout
+
+What each notification opens
+
+Decide the destination screen for each type now:
+
+followed_you → actor profile
+
+follow_request_received → follow requests screen
+
+follow_request_accepted → actor profile
+
+post_liked → post detail
+
+post_commented → post detail 
+
+following_posted_pr → post detail
+
+following_posted_workout → post detail
+
+Hard rules
+
+These should be global:
+
+no self-notifications
+
+blocked users never notify each other
+
+private content only notifies users allowed to see it
+
+duplicate events should not create duplicate notifications
+
+in-app notification row is the source of truth
+
+push is only a delivery channel, not the source of truth
+
+Testing for Phase 0
+
+Before building anything, write down 7–10 acceptance checks like:
+
+when user A follows user B, user B gets one notification row
+
+when user A likes their own post, no notification is created
+
+when user A taps a like push, the app opens the correct post
+
+unread badge decreases after marking read
+
+That gives the branch a clear finish line.
+
+Notification types:
+- followed_you
+- follow_request_received
+- follow_request_accepted
+- post_liked
+- post_commented
+- following_posted_pr
+- following_posted_workout
+
+Destinations:
+profile / follow requests / post detail
+
+Payload structure:
+{
+  notificationId
+  type
+  actorId
+  entityType
+  entityId
+}
+
+Phase 1 — build the database foundation
+What to create
+1. notifications table
+
+This should be the main source for the notifications hub.
+
+Recommended fields:
+
+id
+
+recipient_id
+
+actor_id
+
+type
+
+title
+
+body
+
+entity_type
+
+entity_id
+
+image_url
+
+is_read
+
+read_at
+
+created_at
+
+push_sent_at
+
+push_status
+
+dedupe_key
+
+2. notification_preferences table
+
+Per-user settings.
+
+Recommended fields:
+
+user_id
+
+in_app_enabled
+
+push_enabled
+
+follows_enabled
+
+follow_requests_enabled
+
+likes_enabled
+
+comments_enabled
+
+following_posts_enabled
+
+optional quiet hours later
+
+3. review device_tokens
+
+Make sure it supports the push flow cleanly.
+
+You likely want fields like:
+
+user_id
+
+token
+
+platform
+
+is_active
+
+last_seen_at
+
+updated_at
+
+optional last_error
+
+Database functions to add
+
+Add backend-safe functions for:
+
+create notification
+
+mark one notification as read
+
+mark all notifications as read
+
+get unread count
+
+RLS to add
+
+For notifications:
+
+recipient can read their own notifications
+
+recipient can update read state on their own notifications
+
+client cannot insert arbitrary notifications directly
+
+For notification_preferences:
+
+user can read/update only their own preferences
+
+For device_tokens:
+
+user can manage only their own tokens
+
+Testing for Phase 1
+SQL-level tests
+
+Manually verify:
+
+inserting test notification rows works
+
+a user can only read their own notifications
+
+a user cannot read another user’s notifications
+
+a user can mark their own notification as read
+
+a user cannot mark another user’s notification as read
+
+Success criteria
+
+At the end of this phase, you should be able to:
+
+create a test notification row
+
+query it as the recipient
+
+update read state as the recipient
+
+fail when using another user
+
+Phase 2 — make the in-app hub use real data
+Frontend tasks
+1. connect notifications hub to Supabase
+
+Replace any mock data with real rows from notifications.
+
+The UI should support:
+
+list notifications newest first
+
+unread styling
+
+pull to refresh
+
+empty state
+
+loading state
+
+error state
+
+2. add unread count support
+
+You want this available for:
+
+hub header
+
+tab badge later if needed
+
+3. add mark-as-read behavior
+
+When user taps a notification:
+
+mark it read
+
+navigate to target screen
+
+4. add mark-all-read
+
+Simple but useful.
+
+Testing for Phase 2
+Manual UI tests
+
+Seed the DB with a few notifications and check:
+
+notifications appear in correct order
+
+unread ones look different
+
+tap marks one read
+
+mark all read updates everything
+
+empty state appears when none exist
+
+Edge case tests
+
+Check:
+
+notifications with missing image still render
+
+very long body text doesn’t break layout
+
+multiple notifications of different types all render correctly
+
+Success criteria
+
+At the end of this phase, your notifications hub should work even before push exists.
+
+Phase 3 — register the phone for push notifications
+App tasks
+1. install and configure push support
+
+Set up expo-notifications properly in the app.
+
+2. request notification permissions
+
+Prompt the user at the right moment.
+
+Best approach:
+
+ask after login/onboarding or when first entering the app meaningfully
+
+not too early and not randomly
+
+3. get push token
+
+Register the device and obtain the Expo push token.
+
+4. save token to device_tokens
+
+Upsert token by:
+
+user_id
+
+token
+
+Also store platform and last seen time.
+
+5. refresh token on app launch/login
+
+Make sure stale tokens don’t pile up.
+
+Testing for Phase 3
+Real device testing only
+
+Test on an actual phone, not just simulator assumptions.
+
+Check:
+
+permission prompt appears
+
+allowing permission saves token
+
+denying permission does not break the app
+
+logging out / switching accounts does not leave tokens incorrectly attached
+
+Database checks
+
+Verify:
+
+token row exists for the correct user
+
+token updates when app reopens
+
+inactive / duplicate token handling works as expected
+
+Success criteria
+
+At the end of this phase, the backend knows which devices belong to which user.
+
+Phase 4 — build the push sending pipeline
+Backend tasks
+1. create an Edge Function for push delivery
+
+This function should:
+
+receive notification id or payload
+
+fetch recipient device tokens
+
+check preferences
+
+send push via Expo
+
+record result
+
+2. standardize push payloads
+
+Use one payload structure for all notification types.
+
+Include:
+
+notificationId
+
+type
+
+entityType
+
+entityId
+
+actorId
+
+3. handle invalid tokens
+
+If Expo returns token errors:
+
+mark token inactive
+
+store error if useful
+
+4. log push result
+
+Store whether the push was attempted and whether it succeeded.
+
+Testing for Phase 4
+Direct function testing
+
+Trigger the push function manually with a known notification.
+
+Check:
+
+push arrives on the phone
+
+correct title/body shown
+
+invalid token is handled safely
+
+function does not crash when user has no device token
+
+Device-state testing
+
+Test push while app is:
+
+open in foreground
+
+in background
+
+phone locked
+
+Success criteria
+
+At the end of this phase, you can manually create a notification row and push it to a real phone.
+
+Phase 5 — wire real events into notification creation
+
+Now connect actual social actions to notification creation.
+
+Do this in order, not all at once.
+
+Phase 5A — follow notifications first
+Events to wire
+
+user followed you
+
+follow request received
+
+follow request accepted
+
+Why first
+
+These are the cleanest and least noisy. Good first end-to-end proof.
+
+Backend tasks
+
+For the follow/follow request flows:
+
+create notification row at the server side
+
+send push after row creation
+
+enforce no self-notification
+
+enforce block checks
+
+Testing for Phase 5A
+Scenarios
+
+public follow:
+
+A follows B
+
+B gets in-app notification
+
+B gets push
+
+tapping opens A’s profile
+
+private account request:
+
+A requests B
+
+B gets request notification
+
+tapping opens follow requests
+
+accepted request:
+
+B accepts A
+
+A gets accepted notification
+
+tapping opens B’s profile
+
+blocked case:
+
+if block exists, no notification created
+
+Success criteria
+
+All three follow-related types work database → push → UI → deep-link.
+
+Phase 5B — like notifications
+Events to wire
+
+someone liked your post
+
+Rules
+
+no notification for liking own post
+
+dedupe by actor + post
+
+only notify post owner
+
+Testing for Phase 5B
+Scenarios
+
+A likes B’s post → B gets one notification
+
+A unlikes and likes again → make sure duplicates are controlled the way you want
+
+A likes own post → no notification
+
+tapping opens correct post
+
+Success criteria
+
+One clean notification per meaningful like event.
+
+Phase 5C — comment notifications
+Events to wire
+
+someone commented on your post
+
+Rules
+
+no self-notification unless you explicitly want it
+
+notify post owner
+
+later you can consider reply notifications, but not now
+
+Testing for Phase 5C
+Scenarios
+
+A comments on B’s post → B gets notification
+
+multiple comments create separate notifications if intended
+
+tapping opens post detail and comments area
+
+Success criteria
+
+Comment notifications feel reliable and open the correct place.
+
+Phase 5D — followed-user posted notifications
+Events to wire
+
+someone user follows posted a PR
+
+someone user follows posted a workout
+
+Important warning
+
+This is the noisiest category. Do this last.
+
+Rules
+
+only followers who can view the post
+
+respect privacy settings
+
+respect blocks
+
+only notify on first creation, not on edits
+
+dedupe by post + recipient
+
+Testing for Phase 5D
+Scenarios
+
+A follows B, B posts PR → A gets notification
+
+A follows B, B posts workout → A gets notification
+
+private post not visible to A → no notification
+
+blocked relationship → no notification
+
+many followers → ensure multiple recipients work
+
+Success criteria
+
+Broadcast notifications are correct and not leaking private content.
+
+Phase 6 — deep-link and navigation polish
+App tasks
+1. handle push tap responses
+
+When the user taps a push:
+
+parse payload
+
+navigate correctly
+
+mark the notification as read if appropriate
+
+2. handle notification tap from hub
+
+Same route behavior as push tap.
+
+3. support cold start
+
+If the app is closed and opened from a notification, it still routes properly.
+
+Testing for Phase 6
+
+Test all of these:
+
+tap push while app open
+
+tap push while app in background
+
+tap push when app closed
+
+tap notification in hub
+
+malformed payload fails safely
+
+Success criteria
+
+Every notification opens the correct screen from every app state.
+
+Phase 7 — real-time updates and badge behavior
+App tasks
+1. real-time subscription
+
+Subscribe to new notification rows for the signed-in user.
+
+This makes the hub update instantly while app is open.
+
+2. unread badge updates
+
+Ensure unread count refreshes when:
+
+new notification arrives
+
+one is marked read
+
+all are marked read
+
+3. optional app icon badge later
+
+Nice to have, not required for first pass.
+
+Testing for Phase 7
+
+Check:
+
+app open on notifications hub and new notification arrives
+
+app open elsewhere and unread count changes
+
+marking one read updates badge
+
+mark all read clears badge
+
+Success criteria
+
+Notifications feel live, not stale.
+
+Phase 8 — preferences and user control
+App tasks
+
+Add notification settings screen or section.
+
+Allow toggles for:
+
+all push notifications
+
+follow notifications
+
+follow requests
+
+likes
+
+comments
+
+following user posts
+
+Backend tasks
+
+When sending push or creating notification, respect preferences.
+
+You can decide whether disabled types mean:
+
+no in-app + no push
+or
+
+in-app yes, push no
+
+My recommendation:
+
+keep important social events in-app
+
+let users disable push separately
+
+Testing for Phase 8
+
+Check:
+
+disabling likes stops like push
+
+disabling comments stops comment push
+
+enabling again resumes correctly
+
+preferences are user-specific
+
+Success criteria
+
+Users can control noise.
+
+Phase 9 — hardening and cleanup
+What to clean up
+
+dedupe logic
+
+invalid token cleanup
+
+retries or safe failure handling
+
+better empty states
+
+performance checks on notification queries
+
+indexing for recipient/time ordering
+
+Good indexes
+
+At minimum you will likely want indexes on:
+
+recipient_id, created_at desc
+
+recipient_id, is_read
+
+dedupe_key unique if used
+
+Testing for Phase 9
+
+Run a realistic data test:
+
+50–100 notifications for one user
+
+multiple devices on same account
+
+old read + unread mix
+
+fast scrolling and pagination
+
+Success criteria
+
+System still feels quick and consistent.
