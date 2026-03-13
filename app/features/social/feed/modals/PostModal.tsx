@@ -10,6 +10,7 @@ import {
   FlatList,
   KeyboardAvoidingView,
   Platform,
+  ScrollView,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useAppTheme } from "@/lib/useAppTheme";
@@ -31,7 +32,7 @@ type Props = {
   addComment: (postId: string, body: string) => Promise<void>;
 
   fetchWorkoutDetails?: (
-    postId: string
+    postId: string,
   ) => Promise<WorkoutDetailsPayload | null>;
 };
 
@@ -177,7 +178,7 @@ export function PostModal({
           overflow: "hidden",
         },
       }),
-    [colors, typography, layout]
+    [colors, typography, layout],
   );
 
   const [comments, setComments] = useState<CommentRow[]>([]);
@@ -188,16 +189,33 @@ export function PostModal({
     setLoadingComments(true);
     try {
       const data = await fetchComments(post.post_id);
+      console.log("loaded comments", data);
       setComments(data);
+    } catch (e) {
+      console.log("loadComments error", e);
     } finally {
       setLoadingComments(false);
     }
   }, [post, fetchComments]);
 
   useEffect(() => {
+    console.log("PostModal effect check", {
+      visible,
+      postId: post?.post_id ?? null,
+    });
+
     if (!visible || !post) return;
+
+    console.log("PostModal calling loadComments", post.post_id);
     loadComments();
   }, [visible, post, loadComments]);
+
+  console.log("PostModal render", {
+    visible,
+    postId: post?.post_id ?? null,
+    commentsLength: comments.length,
+    loadingComments,
+  });
 
   if (!post) return null;
 
@@ -267,35 +285,25 @@ export function PostModal({
             </View>
 
             {/* SCROLL AREA: post preview + comments */}
-            <FlatList
-              data={comments}
-              keyExtractor={(c) => c.id}
+            <ScrollView
               contentContainerStyle={styles.listContent}
               keyboardShouldPersistTaps="handled"
-              ListHeaderComponent={
-                <View>
-                  {renderPostPreview()}
+            >
+              <View>
+                {renderPostPreview()}
 
-                  <View style={styles.sectionTitleRow}>
-                    <Text style={styles.sectionTitle}>Comments</Text>
-                    <Text style={styles.sectionMeta}>
-                      {post.comment_count ?? comments.length}
-                    </Text>
-                  </View>
-
-                  <View style={styles.commentsWrap}>
-                    {/* We use CommentsList for styling; it can render empty/loading nicely */}
-                    <CommentsList
-                      comments={comments}
-                      loading={loadingComments}
-                    />
-                  </View>
+                <View style={styles.sectionTitleRow}>
+                  <Text style={styles.sectionTitle}>Comments</Text>
+                  <Text style={styles.sectionMeta}>
+                    {post.comment_count ?? comments.length}
+                  </Text>
                 </View>
-              }
-              // We don’t actually render items here because CommentsList already renders them.
-              // This FlatList is the scroll container. Keep renderItem null:
-              renderItem={() => null}
-            />
+
+                <View style={styles.commentsWrap}>
+                  <CommentsList comments={comments} loading={loadingComments} />
+                </View>
+              </View>
+            </ScrollView>
 
             {/* COMPOSER pinned */}
             <CommentComposer

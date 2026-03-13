@@ -110,6 +110,10 @@ export default function SocialScreen() {
   }, [params.openCreate]);
 
   const openComments = useCallback((post: FeedRow) => {
+    console.log("openComments called", {
+      postId: post.post_id,
+      commentCount: post.comment_count,
+    });
     setSelectedPost(post);
     setPostModalOpen(true);
   }, []);
@@ -125,7 +129,15 @@ export default function SocialScreen() {
         p_post_id: postId,
         p_limit: 50,
       });
-      if (res.error) throw res.error;
+
+      console.log("get_post_comments raw response", res);
+
+      if (res.error) {
+        console.log("get_post_comments error", res.error);
+        throw res.error;
+      }
+
+      console.log("get_post_comments data", res.data);
       return (res.data ?? []) as CommentRow[];
     },
     [],
@@ -272,40 +284,46 @@ export default function SocialScreen() {
 
   const toggleLike = useCallback(
     async (postId: string) => {
+      const currentRow = rows.find((r) => r.post_id === postId);
+      if (!currentRow) return;
+
+      const prevLiked = currentRow.viewer_liked;
+      const prevCount = currentRow.like_count;
+
+      const nextLiked = !prevLiked;
+      const nextCount = Math.max(0, prevCount + (nextLiked ? 1 : -1));
+
       // 1) optimistic update
-      let prevLiked = false;
       setRows((prev) =>
-        prev.map((r) => {
-          if (r.post_id !== postId) return r;
-          prevLiked = r.viewer_liked;
-          const nextLiked = !r.viewer_liked;
-          return {
-            ...r,
-            viewer_liked: nextLiked,
-            like_count: Math.max(0, r.like_count + (nextLiked ? 1 : -1)),
-          };
-        }),
+        prev.map((r) =>
+          r.post_id !== postId
+            ? r
+            : {
+                ...r,
+                viewer_liked: nextLiked,
+                like_count: nextCount,
+              },
+        ),
       );
 
-      // 2) server toggle + reconcile
+      // 2) server toggle
       const res = await supabase.rpc("toggle_post_like", { p_post_id: postId });
+      console.log("toggle_post_like result", res.data, res.error);
 
       if (res.error) {
         console.log("toggle_post_like error:", res.error);
 
-        // revert on failure
+        // revert cleanly on failure
         setRows((prev) =>
-          prev.map((r) => {
-            if (r.post_id !== postId) return r;
-            return {
-              ...r,
-              viewer_liked: prevLiked,
-              like_count: Math.max(
-                0,
-                r.like_count + (prevLiked ? 1 : -1) - (!prevLiked ? 1 : -1),
-              ),
-            };
-          }),
+          prev.map((r) =>
+            r.post_id !== postId
+              ? r
+              : {
+                  ...r,
+                  viewer_liked: prevLiked,
+                  like_count: prevCount,
+                },
+          ),
         );
         return;
       }
@@ -314,19 +332,38 @@ export default function SocialScreen() {
         liked: boolean;
         like_count: number;
       } | null;
-      if (!row) return;
 
+      if (!row) {
+        // fallback: revert if server returned nothing unexpected
+        setRows((prev) =>
+          prev.map((r) =>
+            r.post_id !== postId
+              ? r
+              : {
+                  ...r,
+                  viewer_liked: prevLiked,
+                  like_count: prevCount,
+                },
+          ),
+        );
+        return;
+      }
+
+      // 3) reconcile to server truth
       setRows((prev) =>
         prev.map((r) =>
           r.post_id !== postId
             ? r
-            : { ...r, viewer_liked: row.liked, like_count: row.like_count },
+            : {
+                ...r,
+                viewer_liked: row.liked,
+                like_count: row.like_count,
+              },
         ),
       );
     },
-    [setRows],
+    [rows, setRows],
   );
-
   // -------- UI states --------
   if (loading) {
     return (

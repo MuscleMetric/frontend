@@ -1,10 +1,7 @@
-// app/features/social/feed/modals/CommentsList.tsx
-
 import React, { useMemo } from "react";
-import { View, Text, StyleSheet, FlatList } from "react-native";
+import { View, Text, StyleSheet } from "react-native";
 import { useAppTheme } from "@/lib/useAppTheme";
 import type { CommentRow } from "./types";
-import { fmtTs } from "../utils/format";
 
 function getInitials(name?: string | null) {
   if (!name) return "?";
@@ -26,7 +23,7 @@ export function CommentsList({
   const styles = useMemo(
     () =>
       StyleSheet.create({
-        wrap: { flex: 1 },
+        wrap: {},
 
         empty: {
           paddingVertical: layout.space.xl,
@@ -43,7 +40,7 @@ export function CommentsList({
         row: {
           flexDirection: "row",
           paddingVertical: layout.space.sm,
-          paddingLeft: layout.space.sm,
+          paddingHorizontal: layout.space.sm,
         },
 
         avatar: {
@@ -77,13 +74,7 @@ export function CommentsList({
           color: colors.text,
           fontFamily: typography.fontFamily.semibold,
           fontSize: typography.size.meta,
-        },
-
-        time: {
-          marginLeft: "auto",
-          color: colors.textMuted,
-          fontFamily: typography.fontFamily.medium,
-          fontSize: typography.size.meta,
+          flexShrink: 1,
         },
 
         body: {
@@ -97,7 +88,7 @@ export function CommentsList({
         divider: {
           height: StyleSheet.hairlineWidth,
           backgroundColor: colors.border,
-          marginTop: layout.space.xs,
+          marginLeft: 60,
         },
 
         loadingText: {
@@ -127,13 +118,12 @@ export function CommentsList({
   }
 
   return (
-    <FlatList
-      data={comments}
-      keyExtractor={(c) => c.id}
-      renderItem={({ item }) => {
+    <View style={styles.wrap}>
+      {comments.map((item) => {
         const initials = getInitials(item.user_name);
+
         return (
-          <View>
+          <View key={item.id}>
             <View style={styles.row}>
               <View style={styles.avatar}>
                 <Text style={styles.avatarText}>{initials}</Text>
@@ -144,8 +134,6 @@ export function CommentsList({
                   <Text style={styles.name} numberOfLines={1}>
                     {item.user_name ?? "User"}
                   </Text>
-
-
                 </View>
 
                 <Text style={styles.body}>{item.body}</Text>
@@ -155,7 +143,7 @@ export function CommentsList({
             <View style={styles.divider} />
           </View>
         );
-      }}
-    />
+      })}
+    </View>
   );
 }
