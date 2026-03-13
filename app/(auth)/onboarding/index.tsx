@@ -123,7 +123,7 @@ export default function OnboardingIndex() {
 
   function onChange<K extends keyof OnboardingDraft>(
     key: K,
-    value: OnboardingDraft[K]
+    value: OnboardingDraft[K],
   ) {
     setDraft((p) => ({ ...p, [key]: value }));
     // clear related error as user interacts
@@ -185,14 +185,6 @@ export default function OnboardingIndex() {
 
     try {
       setSaving(true);
-
-      // ✅ Save username through your canonical RPC
-      const uRes = await supabase
-        .rpc("set_username_v1", { p_username: draft.username })
-        .single();
-
-      if (uRes.error) throw uRes.error;
-
       const u = session.user;
       const meta = (u.user_metadata || {}) as any;
 
@@ -208,9 +200,10 @@ export default function OnboardingIndex() {
         (draft.email || u.email || meta.email || "").trim() || null;
 
       const profilePayload: any = {
-        id: u.id,
         name: trimmedName,
         email: trimmedEmail,
+        username: draft.username.trim(),
+        username_lower: draft.username.trim().toLowerCase(),
         height: draft.heightCm,
         weight: draft.weightKg,
         date_of_birth: draft.dob ? toISODateUTC(draft.dob) : null,
@@ -228,12 +221,26 @@ export default function OnboardingIndex() {
         onboarding_completed_at: new Date().toISOString(),
       };
 
-      const { error } = await supabase.from("profiles").upsert(profilePayload);
-      if (error) throw error;
+      const { data: updatedRows, error: updateError } = await supabase
+        .from("profiles")
+        .update(profilePayload)
+        .eq("id", u.id)
+        .select("id");
+
+      if (updateError) throw updateError;
+
+      // If no row exists yet, insert it
+      if (!updatedRows || updatedRows.length === 0) {
+        const { error: insertError } = await supabase.from("profiles").insert({
+          id: u.id,
+          ...profilePayload,
+        });
+
+        if (insertError) throw insertError;
+      }
 
       setStep(4); // Ready screen
     } catch (e: any) {
-      
       const msg = String(e?.message ?? "");
       if (msg.includes("username_")) {
         const m: any = {};
@@ -257,7 +264,7 @@ export default function OnboardingIndex() {
       console.warn("Onboarding save failed:", e);
       Alert.alert(
         "Onboarding failed",
-        e?.message ?? "Failed to save profile. Try again."
+        e?.message ?? "Failed to save profile. Try again.",
       );
     } finally {
       setSaving(false);
