@@ -55,7 +55,6 @@ type Bootstrap = {
     equipment: string | null;
     type: string | null;
     level: string | null;
-    videoUrl: string | null;
     instructions: string | null;
 
     prescription: {

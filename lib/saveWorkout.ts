@@ -47,7 +47,7 @@ function shouldIncludeStrengthSet(s: any) {
  */
 export function durationSecondsFromDraft(
   d: LiveWorkoutDraft,
-  atIso = nowIso()
+  atIso = nowIso(),
 ) {
   const base = Number((d as any).timerElapsedSeconds ?? 0);
   const last = (d as any).timerLastActiveAt as string | null | undefined;
@@ -69,7 +69,7 @@ function hasStrengthData(set: { reps: any } | null | undefined) {
 }
 
 function hasCardioData(
-  set: { timeSeconds: any; distance: any } | null | undefined
+  set: { timeSeconds: any; distance: any } | null | undefined,
 ) {
   // Your rule: include if time OR distance exists
   if (!set) return false;
@@ -83,7 +83,7 @@ function hasCardioData(
 // ---- RPC shape (matches your SQL function) ----
 type RpcWorkout = {
   client_save_id: string;
-  workout_id: string;
+  workout_id: string | null;
   completed_at: string;
   duration_seconds: number;
   notes: string;
@@ -122,7 +122,7 @@ function summarizeRpcPayload(p: RpcWorkout) {
   const exerciseCount = p.exercise_history.length;
   const setCount = p.exercise_history.reduce(
     (acc, ex) => acc + ex.sets.length,
-    0
+    0,
   );
   let approxBytes = 0;
   try {
@@ -146,7 +146,7 @@ export type SaveFromDraftArgs = {
   draft: LiveWorkoutDraft;
 
   // If your draft doesn’t contain these, pass them in here.
-  workoutId?: string;
+  workoutId?: string | null;
   planWorkoutIdToComplete?: string;
 
   // Optional overrides
@@ -168,14 +168,9 @@ function buildRpcPayloadFromDraft(args: SaveFromDraftArgs): RpcWorkout {
   // Prefer explicit args, fallback to draft fields if they exist
   const workoutId =
     args.workoutId ??
-    ((draft as any).workoutId as string | undefined) ??
-    ((draft as any).workout_id as string | undefined);
-
-  if (!workoutId) {
-    throw new Error(
-      "Missing workoutId (pass workoutId or ensure draft.workoutId exists)."
-    );
-  }
+    ((draft as any).workoutId as string | null | undefined) ??
+    ((draft as any).workout_id as string | null | undefined) ??
+    null;
 
   const planWorkoutId =
     planWorkoutIdToComplete ??
@@ -293,7 +288,7 @@ function buildRpcPayloadFromDraft(args: SaveFromDraftArgs): RpcWorkout {
 }
 
 export async function saveCompletedWorkoutFromLiveDraft(
-  args: SaveFromDraftArgs
+  args: SaveFromDraftArgs,
 ): Promise<SaveResult> {
   const payload = buildRpcPayloadFromDraft(args);
   const summary = summarizeRpcPayload(payload);
