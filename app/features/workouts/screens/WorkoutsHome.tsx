@@ -42,7 +42,7 @@ export default function WorkoutsHome() {
   useFocusEffect(
     useCallback(() => {
       refetch();
-    }, [refetch])
+    }, [refetch]),
   );
 
   if (!userId) return <AuthRequiredState />;
@@ -195,6 +195,11 @@ function StateRenderer({
         <OptionalSessionsSection
           optional={payload.optionalSessions}
           onOpenCreate={onOpenCreate}
+          onQuickStart={() =>
+            router.push({
+              pathname: "/features/workouts/live",
+            })
+          }
           onPressWorkout={(workoutId) =>
             router.push({ pathname: ROUTES.workoutUse, params: { workoutId } })
           }

@@ -61,21 +61,6 @@ function getWorkoutLastCompletedIso(exercises: any[]) {
   return best;
 }
 
-function supersetLabel(group: any) {
-  if (group == null) return null;
-
-  // if backend already sends "A" / "B"
-  if (typeof group === "string") return `Superset ${group.toUpperCase()}`;
-
-  // if backend sends 1/2/3
-  if (typeof group === "number") {
-    const letter = String.fromCharCode(64 + Math.max(1, Math.min(26, group)));
-    return `Superset ${letter}`;
-  }
-
-  return "Superset";
-}
-
 type ExerciseVM = any;
 
 type RenderGroup =
