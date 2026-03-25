@@ -65,7 +65,7 @@ async function dumpLiveStorage(label: string, userId: string) {
     // show a small preview of values for the most suspicious keys
     const interesting = liveKeys
       .filter(
-        (k) => k.includes(userId) || k.toLowerCase().includes("live_workout")
+        (k) => k.includes(userId) || k.toLowerCase().includes("live_workout"),
       )
       .slice(0, 25);
 
@@ -152,7 +152,7 @@ export default function ReviewWorkoutScreen() {
     if (!canSave) {
       Alert.alert(
         "Nothing to save",
-        "Add at least one completed set before saving."
+        "Add at least one completed set before saving.",
       );
       return;
     }
@@ -175,23 +175,19 @@ export default function ReviewWorkoutScreen() {
               // IMPORTANT:
               // Your saveWorkout.ts you mentioned earlier must include a builder that accepts LiveWorkoutDraft.
               // If your current saveWorkout.ts still expects the old ReviewPayload type,
-              // tell me and I’ll adapt it in-place to accept LiveWorkoutDraft.
               const clientSaveId = clientSaveIdRef.current;
-
-              // duration seconds (stable committed)
               const durationSeconds = durationSecondsFromDraft(draft);
-
               const completedAt = new Date();
 
               await saveCompletedWorkoutFromLiveDraft({
                 clientSaveId,
-                draft, // ✅ correct key
-                workoutId, // ✅ pass it explicitly (draft likely doesn't store this)
-                durationSeconds, // ✅ correct key
+                draft,
+                workoutId: draft.workoutId ?? workoutId ?? null,
+                durationSeconds,
                 completedAt,
-                planWorkoutIdToComplete: planWorkoutId,
+                planWorkoutIdToComplete:
+                  draft.planWorkoutId ?? planWorkoutId ?? undefined,
               });
-
               // ✅ only clear AFTER successful save
               console.log("[resume-debug] save succeeded -> clearing…", {
                 uid,
@@ -208,7 +204,7 @@ export default function ReviewWorkoutScreen() {
               try {
                 await clearLiveDraftForUser(uid);
                 console.log(
-                  "[resume-debug] cleared local draft key live_workout:<uid>"
+                  "[resume-debug] cleared local draft key live_workout:<uid>",
                 );
               } catch (e) {
                 console.log("[resume-debug] clearLiveDraftForUser FAILED", e);
@@ -231,14 +227,14 @@ export default function ReviewWorkoutScreen() {
             } catch (e: any) {
               Alert.alert(
                 "Save failed",
-                e?.message ?? "Something went wrong while saving."
+                e?.message ?? "Something went wrong while saving.",
               );
             } finally {
               setSaving(false);
             }
           },
         },
-      ]
+      ],
     );
   }
 
