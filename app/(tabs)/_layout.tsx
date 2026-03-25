@@ -96,9 +96,11 @@ export default function TabsLayout() {
       return;
     }
 
-    const n = Array.isArray(res.data)
-      ? Number(res.data[0]?.unread_count ?? 0)
-      : 0;
+    const raw = res.data;
+    const n = Array.isArray(raw)
+      ? Number(raw[0]?.unread_count ?? 0)
+      : Number((raw as any)?.unread_count ?? 0);
+
     setUnreadCount(Number.isFinite(n) ? n : 0);
   }, []);
 
