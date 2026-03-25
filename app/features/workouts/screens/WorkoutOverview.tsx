@@ -177,8 +177,35 @@ export default function WorkoutOverviewScreen() {
   const workoutId = params.workoutId ?? null;
   const planWorkoutId = params.planWorkoutId ?? null;
 
-  const insets = useSafeAreaInsets();
   const { colors, typography, layout } = useAppTheme();
+
+  if (!workoutId) {
+    return (
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: colors.bg,
+          padding: layout.space.lg,
+        }}
+      >
+        <Text
+          style={{
+            color: colors.danger,
+            fontFamily: typography.fontFamily.semibold,
+          }}
+        >
+          Missing workout id.
+        </Text>
+
+        <View style={{ height: layout.space.md }} />
+
+        <Button
+          title="Back to Workouts"
+          onPress={() => router.push("/(tabs)/workout")}
+        />
+      </View>
+    );
+  }
 
   const {
     loading,
@@ -194,12 +221,12 @@ export default function WorkoutOverviewScreen() {
   useFocusEffect(
     React.useCallback(() => {
       refetch?.();
-    }, [refetch])
+    }, [refetch]),
   );
 
   const [exerciseModalOpen, setExerciseModalOpen] = React.useState(false);
   const [activeExerciseId, setActiveExerciseId] = React.useState<string | null>(
-    null
+    null,
   );
 
   const exercises = React.useMemo(() => {
@@ -211,7 +238,7 @@ export default function WorkoutOverviewScreen() {
 
   const groups = React.useMemo(
     () => buildExerciseGroups(exercises),
-    [exercises]
+    [exercises],
   );
 
   const activeExercise = React.useMemo(() => {
@@ -699,7 +726,7 @@ export default function WorkoutOverviewScreen() {
           title={activeExercise?.name ?? "Exercise"}
           subtitle={
             activeExercise
-              ? toSingleLineCue(activeExercise.instructions) ?? undefined
+              ? (toSingleLineCue(activeExercise.instructions) ?? undefined)
               : undefined
           }
         >
@@ -719,7 +746,7 @@ export default function WorkoutOverviewScreen() {
                   <Text style={{ color: colors.textMuted }}>
                     {activeExercise.lastSession.completedAt
                       ? `Completed: ${formatLastDone(
-                          activeExercise.lastSession.completedAt
+                          activeExercise.lastSession.completedAt,
                         )}`
                       : "No history yet"}
                   </Text>

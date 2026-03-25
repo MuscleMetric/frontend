@@ -9,12 +9,26 @@ export function performCTA(cta: any) {
       router.push("/(tabs)/workout");
       return;
 
-    case "start_workout":
+    case "start_workout": {
+      if (!cta.workout_id) {
+        router.push("/(tabs)/workout");
+        return;
+      }
+
+      const params: Record<string, string> = {
+        workoutId: cta.workout_id,
+      };
+
+      if (cta.plan_workout_id) {
+        params.planWorkoutId = cta.plan_workout_id;
+      }
+
       router.push({
         pathname: "/features/workouts/screens/WorkoutOverview",
-        params: { workoutId: cta.workout_id, planWorkoutId: cta.plan_workout_id },
+        params,
       });
       return;
+    }
 
     case "discover_plans":
       router.push("/features/plans/create/planInfo"); // adjust to your path
