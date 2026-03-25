@@ -31,16 +31,18 @@ function lastDoneLabel(iso: string | null) {
 export function OptionalSessionsSection({
   optional,
   onOpenCreate,
+  onQuickStart,
   onPressWorkout,
 }: {
   optional: OptionalSessions;
   onOpenCreate: () => void;
+  onQuickStart?: () => void;
   onPressWorkout?: (workoutId: string) => void;
 }) {
   const { colors, typography, layout } = useAppTheme();
   const items = optional.items ?? [];
 
-  if (items.length === 0) return null;
+  if (items.length === 0 && !onQuickStart) return null;
 
   React.useEffect(() => {
     console.group("🟦 Optional Sessions — Rendered Workouts");
@@ -94,6 +96,39 @@ export function OptionalSessionsSection({
 
       {/* Rows */}
       <View style={{ gap: layout.space.sm }}>
+        {onQuickStart ? (
+          <ListRow
+            title="Quick Start Workout"
+            subtitle="Start empty and add exercises as you go"
+            left={
+              <View
+                style={{
+                  width: 68,
+                  height: 68,
+                  borderRadius: 14,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  backgroundColor: colors.surface,
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                }}
+              >
+                <Text
+                  style={{
+                    fontFamily: typography.fontFamily.bold,
+                    fontSize: typography.size.h2,
+                    color: colors.text,
+                  }}
+                >
+                  +
+                </Text>
+              </View>
+            }
+            showChevron={true}
+            onPress={onQuickStart}
+          />
+        ) : null}
+
         {items.map((w) => {
           const lastDone = lastDoneLabel(w.lastDoneAt);
 

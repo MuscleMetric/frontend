@@ -55,7 +55,6 @@ export function buildDraftFromBootstrap(args: {
       equipment: ex.equipment,
       type: ex.type,
       level: ex.level,
-      videoUrl: ex.videoUrl,
       instructions: ex.instructions,
 
       prescription: ex.prescription,
@@ -77,6 +76,8 @@ export function buildDraftFromBootstrap(args: {
     workoutId: payload.workout.workoutId,
     planWorkoutId: payload.workout.planWorkoutId,
     isPlanWorkout: payload.workout.isPlanWorkout,
+
+    source: "template",
 
     title: payload.workout.title,
     notes: payload.workout.notes,

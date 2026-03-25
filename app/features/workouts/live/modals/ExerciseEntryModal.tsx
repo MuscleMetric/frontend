@@ -1,4 +1,4 @@
-// live/modals/ExerciseEntryModal.tsx
+// app/features/workouts/live/modals/ExerciseEntryModal.tsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Modal,
@@ -68,7 +68,6 @@ export function ExerciseEntryModal(props: {
 
   onToggleDropset?: (exerciseIndex: number, value: boolean) => void;
 
-  // Dropset mutations (these should call state/mutators)
   onInitDropSetForSet?: (args: {
     exerciseIndex: number;
     setNumber: number;
@@ -94,81 +93,103 @@ export function ExerciseEntryModal(props: {
     () => getActiveExercise(props.draft),
     [props.draft]
   );
+
   const setNumber = props.draft.ui.activeSetNumber;
+
   const set =
     exercise?.sets.find(
       (s) => s.setNumber === setNumber && (s.dropIndex ?? 0) === 0
     ) ?? null;
 
   const cardio = exercise ? isCardio(exercise) : false;
-  if (!exercise || !set) return null;
 
-  const baseSetCount = useMemo(
-    () => getBaseSetCount(exercise),
-    [exercise.sets]
-  );
+  const baseSetCount = useMemo(() => {
+    if (!exercise) return 1;
+    return getBaseSetCount(exercise);
+  }, [exercise]);
+
   const lastIsCompleteButton = useMemo(() => {
-    // If there is a next destination (superset-aware), we are NOT complete
     const next = M.peekNextSupersetAware(props.draft);
     return !next;
   }, [props.draft]);
 
-  // ----- text state (strength) -----
   const [weightText, setWeightText] = useState("");
   const [repsText, setRepsText] = useState("");
   const weightRef = useRef<TextInput | null>(null);
   const repsRef = useRef<TextInput | null>(null);
 
-  // ----- text state (cardio) -----
   const [distanceText, setDistanceText] = useState("");
   const [timeText, setTimeText] = useState("");
 
-  // sync inputs on set change
-  useEffect(() => {
-    if (!exercise) return;
-    if (!cardio) {
-      setWeightText(set.weight != null ? String(set.weight) : "");
-      setRepsText(set.reps != null ? String(set.reps) : "");
-    } else {
-      setDistanceText(set.distance != null ? String(set.distance) : "");
-      setTimeText(set.timeSeconds != null ? String(set.timeSeconds) : "");
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [exercise.exerciseId, setNumber]);
-
-  // --- derived ---
   const sessionVolume = useMemo(() => {
-    if (cardio) return 0;
+    if (!exercise || cardio) return 0;
     return computeSessionVolume(exercise);
   }, [exercise, cardio]);
 
   const bestNow = useMemo(() => {
-    if (cardio) return null;
+    if (!exercise || cardio) return null;
     return bestSetByE1rm(exercise);
   }, [exercise, cardio]);
 
   const prDelta = useMemo(() => {
-    if (cardio) return null;
+    if (!exercise || cardio) return null;
     if (!bestNow) return null;
     if (!exercise.bestE1rm6m) return null;
     return bestNow.est - exercise.bestE1rm6m;
   }, [exercise, cardio, bestNow]);
 
-  // --- superset ---
-  const supersetGroup = exercise.prescription?.supersetGroup ?? null;
+  const supersetGroup = exercise?.prescription?.supersetGroup ?? null;
 
-  // --- dropset eligibility + state for THIS set ---
-  const eligibleDropset = !cardio && Boolean(exercise.prescription?.isDropset);
+  const eligibleDropset = !cardio && Boolean(exercise?.prescription?.isDropset);
+
   const dropRows = useMemo(() => {
-    if (!eligibleDropset) return [];
+    if (!exercise || !eligibleDropset) return [];
     return getDropRowsForSetNumber(exercise, setNumber);
-  }, [eligibleDropset, exercise.sets, setNumber]);
+  }, [exercise, eligibleDropset, setNumber]);
 
-  const dropMode = eligibleDropset && dropModeForSet(exercise, setNumber);
+  const dropMode = exercise
+    ? eligibleDropset && dropModeForSet(exercise, setNumber)
+    : false;
 
-  const canRemoveDrop = eligibleDropset && dropMode && dropRows.length > 1;
+  const canRemoveDrop = Boolean(
+    eligibleDropset && dropMode && dropRows.length > 1
+  );
 
-  // ---- commit helpers (strength) ----
+  const ENABLE_AUTOFILL = false;
+
+  const lastSessionSets = exercise?.lastSession?.sets ?? [];
+  const lastCompletedAt = exercise?.lastSession?.completedAt ?? null;
+
+  const lastSessionVolume = useMemo(() => {
+    if (!exercise || cardio) return null;
+    if (!Array.isArray(lastSessionSets) || lastSessionSets.length === 0) {
+      return null;
+    }
+
+    let total = 0;
+
+    for (const s of lastSessionSets as any[]) {
+      const reps = s?.reps;
+      const weight = s?.weight;
+
+      if (reps == null || weight == null) continue;
+      if (!Number.isFinite(Number(reps)) || !Number.isFinite(Number(weight))) {
+        continue;
+      }
+      if (Number(reps) <= 0 || Number(weight) < 0) continue;
+
+      total += Number(reps) * Number(weight);
+    }
+
+    return total > 0 ? total : 0;
+  }, [exercise, cardio, lastSessionSets]);
+
+  const volDelta = useMemo(() => {
+    if (!exercise || cardio) return null;
+    if (lastSessionVolume == null) return null;
+    return sessionVolume - lastSessionVolume;
+  }, [exercise, cardio, sessionVolume, lastSessionVolume]);
+
   function commitWeightText(t: string) {
     const s = sanitizeWeightInput(t);
     setWeightText(s);
@@ -233,7 +254,6 @@ export function ExerciseEntryModal(props: {
     commitRepsText(String(next));
   }
 
-  // ---- cardio commits ----
   function commitDistanceText(t: string) {
     setDistanceText(t);
     const n = parseNullableNumber(t);
@@ -258,14 +278,23 @@ export function ExerciseEntryModal(props: {
     });
   }
 
-  const ENABLE_AUTOFILL = false;
-
-  // ---- autofill ----
   useEffect(() => {
+    if (!exercise || !set) return;
+
+    if (!cardio) {
+      setWeightText(set.weight != null ? String(set.weight) : "");
+      setRepsText(set.reps != null ? String(set.reps) : "");
+    } else {
+      setDistanceText(set.distance != null ? String(set.distance) : "");
+      setTimeText(set.timeSeconds != null ? String(set.timeSeconds) : "");
+    }
+  }, [exercise, set, cardio, setNumber]);
+
+  useEffect(() => {
+    if (!exercise || !set) return;
     if (!ENABLE_AUTOFILL) return;
     if (!props.visible) return;
 
-    // only autofill if empty
     if (hasSetData(exercise, set)) return;
 
     if (cardio) {
@@ -305,43 +334,11 @@ export function ExerciseEntryModal(props: {
 
     if (best.weight != null) commitWeightText(String(best.weight));
     if (best.reps != null) commitRepsText(String(best.reps));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ENABLE_AUTOFILL, props.visible, exercise.exerciseId, setNumber]);
+  }, [ENABLE_AUTOFILL, props.visible, exercise, set, cardio, setNumber]);
 
-  const lastSessionSets = exercise.lastSession?.sets ?? [];
-  const lastCompletedAt = exercise.lastSession?.completedAt ?? null;
+  if (!exercise || !set) return null;
 
   const sheetRadius = 26;
-
-  const lastSessionVolume = useMemo(() => {
-    if (cardio) return null; // volume is strength-only for now
-    if (!Array.isArray(lastSessionSets) || lastSessionSets.length === 0)
-      return null;
-
-    // Sum reps * weight for the last session
-    let total = 0;
-
-    for (const s of lastSessionSets as any[]) {
-      const reps = s?.reps;
-      const weight = s?.weight;
-
-      if (reps == null || weight == null) continue;
-      if (!Number.isFinite(Number(reps)) || !Number.isFinite(Number(weight)))
-        continue;
-      if (Number(reps) <= 0 || Number(weight) < 0) continue;
-
-      total += Number(reps) * Number(weight);
-    }
-
-    // If nothing valid, return null so UI can show "—"
-    return total > 0 ? total : 0;
-  }, [cardio, lastSessionSets]);
-
-  const volDelta = useMemo(() => {
-    if (cardio) return null;
-    if (lastSessionVolume == null) return null;
-    return sessionVolume - lastSessionVolume;
-  }, [cardio, sessionVolume, lastSessionVolume]);
 
   return (
     <Modal
@@ -355,9 +352,7 @@ export function ExerciseEntryModal(props: {
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        {/* Pin everything to the bottom like a proper sheet */}
         <View style={{ flex: 1, justifyContent: "flex-end" }}>
-          {/* Backdrop */}
           <Pressable
             onPress={() => {
               Keyboard.dismiss();
@@ -373,17 +368,15 @@ export function ExerciseEntryModal(props: {
             }}
           />
 
-          {/* Bottom Sheet */}
           <View
             style={{
-              backgroundColor: colors.bg, // ✅ from global theme via useAppTheme -> colors.bg
+              backgroundColor: colors.bg,
               borderTopLeftRadius: sheetRadius,
               borderTopRightRadius: sheetRadius,
               overflow: "hidden",
-              maxHeight: "92%", // ✅ grows to content, scrolls after this
+              maxHeight: "92%",
             }}
           >
-            {/* Handle */}
             <View
               style={{
                 alignItems: "center",
@@ -402,7 +395,6 @@ export function ExerciseEntryModal(props: {
               />
             </View>
 
-            {/* Content */}
             <ScrollView
               keyboardShouldPersistTaps="handled"
               keyboardDismissMode={
@@ -419,11 +411,9 @@ export function ExerciseEntryModal(props: {
                 title={exercise.name}
                 subtitle={`Set ${setNumber} of ${baseSetCount}`}
                 onClose={props.onClose}
-                // ✅ menu
                 canDropset={!cardio}
                 dropsetEnabled={Boolean(exercise.prescription?.isDropset)}
                 onToggleDropset={() => {
-                  // this is the EXERCISE-level flag (not per-set drop rows)
                   props.onToggleDropset?.(
                     index,
                     !Boolean(exercise.prescription?.isDropset)
@@ -515,7 +505,6 @@ export function ExerciseEntryModal(props: {
                     }}
                   />
                 ) : eligibleDropset && dropMode ? (
-                  // ✅ drops replace weight/reps entirely
                   <View />
                 ) : (
                   <StrengthInputs
@@ -532,7 +521,6 @@ export function ExerciseEntryModal(props: {
                   />
                 )}
 
-                {/* ✅ Dropset editor lives where Weight/Reps normally would */}
                 {eligibleDropset && dropMode ? (
                   <DropsetEditor
                     colors={colors}
@@ -573,7 +561,7 @@ export function ExerciseEntryModal(props: {
                   }
                   primaryColor={
                     lastIsCompleteButton
-                      ? colors.success ?? "#22c55e"
+                      ? (colors.success ?? "#22c55e")
                       : colors.primary
                   }
                   onPrev={() => {

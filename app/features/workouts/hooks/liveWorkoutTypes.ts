@@ -30,7 +30,6 @@ export type WorkoutLoadPayload = {
     equipment: string | null;
     type: string | null;
     level: string | null;
-    videoUrl: string | null;
     instructions: string | null;
 
     prescription: {
@@ -111,9 +110,11 @@ export type LiveWorkoutDraft = {
   draftId: string;
   userId: string;
 
-  workoutId: string;
+  workoutId: string | null;
   planWorkoutId: string | null;
   isPlanWorkout: boolean;
+
+  source: "template" | "quick_start";
 
   title: string;
   notes: string | null;

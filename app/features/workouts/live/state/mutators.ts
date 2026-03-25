@@ -465,7 +465,6 @@ type SwapExerciseArgs = {
     type: string | null;
     level: string | null;
     instructions: string | null;
-    videoUrl?: string | null; // optional; LiveExerciseDraft doesn't store but allow pass-through
   };
   /**
    * If true, clears superset metadata when swapping.
@@ -520,7 +519,7 @@ export function swapExercise(
 
     // new exercise => last session info + PRs should be cleared until you load them
     lastSession: { completedAt: null, sets: [] },
-    bestE1rm: null,
+    bestE1rm6m: null,
     totalVolumeAllTime: null,
 
     // reset completion and all entered set data

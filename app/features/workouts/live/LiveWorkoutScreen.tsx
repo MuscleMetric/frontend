@@ -164,13 +164,13 @@ export default function LiveWorkoutScreen() {
   const [swapOptions, setSwapOptions] = useState<SwapPickerOption[]>([]);
   const [swapLoading, setSwapLoading] = useState(false);
   const [swapFavoriteIds, setSwapFavoriteIds] = useState<Set<string>>(
-    new Set()
+    new Set(),
   );
   const [swapUsageById, setSwapUsageById] = useState<Record<string, number>>(
-    {}
+    {},
   );
   const [swapEquipmentOptions, setSwapEquipmentOptions] = useState<string[]>(
-    []
+    [],
   );
   const [swapMuscleGroups, setSwapMuscleGroups] = useState<Chip[]>([]);
 
@@ -493,7 +493,7 @@ export default function LiveWorkoutScreen() {
           style: "destructive",
           onPress: discardSessionConfirmed,
         },
-      ]
+      ],
     );
   }
 
@@ -642,7 +642,7 @@ export default function LiveWorkoutScreen() {
 
                   // remove ones already in workout
                   const uniqueNewIds = ids.filter(
-                    (id) => !alreadyInIds.includes(id)
+                    (id) => !alreadyInIds.includes(id),
                   );
                   if (uniqueNewIds.length === 0) return;
 
@@ -667,7 +667,7 @@ export default function LiveWorkoutScreen() {
                     if (exErr) {
                       console.warn(
                         "add-exercises: failed to fetch exercises:",
-                        exErr
+                        exErr,
                       );
                     } else {
                       // muscles (optional, but nice to keep parity)
@@ -679,7 +679,7 @@ export default function LiveWorkoutScreen() {
                       if (emErr) {
                         console.warn(
                           "add-exercises: failed to fetch exercise_muscles:",
-                          emErr
+                          emErr,
                         );
                       }
 
@@ -700,7 +700,7 @@ export default function LiveWorkoutScreen() {
                         instructions: r.instructions ?? null,
                         muscleIds: (muscleMap.get(String(r.id)) ?? []).slice(
                           0,
-                          3
+                          3,
                         ),
                         // these fields exist on SwapPickerOption in your app; safe defaults:
                         isFavorite: false,
@@ -716,7 +716,7 @@ export default function LiveWorkoutScreen() {
                     setSwapOptions((prev) => {
                       const seen = new Set(prev.map((x) => x.id));
                       const extras = fetchedPicks.filter(
-                        (x) => !seen.has(x.id)
+                        (x) => !seen.has(x.id),
                       );
                       return extras.length ? [...extras, ...prev] : prev;
                     });
@@ -730,7 +730,7 @@ export default function LiveWorkoutScreen() {
                     const maxOrder =
                       d.exercises.reduce(
                         (m, e) => Math.max(m, e.orderIndex ?? 0),
-                        0
+                        0,
                       ) ?? 0;
 
                     let order = maxOrder + 1;
@@ -739,7 +739,7 @@ export default function LiveWorkoutScreen() {
                       makeNewLiveExerciseDraft({
                         pick,
                         orderIndex: order++,
-                      })
+                      }),
                     );
 
                     return {
@@ -799,12 +799,15 @@ export default function LiveWorkoutScreen() {
         disabled={footerDisabled}
         title={`Complete Workout (${progress.done}/${progress.total} exercises)`}
         onPress={() => {
+          
+          const nextParams: Record<string, string> = {};
+          if (draft.workoutId) nextParams.workoutId = draft.workoutId;
+          if (draft.planWorkoutId)
+            nextParams.planWorkoutId = draft.planWorkoutId;
+
           router.push({
             pathname: "/features/workouts/review",
-            params: {
-              workoutId: workoutId ?? "",
-              planWorkoutId: planWorkoutId ?? "",
-            },
+            params: nextParams,
           });
         }}
       />
@@ -837,7 +840,7 @@ export default function LiveWorkoutScreen() {
                 },
                 resetSuperset: false,
                 resetDropsetFlag: false,
-              })
+              }),
             );
 
             setTimeout(() => setSheetOpen(true), 0);
