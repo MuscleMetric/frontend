@@ -157,7 +157,7 @@ export type SaveFromDraftArgs = {
 
 export type SaveResult = { workoutHistoryId: string };
 
-function buildRpcPayloadFromDraft(args: SaveFromDraftArgs): RpcWorkout {
+export function buildRpcPayloadFromDraft(args: SaveFromDraftArgs): RpcWorkout {
   const {
     draft,
     clientSaveId,

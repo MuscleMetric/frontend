@@ -1,4 +1,4 @@
-import { v4 as uuidv4 } from "uuid";
+import { makeDraftId } from "../../hooks/buildDraft";
 import type { LiveWorkoutDraft } from "../../hooks/liveWorkoutTypes";
 
 export function buildEmptyQuickStartDraft(args: {
@@ -7,7 +7,7 @@ export function buildEmptyQuickStartDraft(args: {
   const now = new Date().toISOString();
 
   return {
-    draftId: uuidv4(),
+    draftId: makeDraftId(),
     userId: args.userId,
 
     workoutId: null,
