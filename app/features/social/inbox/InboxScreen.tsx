@@ -8,6 +8,7 @@ import {
   Pressable,
   ActivityIndicator,
   Alert,
+  Modal,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
@@ -15,6 +16,7 @@ import { ChevronLeft } from "lucide-react-native";
 
 import { useAppTheme } from "@/lib/useAppTheme";
 import { supabase } from "@/lib/supabase";
+import ProfileModalContent from "@/app/features/social/profile/ProfileModalContent";
 
 type NotificationType =
   | "followed_you"
@@ -261,6 +263,10 @@ export default function InboxScreen() {
   const [markingAll, setMarkingAll] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
+  const [selectedProfileId, setSelectedProfileId] = useState<string | null>(
+    null,
+  );
+
   const fetchUnreadCount = useCallback(async () => {
     const res = await supabase.rpc("get_my_unread_notification_count");
     if (!res.error && typeof res.data === "number") {
@@ -285,6 +291,7 @@ export default function InboxScreen() {
 
     if (error) {
       console.log("profiles fetch error:", error);
+      setActorMap({});
       return;
     }
 
@@ -344,7 +351,7 @@ export default function InboxScreen() {
     await load();
     setRefreshing(false);
   }, [load]);
-  
+
   const getActorLabel = useCallback(
     (item: NotificationRow) => {
       if (!item.actor_id) return "System";
@@ -380,16 +387,16 @@ export default function InboxScreen() {
       case "followed_you":
       case "follow_request_accepted": {
         if (item.actor_id) {
-          router.push({
-            pathname: "social/profile/[id]",
-            params: { id: item.actor_id },
-          });
+          setSelectedProfileId(item.actor_id);
         }
         return;
       }
 
       case "follow_request_received": {
-        router.push("social/search/index");
+        Alert.alert(
+          "Coming soon",
+          "Follow requests will be handled here soon.",
+        );
         return;
       }
 
@@ -397,10 +404,10 @@ export default function InboxScreen() {
       case "post_commented":
       case "following_posted_pr":
       case "following_posted_workout": {
-        router.push({
-          pathname: "social/feed/FeedList",
-          params: { id: item.entity_id },
-        });
+        Alert.alert(
+          "Post modal next",
+          "The post detail modal is the next one to wire in here.",
+        );
         return;
       }
 
@@ -508,78 +515,103 @@ export default function InboxScreen() {
   };
 
   return (
-    <SafeAreaView
-      style={{ flex: 1, backgroundColor: colors.bg }}
-      edges={["top", "left", "right"]}
-    >
-      <View style={styles.screen}>
-        <View style={styles.header}>
-          <Pressable
-            onPress={() => router.back()}
-            style={({ pressed }) => [
-              styles.backBtn,
-              { opacity: pressed ? 0.6 : 1 },
-            ]}
-            hitSlop={10}
-          >
-            <ChevronLeft size={18} color={colors.text} />
-          </Pressable>
+    <>
+      <SafeAreaView
+        style={{ flex: 1, backgroundColor: colors.bg }}
+        edges={["top", "left", "right"]}
+      >
+        <View style={styles.screen}>
+          <View style={styles.header}>
+            <Pressable
+              onPress={() => router.back()}
+              style={({ pressed }) => [
+                styles.backBtn,
+                { opacity: pressed ? 0.6 : 1 },
+              ]}
+              hitSlop={10}
+            >
+              <ChevronLeft size={18} color={colors.text} />
+            </Pressable>
 
-          <View style={styles.headerTitleWrap}>
-            <Text style={styles.headerTitle}>Inbox</Text>
-            <Text style={styles.headerSub}>
-              {unreadCount === 0
-                ? "All caught up"
-                : `${unreadCount} unread notification${unreadCount === 1 ? "" : "s"}`}
-            </Text>
+            <View style={styles.headerTitleWrap}>
+              <Text style={styles.headerTitle}>Inbox</Text>
+              <Text style={styles.headerSub}>
+                {unreadCount === 0
+                  ? "All caught up"
+                  : `${unreadCount} unread notification${unreadCount === 1 ? "" : "s"}`}
+              </Text>
+            </View>
+
+            <Pressable
+              onPress={handleMarkAllRead}
+              disabled={unreadCount === 0 || markingAll}
+              style={({ pressed }) => [
+                styles.markAllBtn,
+                {
+                  opacity:
+                    unreadCount === 0 || markingAll ? 0.45 : pressed ? 0.7 : 1,
+                },
+              ]}
+            >
+              <Text style={styles.markAllText}>
+                {markingAll ? "Updating..." : "Read all"}
+              </Text>
+            </Pressable>
           </View>
 
-          <Pressable
-            onPress={handleMarkAllRead}
-            disabled={unreadCount === 0 || markingAll}
-            style={({ pressed }) => [
-              styles.markAllBtn,
-              {
-                opacity:
-                  unreadCount === 0 || markingAll ? 0.45 : pressed ? 0.7 : 1,
-              },
-            ]}
-          >
-            <Text style={styles.markAllText}>
-              {markingAll ? "Updating..." : "Read all"}
-            </Text>
-          </Pressable>
+          {loading ? (
+            <View style={styles.emptyWrap}>
+              <ActivityIndicator />
+            </View>
+          ) : (
+            <FlatList
+              data={rows}
+              keyExtractor={(item) => item.id}
+              renderItem={renderItem}
+              contentContainerStyle={styles.listContent}
+              refreshControl={
+                <RefreshControl
+                  refreshing={refreshing}
+                  onRefresh={onRefresh}
+                  tintColor={colors.text}
+                />
+              }
+              ListEmptyComponent={
+                <View style={styles.emptyWrap}>
+                  <Text style={styles.emptyTitle}>No notifications yet</Text>
+                  <Text style={styles.emptySub}>
+                    Follows, likes, comments, and post activity will appear
+                    here.
+                  </Text>
+                  {!!errorMsg && (
+                    <Text style={styles.errorText}>{errorMsg}</Text>
+                  )}
+                </View>
+              }
+            />
+          )}
         </View>
+      </SafeAreaView>
 
-        {loading ? (
-          <View style={styles.emptyWrap}>
-            <ActivityIndicator />
-          </View>
-        ) : (
-          <FlatList
-            data={rows}
-            keyExtractor={(item) => item.id}
-            renderItem={renderItem}
-            contentContainerStyle={styles.listContent}
-            refreshControl={
-              <RefreshControl
-                refreshing={refreshing}
-                onRefresh={onRefresh}
-                tintColor={colors.text}
-              />
-            }
-            ListEmptyComponent={
-              <View style={styles.emptyWrap}>
-                <Text style={styles.emptyTitle}>No notifications yet</Text>
-                <Text style={styles.emptySub}>
-                  Follows, likes, comments, and post activity will appear here.
-                </Text>
-                {!!errorMsg && <Text style={styles.errorText}>{errorMsg}</Text>}
-              </View>
-            }
-          />
-        )}
-      </View>
-    </SafeAreaView>
+      <Modal
+        visible={!!selectedProfileId}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        statusBarTranslucent={false}
+        onRequestClose={() => setSelectedProfileId(null)}
+      >
+        <SafeAreaView
+          style={{ flex: 1, backgroundColor: colors.bg }}
+          edges={["top", "bottom", "left", "right"]}
+        >
+          {selectedProfileId ? (
+            <ProfileModalContent
+              profileId={selectedProfileId}
+              onClose={() => setSelectedProfileId(null)}
+            />
+          ) : null}
+        </SafeAreaView>
+      </Modal>
+    </>
   );
 }
