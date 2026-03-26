@@ -250,7 +250,7 @@ export default function InboxScreen() {
           textAlign: "center",
         },
       }),
-    [colors, typography, layout]
+    [colors, typography, layout],
   );
 
   const [rows, setRows] = useState<NotificationRow[]>([]);
@@ -270,7 +270,7 @@ export default function InboxScreen() {
 
   const fetchActorProfiles = useCallback(async (items: NotificationRow[]) => {
     const actorIds = Array.from(
-      new Set(items.map((item) => item.actor_id).filter(Boolean))
+      new Set(items.map((item) => item.actor_id).filter(Boolean)),
     ) as string[];
 
     if (actorIds.length === 0) {
@@ -315,7 +315,7 @@ export default function InboxScreen() {
     const items = ((notificationsRes.data as NotificationRow[]) ?? []).map(
       (item) => ({
         ...item,
-      })
+      }),
     );
 
     setRows(items);
@@ -344,14 +344,14 @@ export default function InboxScreen() {
     await load();
     setRefreshing(false);
   }, [load]);
-
+  
   const getActorLabel = useCallback(
     (item: NotificationRow) => {
       if (!item.actor_id) return "System";
       const actor = actorMap[item.actor_id];
-      return actor?.username || actor?.name || `User ${item.actor_id.slice(0, 6)}…`;
+      return actor?.username?.trim() || actor?.name?.trim() || "Someone";
     },
-    [actorMap]
+    [actorMap],
   );
 
   const getTypeLabel = useCallback((type: NotificationType) => {
@@ -427,8 +427,8 @@ export default function InboxScreen() {
                     is_read: true,
                     read_at: new Date().toISOString(),
                   }
-                : row
-            )
+                : row,
+            ),
           );
           setUnreadCount((prev) => Math.max(0, prev - 1));
         }
@@ -436,7 +436,7 @@ export default function InboxScreen() {
 
       navigateFromNotification(item);
     },
-    [navigateFromNotification]
+    [navigateFromNotification],
   );
 
   const handleMarkAllRead = useCallback(async () => {
@@ -458,7 +458,7 @@ export default function InboxScreen() {
         ...row,
         is_read: true,
         read_at: row.read_at ?? new Date().toISOString(),
-      }))
+      })),
     );
     setUnreadCount(0);
     setMarkingAll(false);
