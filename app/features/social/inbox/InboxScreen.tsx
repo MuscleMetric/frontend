@@ -17,6 +17,13 @@ import { ChevronLeft } from "lucide-react-native";
 import { useAppTheme } from "@/lib/useAppTheme";
 import { supabase } from "@/lib/supabase";
 import ProfileModalContent from "@/app/features/social/profile/ProfileModalContent";
+import { PostModal } from "@/app/features/social/feed/modals/PostModal";
+
+import type { FeedRow } from "@/app/features/social/feed/types";
+import type {
+  CommentRow,
+  WorkoutDetailsPayload,
+} from "@/app/features/social/feed/modals/types";
 
 type NotificationType =
   | "followed_you"
@@ -48,6 +55,24 @@ type ProfileLite = {
   id: string;
   name: string | null;
   username: string | null;
+};
+
+type CommentProfileJoinRow = {
+  id: string;
+  post_id: string;
+  user_id: string;
+  body: string;
+  created_at: string;
+  profiles:
+    | {
+        name: string | null;
+        username: string | null;
+      }
+    | {
+        name: string | null;
+        username: string | null;
+      }[]
+    | null;
 };
 
 export default function InboxScreen() {
@@ -267,6 +292,9 @@ export default function InboxScreen() {
     null,
   );
 
+  const [selectedPost, setSelectedPost] = useState<FeedRow | null>(null);
+  const [postModalVisible, setPostModalVisible] = useState(false);
+
   const fetchUnreadCount = useCallback(async () => {
     const res = await supabase.rpc("get_my_unread_notification_count");
     if (!res.error && typeof res.data === "number") {
@@ -382,39 +410,152 @@ export default function InboxScreen() {
     }
   }, []);
 
-  const navigateFromNotification = useCallback((item: NotificationRow) => {
-    switch (item.type) {
-      case "followed_you":
-      case "follow_request_accepted": {
-        if (item.actor_id) {
-          setSelectedProfileId(item.actor_id);
-        }
-        return;
+  const fetchComments = useCallback(
+    async (postId: string): Promise<CommentRow[]> => {
+      const { data, error } = await supabase
+        .from("post_comments")
+        .select(
+          `
+            id,
+            post_id,
+            user_id,
+            body,
+            created_at,
+            profiles:user_id (
+              name,
+              username
+            )
+          `,
+        )
+        .eq("post_id", postId)
+        .is("deleted_at", null)
+        .order("created_at", { ascending: false });
+
+      if (error) {
+        console.log("fetchComments error:", error);
+        return [];
       }
 
-      case "follow_request_received": {
-        Alert.alert(
-          "Coming soon",
-          "Follow requests will be handled here soon.",
-        );
-        return;
+      return ((data ?? []) as CommentProfileJoinRow[]).map((row) => {
+        const profile = Array.isArray(row.profiles)
+          ? row.profiles[0]
+          : row.profiles;
+
+        return {
+          id: row.id,
+          post_id: row.post_id,
+          user_id: row.user_id,
+          user_name: profile?.name ?? "User",
+          user_username: profile?.username ?? null,
+          body: row.body,
+          created_at: row.created_at,
+        };
+      });
+    },
+    [],
+  );
+
+  const addComment = useCallback(
+    async (postId: string, body: string): Promise<void> => {
+      const trimmed = body.trim();
+      if (!trimmed) return;
+
+      const { error } = await supabase.from("post_comments").insert({
+        post_id: postId,
+        body: trimmed,
+      });
+
+      if (error) {
+        console.log("addComment error:", error);
+        throw error;
       }
 
-      case "post_liked":
-      case "post_commented":
-      case "following_posted_pr":
-      case "following_posted_workout": {
-        Alert.alert(
-          "Post modal next",
-          "The post detail modal is the next one to wire in here.",
-        );
-        return;
-      }
+      setSelectedPost((prev) =>
+        prev
+          ? {
+              ...prev,
+              comment_count: (prev.comment_count ?? 0) + 1,
+            }
+          : prev,
+      );
 
-      default:
-        return;
+      setRows((prev) =>
+        prev.map((row) =>
+          row.entity_id === postId &&
+          (row.type === "post_liked" ||
+            row.type === "post_commented" ||
+            row.type === "following_posted_pr" ||
+            row.type === "following_posted_workout")
+            ? { ...row }
+            : row,
+        ),
+      );
+    },
+    [],
+  );
+
+  const fetchWorkoutDetails = useCallback(
+    async (_postId: string): Promise<WorkoutDetailsPayload | null> => {
+      return null;
+    },
+    [],
+  );
+
+  const openPostFromNotification = useCallback(async (postId: string) => {
+    const res = await supabase
+      .rpc("get_post_detail_v1", { p_post_id: postId })
+      .single();
+
+    if (res.error) {
+      console.log("get_post_detail_v1 error:", res.error);
+      Alert.alert("Could not open post", "Please try again.");
+      return;
     }
+
+    if (!res.data) {
+      Alert.alert("Post unavailable", "This post could not be found.");
+      return;
+    }
+
+    setSelectedPost(res.data as FeedRow);
+    setPostModalVisible(true);
   }, []);
+
+  const navigateFromNotification = useCallback(
+    (item: NotificationRow) => {
+      switch (item.type) {
+        case "followed_you":
+        case "follow_request_accepted": {
+          if (item.actor_id) {
+            setSelectedProfileId(item.actor_id);
+          }
+          return;
+        }
+
+        case "follow_request_received": {
+          Alert.alert(
+            "Coming soon",
+            "Follow requests will be handled here soon.",
+          );
+          return;
+        }
+
+        case "post_liked":
+        case "post_commented":
+        case "following_posted_pr":
+        case "following_posted_workout": {
+          if (item.entity_id) {
+            void openPostFromNotification(item.entity_id);
+          }
+          return;
+        }
+
+        default:
+          return;
+      }
+    },
+    [openPostFromNotification],
+  );
 
   const handlePressNotification = useCallback(
     async (item: NotificationRow) => {
@@ -612,6 +753,18 @@ export default function InboxScreen() {
           ) : null}
         </SafeAreaView>
       </Modal>
+
+      <PostModal
+        visible={postModalVisible}
+        post={selectedPost}
+        onClose={() => {
+          setPostModalVisible(false);
+          setSelectedPost(null);
+        }}
+        fetchComments={fetchComments}
+        addComment={addComment}
+        fetchWorkoutDetails={fetchWorkoutDetails}
+      />
     </>
   );
 }
