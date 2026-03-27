@@ -25,6 +25,8 @@ import { useAppTheme } from "../../lib/useAppTheme";
 import { useAuth } from "../../lib/authContext";
 import { supabase } from "../../lib/supabase";
 import { ResumeWorkoutGate } from "@/app/features/workouts/components/ResumeWorkoutGate";
+import { ActiveWorkoutSessionProvider } from "@/app/features/workouts/live/session/ActiveWorkoutSessionProvider";
+import { ActiveWorkoutBar } from "@/app/features/workouts/live/session/ActiveWorkoutBar";
 
 function CustomHeader({
   title,
@@ -48,7 +50,6 @@ function CustomHeader({
           {title}
         </Text>
 
-        {/* right actions */}
         <View style={styles.headerRight}>{right}</View>
       </View>
     </View>
@@ -82,7 +83,6 @@ export default function TabsLayout() {
   const pathname = usePathname();
 
   const [checking, setChecking] = useState(true);
-
   const [unreadCount, setUnreadCount] = useState<number>(0);
 
   const loadUnreadCount = useCallback(async () => {
@@ -123,9 +123,6 @@ export default function TabsLayout() {
 
     async function runGates() {
       try {
-        // -------------------------
-        // 1) Stage 1 gate
-        // -------------------------
         const s1 = await supabase.rpc("get_onboarding_status_v1").single();
         if (cancelled) return;
 
@@ -141,9 +138,6 @@ export default function TabsLayout() {
           return;
         }
 
-        // -------------------------
-        // 2) Stage 2/3 gate
-        // -------------------------
         const g = await supabase.rpc("get_onboarding_gate_v1").single();
 
         if (g.error) {
@@ -156,7 +150,6 @@ export default function TabsLayout() {
         const gate = g.data as unknown as OnboardingGateRow;
 
         if (gate?.required_stage === "stage2") {
-          // avoid pointless loop if you ever mount tabs while already on this route
           if (pathname !== "/onboarding/stage2") {
             router.replace("/onboarding/stage2");
             return;
@@ -172,7 +165,6 @@ export default function TabsLayout() {
 
         setChecking(false);
       } catch {
-        // safest fallback: allow app to load
         setChecking(false);
       }
     }
@@ -200,7 +192,7 @@ export default function TabsLayout() {
   }
 
   return (
-    <>
+    <ActiveWorkoutSessionProvider>
       <ResumeWorkoutGate />
 
       <Tabs
@@ -229,15 +221,12 @@ export default function TabsLayout() {
             borderTopWidth: StyleSheet.hairlineWidth,
             borderTopColor: colors.border,
           },
-
           tabBarActiveTintColor: colors.primary,
           tabBarInactiveTintColor: colors.textMuted,
-
           tabBarLabelStyle: {
             fontSize: typography.size.meta,
             fontFamily: typography.fontFamily.semibold,
           },
-
           sceneStyle: { backgroundColor: colors.bg },
         }}
       >
@@ -372,7 +361,9 @@ export default function TabsLayout() {
           }}
         />
       </Tabs>
-    </>
+
+      <ActiveWorkoutBar />
+    </ActiveWorkoutSessionProvider>
   );
 }
 
@@ -390,7 +381,6 @@ const makeStyles = (colors: any, typography: any, layout: any) =>
       flexDirection: "row",
       alignItems: "center",
     },
-
     headerTitle: {
       flex: 1,
       fontSize: typography.size.h2,
@@ -398,7 +388,6 @@ const makeStyles = (colors: any, typography: any, layout: any) =>
       fontFamily: typography.fontFamily.semibold,
       color: colors.text,
     },
-
     headerRight: {
       flexDirection: "row",
       alignItems: "center",

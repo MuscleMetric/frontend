@@ -47,6 +47,8 @@ import {
   registerPersistControls,
 } from "./persist/persistControl";
 
+import { clearAllMmLiveDraftKeysForUser } from "./persist/mmLocal";
+
 type Params = { workoutId?: string; planWorkoutId?: string };
 
 function nowIso() {
@@ -475,26 +477,45 @@ export default function LiveWorkoutScreen() {
 
   async function discardSessionConfirmed() {
     if (!uid) return;
+
     pauseLivePersist();
     stopLiveWorkout();
+
     await clearLiveDraftForUser(uid);
+    await clearAllMmLiveDraftKeysForUser(uid);
     await clearServerDraft(uid);
-    router.back();
+
+    router.replace("/(tabs)/workout");
   }
 
   function confirmDiscard() {
     Alert.alert(
-      "Leave workout?",
-      "If you leave now, this workout won't be saved.",
+      "Cancel workout?",
+      "If you cancel now, this in-progress workout will be deleted and won't be saved.",
       [
-        { text: "Stay", style: "cancel" },
+        { text: "Keep workout", style: "cancel" },
         {
-          text: "Leave",
+          text: "Cancel workout",
           style: "destructive",
           onPress: discardSessionConfirmed,
         },
       ],
     );
+  }
+
+  function minimizeWorkout() {
+    router.replace("/(tabs)/workout");
+  }
+
+  function openMoreMenu() {
+    Alert.alert("Workout options", "Choose an action", [
+      { text: "Keep workout", style: "cancel" },
+      {
+        text: "Cancel workout",
+        style: "destructive",
+        onPress: confirmDiscard,
+      },
+    ]);
   }
 
   const supersetLabels = useMemo(() => {
@@ -552,7 +573,8 @@ export default function LiveWorkoutScreen() {
         title={draft.title}
         subtitle="In Progress"
         timerText={timerText}
-        onClose={confirmDiscard}
+        onMinimize={minimizeWorkout}
+        onMore={openMoreMenu}
       />
 
       <ScrollView
@@ -799,7 +821,6 @@ export default function LiveWorkoutScreen() {
         disabled={footerDisabled}
         title={`Complete Workout (${progress.done}/${progress.total} exercises)`}
         onPress={() => {
-          
           const nextParams: Record<string, string> = {};
           if (draft.workoutId) nextParams.workoutId = draft.workoutId;
           if (draft.planWorkoutId)
