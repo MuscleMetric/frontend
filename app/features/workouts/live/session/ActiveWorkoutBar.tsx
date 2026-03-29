@@ -10,11 +10,11 @@ import { useAppTheme } from "@/lib/useAppTheme";
 import { useActiveWorkoutSession } from "./useActiveWorkoutSession";
 
 export function ActiveWorkoutBar() {
-  const { colors, typography, layout } = useAppTheme();
+  const { colors, typography } = useAppTheme();
   const insets = useSafeAreaInsets();
   const pathname = usePathname();
 
-  const { activeWorkout, hasActiveWorkout, timerText, resumeWorkout, loading } =
+  const { activeDraft, hasActiveWorkout, timerText, resumeWorkout, loading } =
     useActiveWorkoutSession();
 
   const shouldHide = useMemo(() => {
@@ -96,9 +96,9 @@ export function ActiveWorkoutBar() {
     [colors, typography, insets.bottom],
   );
 
-  if (shouldHide || !activeWorkout) return null;
+  if (shouldHide || !activeDraft) return null;
 
-  const title = activeWorkout.title?.trim() || "In-progress workout";
+  const title = activeDraft.title?.trim() || "In-progress workout";
 
   return (
     <Pressable onPress={resumeWorkout} style={styles.wrap}>

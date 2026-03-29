@@ -13,15 +13,10 @@ import { router, usePathname } from "expo-router";
 
 import { useAuth } from "@/lib/authContext";
 import { loadLiveDraftForUser } from "@/app/features/workouts/live/persist/local";
-
-import type {
-  ActiveWorkoutSessionContextValue,
-  ActiveWorkoutSnapshot,
-} from "./types";
-import {
-  timerSecondsFromSnapshot,
-  timerTextFromSeconds,
-} from "./time";
+import type { LiveWorkoutDraft } from "../state/types";
+import type { ActiveWorkoutSessionContextValue } from "./types";
+import { timerSecondsFromSnapshot, timerTextFromSeconds } from "./time";
+import { ActiveWorkoutLiveActivityBridge } from "./ActiveWorkoutLiveActivityBridge";
 
 export const ActiveWorkoutSessionContext =
   createContext<ActiveWorkoutSessionContextValue | null>(null);
@@ -30,21 +25,9 @@ type Props = {
   children: React.ReactNode;
 };
 
-function toSnapshot(raw: any): ActiveWorkoutSnapshot | null {
+function toDraft(raw: any): LiveWorkoutDraft | null {
   if (!raw || !raw.draftId || !raw.userId) return null;
-
-  return {
-    draftId: String(raw.draftId),
-    userId: String(raw.userId),
-    workoutId: raw.workoutId ?? null,
-    planWorkoutId: raw.planWorkoutId ?? null,
-    title: raw.title ?? null,
-    startedAt: raw.startedAt ?? null,
-    updatedAt: raw.updatedAt ?? null,
-    timerElapsedSeconds:
-      raw.timerElapsedSeconds == null ? 0 : Number(raw.timerElapsedSeconds),
-    timerLastActiveAt: raw.timerLastActiveAt ?? null,
-  };
+  return raw as LiveWorkoutDraft;
 }
 
 export function ActiveWorkoutSessionProvider({ children }: Props) {
@@ -53,8 +36,7 @@ export function ActiveWorkoutSessionProvider({ children }: Props) {
 
   const userId = session?.user?.id ?? null;
 
-  const [activeWorkout, setActiveWorkout] =
-    useState<ActiveWorkoutSnapshot | null>(null);
+  const [activeDraft, setActiveDraft] = useState<LiveWorkoutDraft | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [timerText, setTimerText] = useState("00:00");
   const [loading, setLoading] = useState(true);
@@ -63,7 +45,7 @@ export function ActiveWorkoutSessionProvider({ children }: Props) {
 
   const refresh = useCallback(async () => {
     if (!userId) {
-      setActiveWorkout(null);
+      setActiveDraft(null);
       setElapsedSeconds(0);
       setTimerText("00:00");
       setLoading(false);
@@ -73,12 +55,22 @@ export function ActiveWorkoutSessionProvider({ children }: Props) {
     setLoading(true);
     try {
       const draft = await loadLiveDraftForUser(userId);
-      const snapshot = toSnapshot(draft);
+      const nextDraft = toDraft(draft);
 
-      setActiveWorkout(snapshot);
+      setActiveDraft(nextDraft);
 
-      if (snapshot) {
-        const secs = timerSecondsFromSnapshot(snapshot);
+      if (nextDraft) {
+        const secs = timerSecondsFromSnapshot({
+          draftId: nextDraft.draftId,
+          userId: nextDraft.userId,
+          workoutId: nextDraft.workoutId ?? null,
+          planWorkoutId: nextDraft.planWorkoutId ?? null,
+          title: nextDraft.title ?? null,
+          startedAt: nextDraft.startedAt ?? null,
+          updatedAt: nextDraft.updatedAt ?? null,
+          timerElapsedSeconds: nextDraft.timerElapsedSeconds ?? 0,
+          timerLastActiveAt: nextDraft.timerLastActiveAt ?? null,
+        });
         setElapsedSeconds(secs);
         setTimerText(timerTextFromSeconds(secs));
       } else {
@@ -91,29 +83,28 @@ export function ActiveWorkoutSessionProvider({ children }: Props) {
   }, [userId]);
 
   const clearSnapshot = useCallback(() => {
-    setActiveWorkout(null);
+    setActiveDraft(null);
     setElapsedSeconds(0);
     setTimerText("00:00");
   }, []);
 
   const resumeWorkout = useCallback(() => {
-    if (!activeWorkout) return;
+    if (!activeDraft) return;
 
     router.push({
       pathname: "/features/workouts/live",
       params: {
-        workoutId: activeWorkout.workoutId ?? "",
-        planWorkoutId: activeWorkout.planWorkoutId ?? "",
+        workoutId: activeDraft.workoutId ?? "",
+        planWorkoutId: activeDraft.planWorkoutId ?? "",
       },
     } as any);
-  }, [activeWorkout]);
+  }, [activeDraft]);
 
   useEffect(() => {
     refresh();
   }, [refresh]);
 
   useEffect(() => {
-    // helpful because live/review flows can change persisted state
     refresh();
   }, [pathname, refresh]);
 
@@ -133,16 +124,25 @@ export function ActiveWorkoutSessionProvider({ children }: Props) {
       intervalRef.current = null;
     }
 
-    if (!activeWorkout) return;
+    if (!activeDraft) return;
 
     const sync = () => {
-      const secs = timerSecondsFromSnapshot(activeWorkout);
+      const secs = timerSecondsFromSnapshot({
+        draftId: activeDraft.draftId,
+        userId: activeDraft.userId,
+        workoutId: activeDraft.workoutId ?? null,
+        planWorkoutId: activeDraft.planWorkoutId ?? null,
+        title: activeDraft.title ?? null,
+        startedAt: activeDraft.startedAt ?? null,
+        updatedAt: activeDraft.updatedAt ?? null,
+        timerElapsedSeconds: activeDraft.timerElapsedSeconds ?? 0,
+        timerLastActiveAt: activeDraft.timerLastActiveAt ?? null,
+      });
       setElapsedSeconds(secs);
       setTimerText(timerTextFromSeconds(secs));
     };
 
     sync();
-
     intervalRef.current = setInterval(sync, 1000);
 
     return () => {
@@ -152,15 +152,15 @@ export function ActiveWorkoutSessionProvider({ children }: Props) {
       }
     };
   }, [
-    activeWorkout?.draftId,
-    activeWorkout?.timerElapsedSeconds,
-    activeWorkout?.timerLastActiveAt,
+    activeDraft?.draftId,
+    activeDraft?.timerElapsedSeconds,
+    activeDraft?.timerLastActiveAt,
   ]);
 
   const value = useMemo<ActiveWorkoutSessionContextValue>(
     () => ({
-      activeWorkout,
-      hasActiveWorkout: !!activeWorkout,
+      activeDraft,
+      hasActiveWorkout: !!activeDraft,
       elapsedSeconds,
       timerText,
       loading,
@@ -169,7 +169,7 @@ export function ActiveWorkoutSessionProvider({ children }: Props) {
       resumeWorkout,
     }),
     [
-      activeWorkout,
+      activeDraft,
       elapsedSeconds,
       timerText,
       loading,
@@ -181,6 +181,7 @@ export function ActiveWorkoutSessionProvider({ children }: Props) {
 
   return (
     <ActiveWorkoutSessionContext.Provider value={value}>
+      <ActiveWorkoutLiveActivityBridge />
       {children}
     </ActiveWorkoutSessionContext.Provider>
   );

@@ -28,7 +28,6 @@ import { LiveWorkoutExerciseRow } from "./ui/LiveWorkoutExerciseRow";
 import { LiveStickyFooter } from "./ui/LiveStickyFooter";
 import { ExerciseEntryModal } from "./modals/ExerciseEntryModal";
 
-import { useLiveActivitySync } from "./liveActivity/useLiveActivitySync";
 import { stopLiveWorkout } from "@/lib/liveWorkout";
 import { supabase } from "@/lib/supabase";
 import { setSwapHandler } from "./swap/swapBus";
@@ -348,8 +347,6 @@ export default function LiveWorkoutScreen() {
       registerPersistControls(null);
     };
   }, [pause, resume, cancelTimer]);
-
-  useLiveActivitySync(draft, true);
 
   // ---- Timer UI tick ----
   const [timerText, setTimerText] = useState("00:00");

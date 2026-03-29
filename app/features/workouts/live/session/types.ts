@@ -1,19 +1,9 @@
 // app/features/workouts/live/session/types.ts
 
-export type ActiveWorkoutSnapshot = {
-  draftId: string;
-  userId: string;
-  workoutId?: string | null;
-  planWorkoutId?: string | null;
-  title?: string | null;
-  startedAt?: string | null;
-  updatedAt?: string | null;
-  timerElapsedSeconds?: number | null;
-  timerLastActiveAt?: string | null;
-};
+import type { LiveWorkoutDraft } from "../state/types";
 
 export type ActiveWorkoutSessionContextValue = {
-  activeWorkout: ActiveWorkoutSnapshot | null;
+  activeDraft: LiveWorkoutDraft | null;
   hasActiveWorkout: boolean;
   elapsedSeconds: number;
   timerText: string;
