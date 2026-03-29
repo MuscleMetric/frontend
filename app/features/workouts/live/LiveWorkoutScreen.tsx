@@ -39,6 +39,8 @@ import {
   type Chip,
 } from "./swap/swapPickerCache";
 
+import { useActiveWorkoutSession } from "@/app/features/workouts/live/session/useActiveWorkoutSession";
+
 // ✅ NEW: add flow (full-screen route + return handler)
 import { setAddExercisesHandler } from "./add/addBus";
 import {
@@ -174,6 +176,8 @@ export default function LiveWorkoutScreen() {
     [],
   );
   const [swapMuscleGroups, setSwapMuscleGroups] = useState<Chip[]>([]);
+
+  const { clearSnapshot, refresh } = useActiveWorkoutSession();
 
   const alreadyInIds = useMemo(() => {
     if (!draft) return [];
@@ -475,14 +479,21 @@ export default function LiveWorkoutScreen() {
   async function discardSessionConfirmed() {
     if (!uid) return;
 
-    pauseLivePersist();
-    stopLiveWorkout();
+    try {
+      pauseLivePersist();
+      await stopLiveWorkout();
 
-    await clearLiveDraftForUser(uid);
-    await clearAllMmLiveDraftKeysForUser(uid);
-    await clearServerDraft(uid);
+      await clearLiveDraftForUser(uid);
+      await clearAllMmLiveDraftKeysForUser(uid);
+      await clearServerDraft(uid);
 
-    router.replace("/(tabs)/workout");
+      clearSnapshot();
+      await refresh();
+
+      router.replace("/(tabs)/workout");
+    } catch (e) {
+      console.warn("discardSessionConfirmed failed", e);
+    }
   }
 
   function confirmDiscard() {

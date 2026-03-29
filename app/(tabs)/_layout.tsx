@@ -24,9 +24,6 @@ import {
 import { useAppTheme } from "../../lib/useAppTheme";
 import { useAuth } from "../../lib/authContext";
 import { supabase } from "../../lib/supabase";
-import { ResumeWorkoutGate } from "@/app/features/workouts/components/ResumeWorkoutGate";
-import { ActiveWorkoutSessionProvider } from "@/app/features/workouts/live/session/ActiveWorkoutSessionProvider";
-import { ActiveWorkoutBar } from "@/app/features/workouts/live/session/ActiveWorkoutBar";
 
 function CustomHeader({
   title,
@@ -192,178 +189,168 @@ export default function TabsLayout() {
   }
 
   return (
-    <ActiveWorkoutSessionProvider>
-      <ResumeWorkoutGate />
-
-      <Tabs
-        screenOptions={{
-          header: ({ options }) => (
-            <CustomHeader
-              title={
-                (options.headerTitle as string) ??
-                (options.title as string) ??
-                "MuscleMetric"
-              }
-              right={
-                typeof options.headerRight === "function"
-                  ? options.headerRight({
-                      tintColor: colors.text,
-                      pressColor: colors.cardPressed,
-                      pressOpacity: 0.6,
-                      canGoBack: router.canGoBack?.() ?? false,
-                    })
-                  : null
-              }
-            />
-          ),
-          tabBarStyle: {
-            backgroundColor: colors.surface,
-            borderTopWidth: StyleSheet.hairlineWidth,
-            borderTopColor: colors.border,
-          },
-          tabBarActiveTintColor: colors.primary,
-          tabBarInactiveTintColor: colors.textMuted,
-          tabBarLabelStyle: {
-            fontSize: typography.size.meta,
-            fontFamily: typography.fontFamily.semibold,
-          },
-          sceneStyle: { backgroundColor: colors.bg },
+    <Tabs
+      screenOptions={{
+        header: ({ options }) => (
+          <CustomHeader
+            title={
+              (options.headerTitle as string) ??
+              (options.title as string) ??
+              "MuscleMetric"
+            }
+            right={
+              typeof options.headerRight === "function"
+                ? options.headerRight({
+                    tintColor: colors.text,
+                    pressColor: colors.cardPressed,
+                    pressOpacity: 0.6,
+                    canGoBack: router.canGoBack?.() ?? false,
+                  })
+                : null
+            }
+          />
+        ),
+        tabBarStyle: {
+          backgroundColor: colors.surface,
+          borderTopWidth: StyleSheet.hairlineWidth,
+          borderTopColor: colors.border,
+        },
+        tabBarActiveTintColor: colors.primary,
+        tabBarInactiveTintColor: colors.textMuted,
+        tabBarLabelStyle: {
+          fontSize: typography.size.meta,
+          fontFamily: typography.fontFamily.semibold,
+        },
+        sceneStyle: { backgroundColor: colors.bg },
+      }}
+    >
+      <Tabs.Screen
+        name="index"
+        options={{
+          headerTitle: "MuscleMetric",
+          tabBarLabel: "Home",
+          tabBarIcon: ({ color, size }) => <House color={color} size={size} />,
         }}
-      >
-        <Tabs.Screen
-          name="index"
-          options={{
-            headerTitle: "MuscleMetric",
-            tabBarLabel: "Home",
-            tabBarIcon: ({ color, size }) => (
-              <House color={color} size={size} />
-            ),
-          }}
-        />
+      />
 
-        <Tabs.Screen
-          name="progress"
-          options={{
-            headerTitle: "Progress",
-            tabBarLabel: "Progress",
-            tabBarIcon: ({ color, size }) => (
-              <LineChart color={color} size={size} />
-            ),
-          }}
-        />
+      <Tabs.Screen
+        name="progress"
+        options={{
+          headerTitle: "Progress",
+          tabBarLabel: "Progress",
+          tabBarIcon: ({ color, size }) => (
+            <LineChart color={color} size={size} />
+          ),
+        }}
+      />
 
-        <Tabs.Screen
-          name="social"
-          options={{
-            headerTitle: "Social",
-            tabBarLabel: "Social",
-            tabBarIcon: ({ color, size }) => (
-              <MessageCircle color={color} size={size} />
-            ),
-            headerRight: () => (
-              <View
-                style={{ flexDirection: "row", alignItems: "center", gap: 20 }}
-              >
-                <Pressable
-                  onPress={() => router.push("/features/social/search")}
-                  hitSlop={10}
-                  style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
-                >
-                  <Search size={20} color={colors.text} />
-                </Pressable>
-
-                <Pressable
-                  onPress={() => router.push("/features/social/inbox")}
-                  hitSlop={10}
-                  style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
-                >
-                  <View style={{ position: "relative" }}>
-                    <Bell size={20} color={colors.text} />
-
-                    {unreadCount > 0 ? (
-                      <View
-                        style={{
-                          position: "absolute",
-                          right: -6,
-                          top: -6,
-                          minWidth: 16,
-                          height: 16,
-                          paddingHorizontal: 4,
-                          borderRadius: 999,
-                          alignItems: "center",
-                          justifyContent: "center",
-                          backgroundColor: colors.primary,
-                          borderWidth: 1,
-                          borderColor: colors.bg,
-                        }}
-                      >
-                        <Text
-                          style={{
-                            color: colors.onPrimary,
-                            fontFamily: typography.fontFamily.semibold,
-                            fontSize: 10,
-                            lineHeight: 12,
-                          }}
-                          numberOfLines={1}
-                        >
-                          {unreadCount > 99 ? "99+" : String(unreadCount)}
-                        </Text>
-                      </View>
-                    ) : null}
-                  </View>
-                </Pressable>
-
-                <Pressable
-                  onPress={() =>
-                    router.push({
-                      pathname: "/(tabs)/social",
-                      params: { openCreate: "1" },
-                    })
-                  }
-                  hitSlop={10}
-                  style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
-                >
-                  <Plus size={22} color={colors.text} />
-                </Pressable>
-              </View>
-            ),
-          }}
-        />
-
-        <Tabs.Screen
-          name="workout"
-          options={{
-            headerTitle: "Workouts",
-            tabBarLabel: "Workouts",
-            tabBarIcon: ({ color, size }) => (
-              <Dumbbell color={color} size={size} />
-            ),
-          }}
-        />
-
-        <Tabs.Screen
-          name="user"
-          options={{
-            headerTitle: "Profile",
-            tabBarLabel: "Profile",
-            tabBarIcon: ({ color, size }) => (
-              <User2 color={color} size={size} />
-            ),
-            headerRight: () => (
+      <Tabs.Screen
+        name="social"
+        options={{
+          headerTitle: "Social",
+          tabBarLabel: "Social",
+          tabBarIcon: ({ color, size }) => (
+            <MessageCircle color={color} size={size} />
+          ),
+          headerRight: () => (
+            <View
+              style={{ flexDirection: "row", alignItems: "center", gap: 20 }}
+            >
               <Pressable
-                onPress={() => router.push("/features/settings")}
+                onPress={() => router.push("/features/social/search")}
                 hitSlop={10}
                 style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
               >
-                <Settings size={20} color={colors.text} />
+                <Search size={20} color={colors.text} />
               </Pressable>
-            ),
-          }}
-        />
-      </Tabs>
 
-      <ActiveWorkoutBar />
-    </ActiveWorkoutSessionProvider>
+              <Pressable
+                onPress={() => router.push("/features/social/inbox")}
+                hitSlop={10}
+                style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
+              >
+                <View style={{ position: "relative" }}>
+                  <Bell size={20} color={colors.text} />
+
+                  {unreadCount > 0 ? (
+                    <View
+                      style={{
+                        position: "absolute",
+                        right: -6,
+                        top: -6,
+                        minWidth: 16,
+                        height: 16,
+                        paddingHorizontal: 4,
+                        borderRadius: 999,
+                        alignItems: "center",
+                        justifyContent: "center",
+                        backgroundColor: colors.primary,
+                        borderWidth: 1,
+                        borderColor: colors.bg,
+                      }}
+                    >
+                      <Text
+                        style={{
+                          color: colors.onPrimary,
+                          fontFamily: typography.fontFamily.semibold,
+                          fontSize: 10,
+                          lineHeight: 12,
+                        }}
+                        numberOfLines={1}
+                      >
+                        {unreadCount > 99 ? "99+" : String(unreadCount)}
+                      </Text>
+                    </View>
+                  ) : null}
+                </View>
+              </Pressable>
+
+              <Pressable
+                onPress={() =>
+                  router.push({
+                    pathname: "/(tabs)/social",
+                    params: { openCreate: "1" },
+                  })
+                }
+                hitSlop={10}
+                style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
+              >
+                <Plus size={22} color={colors.text} />
+              </Pressable>
+            </View>
+          ),
+        }}
+      />
+
+      <Tabs.Screen
+        name="workout"
+        options={{
+          headerTitle: "Workouts",
+          tabBarLabel: "Workouts",
+          tabBarIcon: ({ color, size }) => (
+            <Dumbbell color={color} size={size} />
+          ),
+        }}
+      />
+
+      <Tabs.Screen
+        name="user"
+        options={{
+          headerTitle: "Profile",
+          tabBarLabel: "Profile",
+          tabBarIcon: ({ color, size }) => <User2 color={color} size={size} />,
+          headerRight: () => (
+            <Pressable
+              onPress={() => router.push("/features/settings")}
+              hitSlop={10}
+              style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
+            >
+              <Settings size={20} color={colors.text} />
+            </Pressable>
+          ),
+        }}
+      />
+    </Tabs>
   );
 }
 

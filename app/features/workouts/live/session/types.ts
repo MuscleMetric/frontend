@@ -11,4 +11,6 @@ export type ActiveWorkoutSessionContextValue = {
   refresh: () => Promise<void>;
   clearSnapshot: () => void;
   resumeWorkout: () => void;
+  shouldShowResumeGate: boolean;
+  dismissResumeGate: () => void;
 };

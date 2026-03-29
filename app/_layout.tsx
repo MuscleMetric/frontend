@@ -23,6 +23,10 @@ import { initSentry } from "./sentry";
 import { registerForPushNotificationsAsync } from "@/lib/notifications/registerForPushNotifications";
 import { saveDeviceToken } from "@/lib/notifications/saveDeviceToken";
 
+import { ResumeWorkoutGate } from "@/app/features/workouts/components/ResumeWorkoutGate";
+import { ActiveWorkoutSessionProvider } from "@/app/features/workouts/live/session/ActiveWorkoutSessionProvider";
+import { ActiveWorkoutBar } from "@/app/features/workouts/live/session/ActiveWorkoutBar";
+
 initSentry();
 
 Notifications.setNotificationHandler({
@@ -164,27 +168,32 @@ function RootNavigator() {
   const showSplash = !navReady || loading;
 
   return (
-    <View style={{ flex: 1 }}>
-      <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="(auth)" />
-        <Stack.Screen name="(tabs)" />
-        <Stack.Screen
-          name="features"
-          options={{
-            headerShown: false,
-            headerTitle: "",
-            headerBackTitle: "",
-            headerShadowVisible: false,
-            gestureEnabled: true,
-          }}
-        />
-      </Stack>
+    <ActiveWorkoutSessionProvider>
+      <View style={{ flex: 1 }}>
+        <Stack screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="(auth)" />
+          <Stack.Screen name="(tabs)" />
+          <Stack.Screen
+            name="features"
+            options={{
+              headerShown: false,
+              headerTitle: "",
+              headerBackTitle: "",
+              headerShadowVisible: false,
+              gestureEnabled: true,
+            }}
+          />
+        </Stack>
 
-      {showSplash ? (
-        <View style={StyleSheet.absoluteFill} pointerEvents="auto">
-          <SplashScreen />
-        </View>
-      ) : null}
-    </View>
+        <ResumeWorkoutGate />
+        <ActiveWorkoutBar />
+
+        {showSplash ? (
+          <View style={StyleSheet.absoluteFill} pointerEvents="auto">
+            <SplashScreen />
+          </View>
+        ) : null}
+      </View>
+    </ActiveWorkoutSessionProvider>
   );
 }

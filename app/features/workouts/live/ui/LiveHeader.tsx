@@ -2,6 +2,7 @@ import React from "react";
 import { View, Text, Pressable } from "react-native";
 import { useAppTheme } from "@/lib/useAppTheme";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Minimize2 } from "lucide-react-native";
 
 export function LiveHeader(props: {
   title: string;
@@ -29,15 +30,7 @@ export function LiveHeader(props: {
       {/* Left: Minimise */}
       <View style={{ width: 84, alignItems: "flex-start" }}>
         <Pressable onPress={props.onMinimize} hitSlop={10}>
-          <Text
-            style={{
-              color: colors.text,
-              fontSize: typography.size.body,
-              fontFamily: typography.fontFamily.semibold,
-            }}
-          >
-            Minimise
-          </Text>
+          <Minimize2 size={20} color={colors.text} />
         </Pressable>
       </View>
 

@@ -1,27 +1,12 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { AppState, View, Text, Alert } from "react-native";
-import { useRouter, usePathname } from "expo-router";
+import React from "react";
+import { View, Text, Alert } from "react-native";
 import { ModalSheet, Button, Card } from "@/ui";
-import { useAuth } from "@/lib/authContext";
 import { useAppTheme } from "@/lib/useAppTheme";
-
-import {
-  loadLiveDraftForUser,
-  clearLiveDraftForUser,
-} from "@/app/features/workouts/live/persist/local";
-
+import { useActiveWorkoutSession } from "@/app/features/workouts/live/session/useActiveWorkoutSession";
+import { useAuth } from "@/lib/authContext";
+import { clearLiveDraftForUser } from "@/app/features/workouts/live/persist/local";
 import { clearServerDraft } from "@/app/features/workouts/live/persist/server";
 import { clearAllMmLiveDraftKeysForUser } from "../live/persist/mmLocal";
-
-type Draft = {
-  draftId: string;
-  userId: string;
-  workoutId?: string | null;
-  planWorkoutId?: string | null;
-  title?: string | null;
-  startedAt?: string | null;
-  updatedAt?: string | null;
-};
 
 function timeAgo(iso?: string | null) {
   if (!iso) return null;
@@ -54,61 +39,35 @@ function durationSince(iso?: string | null) {
 export function ResumeWorkoutGate() {
   const { session } = useAuth();
   const userId = session?.user?.id ?? null;
-
-  const router = useRouter();
-  const pathname = usePathname();
   const { colors, typography, layout } = useAppTheme();
 
-  const [draft, setDraft] = useState<Draft | null>(null);
-  const [open, setOpen] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const {
+    activeDraft,
+    shouldShowResumeGate,
+    resumeWorkout,
+    clearSnapshot,
+    refresh,
+    dismissResumeGate,
+  } = useActiveWorkoutSession();
 
-  useEffect(() => {
-    if (!userId) return;
-    loadDraft();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pathname, userId]);
+  const [busy, setBusy] = React.useState(false);
 
-  // ✅ don’t show if already in live flow
-  const shouldSuppress = useMemo(() => {
-    return pathname?.startsWith("/features/workouts/live");
-  }, [pathname]);
+  if (!userId || !activeDraft) return null;
 
-  useEffect(() => {
-    if (shouldSuppress && open) setOpen(false);
-  }, [shouldSuppress, open]);
+  const safeUserId = userId;
 
-  async function loadDraft() {
-    if (!userId) return;
-
-    const d = await loadLiveDraftForUser(userId);
-    if (!d) {
-      setDraft(null);
-      setOpen(false);
-      return;
+  async function discardEverywhere() {
+    setBusy(true);
+    try {
+      await clearLiveDraftForUser(safeUserId);
+      await clearAllMmLiveDraftKeysForUser(safeUserId);
+      await clearServerDraft(safeUserId);
+      clearSnapshot();
+      await refresh();
+    } finally {
+      setBusy(false);
     }
-
-    setDraft(d as any);
-
-    if (!shouldSuppress) setOpen(true);
   }
-
-async function discardEverywhere() {
-  if (!userId) return;
-
-  setBusy(true);
-  try {
-    await clearLiveDraftForUser(userId);
-    await clearAllMmLiveDraftKeysForUser(userId);
-    await clearServerDraft(userId);
-
-    setDraft(null);
-    setOpen(false);
-  } finally {
-    setBusy(false);
-  }
-}
-
 
   function confirmDiscard() {
     Alert.alert(
@@ -117,39 +76,22 @@ async function discardEverywhere() {
       [
         { text: "Cancel", style: "cancel" },
         { text: "Delete", style: "destructive", onPress: discardEverywhere },
-      ]
+      ],
     );
   }
 
-  useEffect(() => {
-    if (!userId) return;
-
-    loadDraft();
-
-    const sub = AppState.addEventListener("change", (state) => {
-      if (state === "active") loadDraft();
-    });
-
-    return () => sub.remove();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId, shouldSuppress]);
-
-  if (!userId) return null;
-  if (!draft) return null;
-
-  const title = draft.title?.trim() || "In-progress workout";
-  const lastSaved = timeAgo(draft.updatedAt);
-  const startedFor = durationSince(draft.startedAt);
+  const title = activeDraft.title?.trim() || "In-progress workout";
+  const lastSaved = timeAgo(activeDraft.updatedAt);
+  const startedFor = durationSince(activeDraft.startedAt);
 
   return (
     <ModalSheet
-      visible={open}
-      onClose={() => setOpen(false)}
+      visible={shouldShowResumeGate}
+      onClose={dismissResumeGate}
       title="Continue workout?"
       subtitle={title}
       heightVariant="short"
     >
-      {/* Summary card */}
       <Card>
         <View style={{ gap: 10 }}>
           <View style={{ flexDirection: "row", alignItems: "center" }}>
@@ -178,7 +120,6 @@ async function discardEverywhere() {
               </Text>
             </View>
 
-            {/* little status dot */}
             <View
               style={{
                 width: 10,
@@ -212,24 +153,12 @@ async function discardEverywhere() {
         </View>
       </Card>
 
-      {/* Primary CTA */}
       <Button
         title={busy ? "Please wait…" : "Continue"}
         disabled={busy}
-        onPress={() => {
-          setOpen(false);
-
-          router.push({
-            pathname: "/features/workouts/live",
-            params: {
-              workoutId: draft.workoutId ?? "",
-              planWorkoutId: draft.planWorkoutId ?? "",
-            },
-          } as any);
-        }}
+        onPress={resumeWorkout}
       />
 
-      {/* Secondary actions */}
       <View style={{ height: layout.space.sm }} />
 
       <Button
@@ -238,20 +167,6 @@ async function discardEverywhere() {
         disabled={busy}
         onPress={confirmDiscard}
       />
-
-      {/* Optional: tiny debug line (remove if you want) */}
-      <Text
-        style={{
-          marginTop: 8,
-          textAlign: "center",
-          fontFamily: typography.fontFamily.medium,
-          fontSize: 11,
-          color: colors.textMuted,
-          opacity: 0.6,
-        }}
-      >
-        Autosave is enabled
-      </Text>
     </ModalSheet>
   );
 }

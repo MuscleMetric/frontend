@@ -41,22 +41,14 @@ export function ActiveWorkoutSessionProvider({ children }: Props) {
   const [timerText, setTimerText] = useState("00:00");
   const [loading, setLoading] = useState(true);
 
+  const [bootHydrationComplete, setBootHydrationComplete] = useState(false);
+  const [restoredDraftOnBoot, setRestoredDraftOnBoot] = useState(false);
+  const [resumeGateHandled, setResumeGateHandled] = useState(false);
+
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const refresh = useCallback(async () => {
-    if (!userId) {
-      setActiveDraft(null);
-      setElapsedSeconds(0);
-      setTimerText("00:00");
-      setLoading(false);
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const draft = await loadLiveDraftForUser(userId);
-      const nextDraft = toDraft(draft);
-
+  const applyDraftSnapshot = useCallback(
+    (nextDraft: LiveWorkoutDraft | null) => {
       setActiveDraft(nextDraft);
 
       if (nextDraft) {
@@ -77,19 +69,63 @@ export function ActiveWorkoutSessionProvider({ children }: Props) {
         setElapsedSeconds(0);
         setTimerText("00:00");
       }
+    },
+    [],
+  );
+
+  const hydrateOnBoot = useCallback(async () => {
+    if (!userId) {
+      applyDraftSnapshot(null);
+      setBootHydrationComplete(true);
+      setRestoredDraftOnBoot(false);
+      setResumeGateHandled(false);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    setBootHydrationComplete(false);
+
+    try {
+      const draft = await loadLiveDraftForUser(userId);
+      const nextDraft = toDraft(draft);
+
+      applyDraftSnapshot(nextDraft);
+      setRestoredDraftOnBoot(!!nextDraft);
+      setResumeGateHandled(false);
+    } finally {
+      setBootHydrationComplete(true);
+      setLoading(false);
+    }
+  }, [userId, applyDraftSnapshot]);
+
+  const refresh = useCallback(async () => {
+    if (!userId) {
+      applyDraftSnapshot(null);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const draft = await loadLiveDraftForUser(userId);
+      const nextDraft = toDraft(draft);
+      applyDraftSnapshot(nextDraft);
     } finally {
       setLoading(false);
     }
-  }, [userId]);
+  }, [userId, applyDraftSnapshot]);
 
   const clearSnapshot = useCallback(() => {
-    setActiveDraft(null);
-    setElapsedSeconds(0);
-    setTimerText("00:00");
-  }, []);
+    applyDraftSnapshot(null);
+    setRestoredDraftOnBoot(false);
+    setResumeGateHandled(true);
+  }, [applyDraftSnapshot]);
 
   const resumeWorkout = useCallback(() => {
     if (!activeDraft) return;
+
+    setResumeGateHandled(true);
 
     router.push({
       pathname: "/features/workouts/live",
@@ -101,12 +137,8 @@ export function ActiveWorkoutSessionProvider({ children }: Props) {
   }, [activeDraft]);
 
   useEffect(() => {
-    refresh();
-  }, [refresh]);
-
-  useEffect(() => {
-    refresh();
-  }, [pathname, refresh]);
+    hydrateOnBoot();
+  }, [hydrateOnBoot]);
 
   useEffect(() => {
     const sub = AppState.addEventListener("change", (state) => {
@@ -157,6 +189,17 @@ export function ActiveWorkoutSessionProvider({ children }: Props) {
     activeDraft?.timerLastActiveAt,
   ]);
 
+  const shouldShowResumeGate =
+    bootHydrationComplete &&
+    !!activeDraft &&
+    restoredDraftOnBoot &&
+    !resumeGateHandled &&
+    !pathname?.startsWith("/features/workouts/live");
+
+  const dismissResumeGate = useCallback(() => {
+    setResumeGateHandled(true);
+  }, []);
+
   const value = useMemo<ActiveWorkoutSessionContextValue>(
     () => ({
       activeDraft,
@@ -167,6 +210,8 @@ export function ActiveWorkoutSessionProvider({ children }: Props) {
       refresh,
       clearSnapshot,
       resumeWorkout,
+      shouldShowResumeGate,
+      dismissResumeGate,
     }),
     [
       activeDraft,
@@ -176,6 +221,8 @@ export function ActiveWorkoutSessionProvider({ children }: Props) {
       refresh,
       clearSnapshot,
       resumeWorkout,
+      shouldShowResumeGate,
+      dismissResumeGate,
     ],
   );
 
