@@ -15,7 +15,7 @@ function stepCopy(key: StepKey) {
         title: "Save your details",
         desc: "Set your level and primary goal.",
         cta: "Edit profile",
-        onPress: () => router.push("/features/profile/EditProfile"),
+        onPress: () => router.push("/features/settings"),
       };
     case "complete_workout":
       return {
@@ -31,13 +31,10 @@ function stepCopy(key: StepKey) {
         cta: "Open Social",
         onPress: () => router.push("/(tabs)/social"),
       };
-    default:
-      return {
-        title: "Step",
-        desc: "",
-        cta: "Open",
-        onPress: () => {},
-      };
+    default: {
+      const _exhaustive: never = key;
+      return _exhaustive;
+    }
   }
 }
 
@@ -135,7 +132,7 @@ export default function OnboardingCard({ data }: { data: ProfileOverview }) {
           opacity: 0.9,
         },
       }),
-    [colors, typography, layout]
+    [colors, typography, layout],
   );
 
   return (
@@ -173,7 +170,11 @@ export default function OnboardingCard({ data }: { data: ProfileOverview }) {
                 {/* CTA below text */}
                 {!s.done ? (
                   <View style={styles.ctaWrap}>
-                    <Button variant="secondary" title={copy.cta} onPress={copy.onPress} />
+                    <Button
+                      variant="secondary"
+                      title={copy.cta}
+                      onPress={copy.onPress}
+                    />
                   </View>
                 ) : null}
               </View>
