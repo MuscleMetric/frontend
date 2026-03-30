@@ -41,9 +41,5 @@ export function performCTA(cta: any) {
     case "set_goal":
       router.push("/features/goals/goals");
       return;
-
-    case "view_history":
-      router.push("/features/workouts/history"); // adjust
-      return;
   }
 }
