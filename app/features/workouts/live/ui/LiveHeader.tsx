@@ -29,7 +29,11 @@ export function LiveHeader(props: {
     >
       {/* Left: Minimise */}
       <View style={{ width: 84, alignItems: "flex-start" }}>
-        <Pressable onPress={props.onMinimize} hitSlop={10}>
+        <Pressable
+          testID="live-header-minimize"
+          onPress={props.onMinimize}
+          hitSlop={10}
+        >
           <Minimize2 size={20} color={colors.text} />
         </Pressable>
       </View>
@@ -77,6 +81,7 @@ export function LiveHeader(props: {
 
         {!!props.onMore && (
           <Pressable
+            testID="live-header-more"
             onPress={props.onMore}
             hitSlop={10}
             style={{ marginTop: 2, paddingHorizontal: 4, paddingVertical: 2 }}

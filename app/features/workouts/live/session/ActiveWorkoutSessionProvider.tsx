@@ -147,7 +147,7 @@ export function ActiveWorkoutSessionProvider({ children }: Props) {
       }
     });
 
-    return () => sub.remove();
+    return () => sub?.remove?.();
   }, [refresh]);
 
   useEffect(() => {
