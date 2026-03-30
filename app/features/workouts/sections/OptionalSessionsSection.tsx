@@ -4,6 +4,7 @@ import React from "react";
 import { View, Text } from "react-native";
 import { useAppTheme } from "@/lib/useAppTheme";
 import { ListRow, Button, WorkoutCover } from "@/ui";
+import { router } from "expo-router";
 
 type OptionalSessions = {
   title: string;
@@ -89,7 +90,7 @@ export function OptionalSessionsSection({
             title="Create"
             variant="ghost"
             fullWidth={false}
-            onPress={onOpenCreate}
+            onPress={() => router.push("/features/workouts/create")}
           />
         ) : null}
       </View>
