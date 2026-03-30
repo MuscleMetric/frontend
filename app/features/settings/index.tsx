@@ -6,6 +6,8 @@ import {
   ActivityIndicator,
   ScrollView,
   Pressable,
+  Linking,
+  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
@@ -256,6 +258,30 @@ export default function SettingsScreen() {
     [load],
   );
 
+  const openPrivacyPolicy = useCallback(async () => {
+    const url = "https://musclemetric.github.io/musclemetric-legal/privacy.html";
+    const ok = await Linking.canOpenURL(url);
+
+    if (!ok) {
+      Alert.alert("Can't open link", "Please try again later.");
+      return;
+    }
+
+    await Linking.openURL(url);
+  }, []);
+
+  const openTerms = useCallback(async () => {
+    const url = "https://musclemetric.github.io/musclemetric-legal/terms.html";
+    const ok = await Linking.canOpenURL(url);
+
+    if (!ok) {
+      Alert.alert("Can't open link", "Please try again later.");
+      return;
+    }
+
+    await Linking.openURL(url);
+  }, []);
+
   if (loading) {
     return (
       <SafeAreaView
@@ -349,10 +375,7 @@ export default function SettingsScreen() {
           contentContainerStyle={styles.content}
           showsVerticalScrollIndicator={false}
         >
-          <ProfileHeaderCard
-            name={displayName}
-            username={handle}
-          />
+          <ProfileHeaderCard name={displayName} username={handle} />
 
           <SectionHeader title="ACCOUNT" />
           <SettingsCard>
@@ -405,6 +428,19 @@ export default function SettingsScreen() {
                 { key: "private", label: "Private" },
               ]}
               onChange={onChangeVisibility}
+            />
+          </SettingsCard>
+
+          <SectionHeader title="LEGAL" />
+          <SettingsCard>
+            <SettingsRow
+              label="Privacy Policy"
+              onPress={openPrivacyPolicy}
+            />
+            <SettingsRow
+              label="Terms & Conditions"
+              onPress={openTerms}
+              last
             />
           </SettingsCard>
 
