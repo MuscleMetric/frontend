@@ -2,16 +2,17 @@ import React from "react";
 import { View, Text, Pressable } from "react-native";
 import { useAppTheme } from "@/lib/useAppTheme";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Minimize2 } from "lucide-react-native";
 
 export function LiveHeader(props: {
   title: string;
   subtitle: string;
-  timerText: string; // "00:45"
-  onClose: () => void; // X -> confirm discard
-  onMore?: () => void; // optional
+  timerText: string;
+  onMinimize: () => void;
+  onMore?: () => void;
 }) {
   const { colors, typography } = useAppTheme();
-    const insets = useSafeAreaInsets();
+  const insets = useSafeAreaInsets();
 
   return (
     <View
@@ -26,24 +27,19 @@ export function LiveHeader(props: {
         backgroundColor: colors.bg,
       }}
     >
-      {/* Left: X */}
-      <View style={{ width: 54, alignItems: "flex-start" }}>
-        <Pressable onPress={props.onClose} hitSlop={10}>
-          <Text
-            style={{
-              color: colors.danger ?? "#ef4444",
-              fontSize: 28,
-              fontFamily: typography.fontFamily.bold,
-              lineHeight: 28,
-            }}
-          >
-            ×
-          </Text>
+      {/* Left: Minimise */}
+      <View style={{ width: 84, alignItems: "flex-start" }}>
+        <Pressable
+          testID="live-header-minimize"
+          onPress={props.onMinimize}
+          hitSlop={10}
+        >
+          <Minimize2 size={20} color={colors.text} />
         </Pressable>
       </View>
 
       {/* Center: Title + Subtitle */}
-      <View style={{ flex: 1, alignItems: "center" }}>
+      <View style={{ flex: 1, alignItems: "center", paddingHorizontal: 8 }}>
         <Text
           style={{
             fontFamily: typography.fontFamily.bold,
@@ -55,6 +51,7 @@ export function LiveHeader(props: {
         >
           {props.title}
         </Text>
+
         <Text
           style={{
             fontFamily: typography.fontFamily.regular,
@@ -68,7 +65,7 @@ export function LiveHeader(props: {
         </Text>
       </View>
 
-      {/* Right: Timer (and optional ⋯) */}
+      {/* Right: Timer + More */}
       <View style={{ width: 84, alignItems: "flex-end" }}>
         <Text
           style={{
@@ -84,15 +81,17 @@ export function LiveHeader(props: {
 
         {!!props.onMore && (
           <Pressable
+            testID="live-header-more"
             onPress={props.onMore}
             hitSlop={10}
-            style={{ marginTop: 2 }}
+            style={{ marginTop: 2, paddingHorizontal: 4, paddingVertical: 2 }}
           >
             <Text
               style={{
                 color: colors.textMuted,
                 fontSize: 18,
-                fontWeight: "900",
+                fontFamily: typography.fontFamily.bold,
+                lineHeight: 18,
               }}
             >
               ⋯

@@ -50,7 +50,7 @@ export function StrengthInputs(props: {
             onChangeText={props.onChangeWeightText}
             placeholder="0"
             placeholderTextColor={colors.textMuted}
-            keyboardType={Platform.OS === "ios" ? "default" : "numeric"}
+            keyboardType={Platform.OS === "ios" ? "decimal-pad" : "numeric"}
             inputMode="decimal"
             style={{
               fontFamily: typography.fontFamily.bold,

@@ -91,14 +91,14 @@ export function ExerciseEntryModal(props: {
 
   const { index, exercise } = useMemo(
     () => getActiveExercise(props.draft),
-    [props.draft]
+    [props.draft],
   );
 
   const setNumber = props.draft.ui.activeSetNumber;
 
   const set =
     exercise?.sets.find(
-      (s) => s.setNumber === setNumber && (s.dropIndex ?? 0) === 0
+      (s) => s.setNumber === setNumber && (s.dropIndex ?? 0) === 0,
     ) ?? null;
 
   const cardio = exercise ? isCardio(exercise) : false;
@@ -152,7 +152,7 @@ export function ExerciseEntryModal(props: {
     : false;
 
   const canRemoveDrop = Boolean(
-    eligibleDropset && dropMode && dropRows.length > 1
+    eligibleDropset && dropMode && dropRows.length > 1,
   );
 
   const ENABLE_AUTOFILL = false;
@@ -279,7 +279,7 @@ export function ExerciseEntryModal(props: {
   }
 
   useEffect(() => {
-    if (!exercise || !set) return;
+    if (!props.visible || !exercise || !set) return;
 
     if (!cardio) {
       setWeightText(set.weight != null ? String(set.weight) : "");
@@ -288,7 +288,7 @@ export function ExerciseEntryModal(props: {
       setDistanceText(set.distance != null ? String(set.distance) : "");
       setTimeText(set.timeSeconds != null ? String(set.timeSeconds) : "");
     }
-  }, [exercise, set, cardio, setNumber]);
+  }, [props.visible, index, setNumber, cardio]);
 
   useEffect(() => {
     if (!exercise || !set) return;
@@ -300,7 +300,7 @@ export function ExerciseEntryModal(props: {
     if (cardio) {
       const prev =
         exercise.sets.find(
-          (s) => s.setNumber === setNumber - 1 && (s.dropIndex ?? 0) === 0
+          (s) => s.setNumber === setNumber - 1 && (s.dropIndex ?? 0) === 0,
         ) ?? null;
       const hist = pickLastSessionSet(exercise, setNumber);
       const src = prev && hasSetData(exercise, prev) ? prev : hist;
@@ -313,7 +313,7 @@ export function ExerciseEntryModal(props: {
 
     const prev =
       exercise.sets.find(
-        (s) => s.setNumber === setNumber - 1 && (s.dropIndex ?? 0) === 0
+        (s) => s.setNumber === setNumber - 1 && (s.dropIndex ?? 0) === 0,
       ) ?? null;
     const hist = pickLastSessionSet(exercise, setNumber);
 
@@ -416,7 +416,7 @@ export function ExerciseEntryModal(props: {
                 onToggleDropset={() => {
                   props.onToggleDropset?.(
                     index,
-                    !Boolean(exercise.prescription?.isDropset)
+                    !Boolean(exercise.prescription?.isDropset),
                   );
                 }}
                 onSwapExercise={props.onSwapExercise}
