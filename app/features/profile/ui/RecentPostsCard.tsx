@@ -65,7 +65,6 @@ export default function RecentPostsCard({ data }: { data: ProfileOverview }) {
     <Card>
       <View style={styles.headerRow}>
         <Text style={styles.title}>Recent Posts</Text>
-        {posts.length > 0 ? <Pill tone="neutral" label="View all" /> : null}
       </View>
 
       {posts.length === 0 ? (
@@ -104,7 +103,7 @@ export default function RecentPostsCard({ data }: { data: ProfileOverview }) {
           <View style={styles.footer}>
             <Button
               variant="secondary"
-              title="View profile feed"
+              title="View social feed"
               onPress={() => router.push("/(tabs)/social")}
             />
           </View>

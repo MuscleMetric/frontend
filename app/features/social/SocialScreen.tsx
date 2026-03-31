@@ -1,4 +1,3 @@
-// app/features/social/SocialScreen.tsx
 import React, {
   useCallback,
   useEffect,
@@ -18,7 +17,6 @@ import { supabase } from "../../../lib/supabase";
 import { useLocalSearchParams, router } from "expo-router";
 import CreatePostSheet from "@/app/features/social/create/entry/CreatePostSheet";
 
-// ✅ NEW feed module
 import { FeedList } from "./feed/FeedList";
 import type { FeedRow } from "./feed/types";
 
@@ -33,7 +31,6 @@ export default function SocialScreen() {
       StyleSheet.create({
         screen: { flex: 1, backgroundColor: colors.bg },
 
-        // If you already have your header elsewhere, keep this minimal
         header: {
           paddingHorizontal: layout.space.lg,
           paddingTop: layout.space.lg,
@@ -87,24 +84,25 @@ export default function SocialScreen() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // cursor (seek pagination)
   const [cursorCreatedAt, setCursorCreatedAt] = useState<string | null>(null);
   const [cursorId, setCursorId] = useState<string | null>(null);
 
-  // prevent double fetch on mount (StrictMode)
   const didInitialFetch = useRef(false);
+  const handledFocusPostIdRef = useRef<string | null>(null);
 
   const [postModalOpen, setPostModalOpen] = useState(false);
   const [selectedPost, setSelectedPost] = useState<FeedRow | null>(null);
 
-  const params = useLocalSearchParams<{ openCreate?: string }>();
+  const params = useLocalSearchParams<{
+    openCreate?: string;
+    focusPostId?: string;
+  }>();
+
   const [createSheetOpen, setCreateSheetOpen] = useState(false);
 
   useEffect(() => {
     if (params.openCreate === "1") {
       setCreateSheetOpen(true);
-
-      // clear param so it doesn't reopen
       router.setParams({ openCreate: undefined });
     }
   }, [params.openCreate]);
@@ -174,7 +172,6 @@ export default function SocialScreen() {
 
       if (res.error) throw res.error;
 
-      // ✅ update counts locally (no refetch)
       bumpCommentCount(postId, +1);
     },
     [bumpCommentCount],
@@ -218,8 +215,6 @@ export default function SocialScreen() {
 
       const data = (res.data ?? []) as FeedRow[];
       setRows(data);
-
-      // set cursor for pagination
       applyCursorFrom(data, null, null);
     } catch (e: any) {
       console.log("get_feed exception:", e);
@@ -282,6 +277,29 @@ export default function SocialScreen() {
     loadInitial();
   }, [loadInitial]);
 
+  useEffect(() => {
+    const focusPostId =
+      typeof params.focusPostId === "string" ? params.focusPostId : undefined;
+
+    if (!focusPostId) {
+      handledFocusPostIdRef.current = null;
+      return;
+    }
+
+    if (loading) return;
+
+    if (handledFocusPostIdRef.current === focusPostId) return;
+
+    const targetPost = rows.find((row) => row.post_id === focusPostId);
+    if (!targetPost) return;
+
+    handledFocusPostIdRef.current = focusPostId;
+    setSelectedPost(targetPost);
+    setPostModalOpen(true);
+
+    router.setParams({ focusPostId: undefined });
+  }, [params.focusPostId, rows, loading]);
+
   const toggleLike = useCallback(
     async (postId: string) => {
       const currentRow = rows.find((r) => r.post_id === postId);
@@ -293,7 +311,6 @@ export default function SocialScreen() {
       const nextLiked = !prevLiked;
       const nextCount = Math.max(0, prevCount + (nextLiked ? 1 : -1));
 
-      // 1) optimistic update
       setRows((prev) =>
         prev.map((r) =>
           r.post_id !== postId
@@ -306,14 +323,12 @@ export default function SocialScreen() {
         ),
       );
 
-      // 2) server toggle
       const res = await supabase.rpc("toggle_post_like", { p_post_id: postId });
       console.log("toggle_post_like result", res.data, res.error);
 
       if (res.error) {
         console.log("toggle_post_like error:", res.error);
 
-        // revert cleanly on failure
         setRows((prev) =>
           prev.map((r) =>
             r.post_id !== postId
@@ -334,7 +349,6 @@ export default function SocialScreen() {
       } | null;
 
       if (!row) {
-        // fallback: revert if server returned nothing unexpected
         setRows((prev) =>
           prev.map((r) =>
             r.post_id !== postId
@@ -349,7 +363,6 @@ export default function SocialScreen() {
         return;
       }
 
-      // 3) reconcile to server truth
       setRows((prev) =>
         prev.map((r) =>
           r.post_id !== postId
@@ -361,10 +374,20 @@ export default function SocialScreen() {
               },
         ),
       );
+
+      setSelectedPost((prev) =>
+        !prev || prev.post_id !== postId
+          ? prev
+          : {
+              ...prev,
+              viewer_liked: row.liked,
+              like_count: row.like_count,
+            },
+      );
     },
-    [rows, setRows],
+    [rows],
   );
-  // -------- UI states --------
+
   if (loading) {
     return (
       <View style={styles.screen}>
@@ -383,7 +406,6 @@ export default function SocialScreen() {
           <Text style={styles.hintText}>Pull to refresh.</Text>
         </View>
 
-        {/* still allow pull-to-refresh even on error */}
         <View style={{ flex: 1 }}>
           <RefreshControl
             refreshing={refreshing}
