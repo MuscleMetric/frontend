@@ -51,7 +51,7 @@ export default function ChallengeBanner() {
 
         <Button
           title="Discover plans"
-          onPress={() => router.push("/features/plans")}
+          onPress={() => router.push("/features/plans/create/planInfo")}
         />
       </View>
     </Card>

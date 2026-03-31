@@ -60,7 +60,7 @@ export default function RecentPlansCard({ data }: { data: ProfileOverview }) {
             No plans yet. Start one to get structure and keep your progress moving.
           </Text>
           <View style={styles.footer}>
-            <Button title="Discover plans" onPress={() => router.push("/features/plans")} />
+            <Button title="Discover plans" onPress={() => router.push("/features/plans/create/planInfo")} />
           </View>
         </>
       ) : (
