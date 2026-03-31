@@ -178,8 +178,21 @@ export default function SocialScreen() {
   );
 
   const fetchWorkoutDetails = useCallback(
-    async (_postId: string): Promise<WorkoutDetailsPayload | null> => {
-      return null;
+    async (postId: string): Promise<WorkoutDetailsPayload | null> => {
+      const res = await supabase.rpc("get_post_workout_details", {
+        p_post_id: postId,
+      });
+
+      if (res.error) {
+        console.log("get_post_workout_details error:", res.error);
+        return null;
+      }
+
+      const row = Array.isArray(res.data)
+        ? (res.data[0] as WorkoutDetailsPayload | undefined)
+        : undefined;
+
+      return row ?? null;
     },
     [],
   );
