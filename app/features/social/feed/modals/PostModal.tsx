@@ -22,6 +22,7 @@ import { CommentComposer } from "./CommentComposer";
 // ✅ reuse existing post cards for preview
 import { PrPostCard } from "../posts/PrPostCard";
 import { WorkoutPostCard } from "../posts/WorkoutPostCard";
+import { WorkoutDetails } from "./WorkoutDetails";
 
 type Props = {
   visible: boolean;
@@ -184,6 +185,10 @@ export function PostModal({
   const [comments, setComments] = useState<CommentRow[]>([]);
   const [loadingComments, setLoadingComments] = useState(false);
 
+  const [workoutDetails, setWorkoutDetails] =
+    useState<WorkoutDetailsPayload | null>(null);
+  const [loadingWorkoutDetails, setLoadingWorkoutDetails] = useState(false);
+
   const loadComments = useCallback(async () => {
     if (!post) return;
     setLoadingComments(true);
@@ -198,17 +203,37 @@ export function PostModal({
     }
   }, [post, fetchComments]);
 
-  useEffect(() => {
-    console.log("PostModal effect check", {
-      visible,
-      postId: post?.post_id ?? null,
-    });
+  const loadWorkoutDetails = useCallback(async () => {
+    if (!post || post.post_type !== "workout" || !fetchWorkoutDetails) {
+      setWorkoutDetails(null);
+      return;
+    }
 
+    setLoadingWorkoutDetails(true);
+
+    try {
+      const data = await fetchWorkoutDetails(post.post_id);
+      setWorkoutDetails(data);
+    } catch (e) {
+      console.log("loadWorkoutDetails error", e);
+      setWorkoutDetails(null);
+    } finally {
+      setLoadingWorkoutDetails(false);
+    }
+  }, [post, fetchWorkoutDetails]);
+
+  useEffect(() => {
     if (!visible || !post) return;
 
-    console.log("PostModal calling loadComments", post.post_id);
     loadComments();
-  }, [visible, post, loadComments]);
+
+    if (post.post_type === "workout") {
+      loadWorkoutDetails();
+    } else {
+      setWorkoutDetails(null);
+      setLoadingWorkoutDetails(false);
+    }
+  }, [visible, post, loadComments, loadWorkoutDetails]);
 
   console.log("PostModal render", {
     visible,
@@ -223,17 +248,12 @@ export function PostModal({
   const displayName = post.user_name ?? "User";
 
   const renderPostPreview = () => {
-    // Render the same card designs inside the modal (no nested comments open)
     if (post.post_type === "workout") {
       return (
-        <WorkoutPostCard
-          item={post}
-          onOpenComments={() => {}}
-          showHeader={false}
-          showActions={false}
-        />
+        <WorkoutDetails loading={loadingWorkoutDetails} data={workoutDetails} />
       );
     }
+
     if (post.post_type === "pr") {
       return (
         <PrPostCard
@@ -244,6 +264,7 @@ export function PostModal({
         />
       );
     }
+
     return null;
   };
 

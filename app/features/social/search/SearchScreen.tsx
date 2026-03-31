@@ -18,6 +18,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { useAppTheme } from "@/lib/useAppTheme";
 import { supabase } from "@/lib/supabase";
+import { ChevronLeft } from "lucide-react-native";
 
 type FollowState =
   | "self"
@@ -98,17 +99,14 @@ export default function SearchScreen() {
           lineHeight: typography.lineHeight.h2,
         },
         backBtn: {
-          paddingHorizontal: 12,
-          paddingVertical: 8,
-          borderRadius: 999,
+          width: 36,
+          height: 36,
+          borderRadius: 18,
+          alignItems: "center",
+          justifyContent: "center",
           borderWidth: 1,
           borderColor: colors.border,
           backgroundColor: colors.surface,
-        },
-        backTxt: {
-          color: colors.text,
-          fontFamily: typography.fontFamily.semibold,
-          fontSize: typography.size.meta,
         },
 
         tabsRow: { flexDirection: "row", gap: 10 },
@@ -235,7 +233,7 @@ export default function SearchScreen() {
           textAlign: "center",
         },
       }),
-    [colors, typography, layout]
+    [colors, typography, layout],
   );
 
   const [mode, setMode] = useState<"search" | "requested">("search");
@@ -246,7 +244,7 @@ export default function SearchScreen() {
   const [rows, setRows] = useState<SearchRow[]>([]);
   const [requested, setRequested] = useState<RequestedRow[]>([]);
 
-  const debounceRef = useRef<NodeJS.Timeout | null>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const runSearch = useCallback(async (query: string) => {
     setLoading(true);
@@ -324,7 +322,7 @@ export default function SearchScreen() {
       // 2) fetch profiles for those ids (RLS will restrict as needed)
       const pr = await supabase
         .from("profiles")
-        .select("id, name")
+        .select("id, name, username")
         .in("id", ids);
 
       if (pr.error) {
@@ -333,17 +331,17 @@ export default function SearchScreen() {
         setRequested(
           ids.map((id: string) => ({
             user_id: id,
-            name: null,
-            username: null,
+            name: byId.get(id)?.name ?? null,
+            username: byId.get(id)?.username ?? null,
             follow_state: "requested",
-          }))
+          })),
         );
         setLoading(false);
         return;
       }
 
       const byId = new Map<string, any>(
-        (pr.data ?? []).map((p: any) => [p.id, p])
+        (pr.data ?? []).map((p: any) => [p.id, p]),
       );
       setRequested(
         ids.map((id: string) => ({
@@ -351,7 +349,7 @@ export default function SearchScreen() {
           name: byId.get(id)?.name ?? null,
           username: null,
           follow_state: "requested",
-        }))
+        })),
       );
     } catch (e: any) {
       console.log("loadRequested exception:", e);
@@ -396,14 +394,14 @@ export default function SearchScreen() {
     const updateInLists = (userId: string, nextState: FollowState) => {
       setRows((prev) =>
         prev.map((r) =>
-          r.user_id === userId ? { ...r, follow_state: nextState } : r
-        )
+          r.user_id === userId ? { ...r, follow_state: nextState } : r,
+        ),
       );
       setRequested(
         (prev) =>
           nextState === "requested"
             ? prev
-            : prev.filter((r) => r.user_id !== userId) // remove from requested tab if cancelled/changed
+            : prev.filter((r) => r.user_id !== userId), // remove from requested tab if cancelled/changed
       );
     };
 
@@ -417,7 +415,7 @@ export default function SearchScreen() {
         // res.data is 'following' or 'requested'
         updateInLists(
           item.user_id,
-          String(res.data ?? "requested") as FollowState
+          String(res.data ?? "requested") as FollowState,
         );
         return;
       }
@@ -456,10 +454,21 @@ export default function SearchScreen() {
       <View style={styles.screen}>
         <View style={styles.header}>
           <View style={styles.titleRow}>
-            <Text style={styles.title}>Search</Text>
-            <Pressable style={styles.backBtn} onPress={() => router.back()}>
-              <Text style={styles.backTxt}>Back</Text>
+            <Pressable
+              onPress={() => router.back()}
+              style={({ pressed }) => [
+                styles.backBtn,
+                { opacity: pressed ? 0.6 : 1 },
+              ]}
+              hitSlop={10}
+            >
+              <ChevronLeft size={18} color={colors.text} />
             </Pressable>
+
+            <Text style={styles.title}>Search</Text>
+
+            {/* spacer to keep title centered */}
+            <View style={{ width: 36, height: 36 }} />
           </View>
 
           <View style={styles.tabsRow}>
@@ -503,7 +512,11 @@ export default function SearchScreen() {
             keyExtractor={(i) => i.user_id}
             ListEmptyComponent={
               <Text style={styles.empty}>
-                {mode === "search" ? "No results yet." : "No pending requests."}
+                {mode === "search"
+                  ? q.trim()
+                    ? "No users found."
+                    : "Search for people by username."
+                  : "No pending requests."}
               </Text>
             }
             renderItem={({ item }) => {

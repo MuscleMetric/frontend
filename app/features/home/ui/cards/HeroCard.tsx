@@ -105,7 +105,7 @@ export function HeroCard({ card, summary }: { card: any; summary?: any }) {
       "Choose a starter workout below — no pressure, we’ll guide you through it.";
     heroPrimary = {
       label: "Choose a starter workout ↓",
-      cta: { action: "scroll_to_starters" }, // or open_workouts_tab
+      cta: { action: "No Action Required" }, 
     };
     heroBadge = null;
     showCover = true;

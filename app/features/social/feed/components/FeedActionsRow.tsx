@@ -54,17 +54,21 @@ export function FeedActionsRow(props: Props) {
           paddingVertical: 6,
         },
       }),
-    [colors, typography, layout]
+    [colors, typography, layout],
   );
 
-  const likeColor = props.viewerLiked
-    ? colors.primary
-    : colors.textMuted;
+  const likeColor = props.viewerLiked ? colors.primary : colors.textMuted;
+
+  const showShare = false;
 
   return (
     <View style={styles.row}>
       <View style={styles.left}>
-        <Pressable style={styles.action} onPress={props.onPressLike} hitSlop={12}>
+        <Pressable
+          style={styles.action}
+          onPress={props.onPressLike}
+          hitSlop={12}
+        >
           <ThumbsUp
             size={20}
             strokeWidth={1.8}
@@ -74,23 +78,25 @@ export function FeedActionsRow(props: Props) {
           <Text style={styles.count}>{props.likeCount}</Text>
         </Pressable>
 
-        <Pressable style={styles.action} onPress={props.onPressComments} hitSlop={12}>
-          <MessageCircle
-            size={20}
-            strokeWidth={1.8}
-            color={colors.textMuted}
-          />
+        <Pressable
+          style={styles.action}
+          onPress={props.onPressComments}
+          hitSlop={12}
+        >
+          <MessageCircle size={20} strokeWidth={1.8} color={colors.textMuted} />
           <Text style={styles.count}>{props.commentCount}</Text>
         </Pressable>
       </View>
 
-      <Pressable style={styles.share} onPress={props.onPressShare} hitSlop={12}>
-        <Share2
-          size={20}
-          strokeWidth={1.8}
-          color={colors.textMuted}
-        />
-      </Pressable>
+      {showShare ? (
+        <Pressable
+          style={styles.share}
+          onPress={props.onPressShare}
+          hitSlop={12}
+        >
+          <Share2 size={20} strokeWidth={1.8} color={colors.textMuted} />
+        </Pressable>
+      ) : null}
     </View>
   );
 }

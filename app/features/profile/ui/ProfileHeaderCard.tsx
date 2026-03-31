@@ -1,9 +1,20 @@
-import React, { useMemo } from "react";
-import { View, Text, StyleSheet, Pressable } from "react-native";
-import { router } from "expo-router";
+import React, { useMemo, useState } from "react";
+import {
+  View,
+  Text,
+  StyleSheet,
+  Pressable,
+  Modal,
+  FlatList,
+} from "react-native";
 
+import {
+  getProfileConnections,
+  type ProfileConnectionKind,
+  type ProfileConnectionRow,
+} from "../data/getProfileConnections";
 import { useAppTheme } from "@/lib/useAppTheme";
-import { Card, Icon } from "@/ui";
+import { Card } from "@/ui";
 import type { ProfileOverview } from "../data/profileTypes";
 
 function formatMonthYear(iso: string) {
@@ -63,14 +74,26 @@ function formatInt(n: number | null | undefined) {
   return String(Math.max(0, Math.trunc(v)));
 }
 
+type ConnectionsModalType = "followers" | "following" | null;
+
 export default function ProfileHeaderCard({ data }: { data: ProfileOverview }) {
   const { colors, typography, layout } = useAppTheme();
+
+  const [connectionsType, setConnectionsType] =
+    useState<ConnectionsModalType>(null);
+  const [connectionsOpen, setConnectionsOpen] = useState(false);
+
+  const [connectionsLoading, setConnectionsLoading] = useState(false);
+  const [connectionsError, setConnectionsError] = useState<string | null>(null);
+  const [connectionsData, setConnectionsData] = useState<
+    ProfileConnectionRow[]
+  >([]);
 
   const name = data.user.name ?? "User";
   const handle = data.user.username ? `@${data.user.username}` : null;
   const joinedText = useMemo(
     () => formatMonthYear(data.user.joined_at),
-    [data.user.joined_at]
+    [data.user.joined_at],
   );
   const initials = useMemo(() => initialsFromName(name), [name]);
 
@@ -80,6 +103,43 @@ export default function ProfileHeaderCard({ data }: { data: ProfileOverview }) {
   const workouts = formatInt(data.counts?.workouts_total);
   const followers = formatInt(data.counts?.followers_count);
   const following = formatInt(data.counts?.following_count);
+
+  const modalTitle =
+    connectionsType === "followers"
+      ? "Followers"
+      : connectionsType === "following"
+        ? "Following"
+        : "";
+
+  const emptyText =
+    connectionsType === "followers"
+      ? "No followers yet."
+      : "Not following anyone yet.";
+
+  async function openConnections(type: ProfileConnectionKind) {
+    setConnectionsType(type);
+    setConnectionsOpen(true);
+    setConnectionsLoading(true);
+    setConnectionsError(null);
+    setConnectionsData([]);
+
+    try {
+      const rows = await getProfileConnections(data.user.id, type);
+      setConnectionsData(rows);
+    } catch (error: any) {
+      setConnectionsError(error?.message ?? "Failed to load connections.");
+    } finally {
+      setConnectionsLoading(false);
+    }
+  }
+
+  function closeConnections() {
+    setConnectionsOpen(false);
+    setConnectionsType(null);
+    setConnectionsLoading(false);
+    setConnectionsError(null);
+    setConnectionsData([]);
+  }
 
   const styles = useMemo(
     () =>
@@ -144,17 +204,6 @@ export default function ProfileHeaderCard({ data }: { data: ProfileOverview }) {
           color: colors.textMuted,
         },
 
-        iconBtn: {
-          width: 40,
-          height: 40,
-          borderRadius: 999,
-          alignItems: "center",
-          justifyContent: "center",
-          borderWidth: 1,
-          borderColor: colors.border,
-          backgroundColor: colors.surface,
-        },
-
         statsRow: {
           marginTop: layout.space.lg,
           flexDirection: "row",
@@ -166,6 +215,13 @@ export default function ProfileHeaderCard({ data }: { data: ProfileOverview }) {
         },
 
         stat: { flex: 1, alignItems: "center" },
+
+        statPressable: {
+          flex: 1,
+          alignItems: "center",
+          paddingVertical: 4,
+          borderRadius: 12,
+        },
 
         statValue: {
           fontFamily: typography.fontFamily.bold,
@@ -188,77 +244,195 @@ export default function ProfileHeaderCard({ data }: { data: ProfileOverview }) {
           backgroundColor: colors.border,
           opacity: 0.9,
         },
+
+        modalBackdrop: {
+          flex: 1,
+          backgroundColor: "rgba(0,0,0,0.45)",
+          justifyContent: "center",
+          padding: layout.space.lg,
+        },
+
+        modalCard: {
+          backgroundColor: colors.surface,
+          borderRadius: layout.radius.lg,
+          borderWidth: StyleSheet.hairlineWidth,
+          borderColor: colors.border,
+          maxHeight: "70%",
+          overflow: "hidden",
+        },
+
+        modalHeader: {
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+          paddingHorizontal: layout.space.lg,
+          paddingVertical: layout.space.md,
+          borderBottomWidth: StyleSheet.hairlineWidth,
+          borderBottomColor: colors.border,
+        },
+
+        modalTitle: {
+          fontFamily: typography.fontFamily.bold,
+          fontSize: typography.size.h3,
+          lineHeight: typography.lineHeight.h3,
+          color: colors.text,
+        },
+
+        modalClose: {
+          paddingHorizontal: layout.space.sm,
+          paddingVertical: layout.space.xs,
+          borderRadius: 999,
+          borderWidth: StyleSheet.hairlineWidth,
+          borderColor: colors.border,
+          backgroundColor: colors.surface,
+        },
+
+        modalCloseText: {
+          fontFamily: typography.fontFamily.semibold,
+          fontSize: typography.size.meta,
+          lineHeight: typography.lineHeight.meta,
+          color: colors.text,
+        },
+
+        modalBody: {
+          paddingHorizontal: layout.space.lg,
+          paddingVertical: layout.space.md,
+        },
+
+        stateText: {
+          fontFamily: typography.fontFamily.regular,
+          fontSize: typography.size.body,
+          lineHeight: typography.lineHeight.body,
+          color: colors.textMuted,
+        },
+
+        row: {
+          paddingVertical: layout.space.md,
+          borderBottomWidth: StyleSheet.hairlineWidth,
+          borderBottomColor: colors.border,
+        },
+
+        rowName: {
+          fontFamily: typography.fontFamily.semibold,
+          fontSize: typography.size.body,
+          lineHeight: typography.lineHeight.body,
+          color: colors.text,
+        },
+
+        rowUsername: {
+          marginTop: 2,
+          fontFamily: typography.fontFamily.regular,
+          fontSize: typography.size.meta,
+          lineHeight: typography.lineHeight.meta,
+          color: colors.textMuted,
+        },
       }),
-    [colors, typography, layout]
+    [colors, typography, layout],
   );
 
   return (
-    <Card>
-      <View style={styles.cardInner}>
-        <View style={styles.topRow}>
-          <View style={styles.left}>
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>{initials}</Text>
-            </View>
+    <>
+      <Card>
+        <View style={styles.cardInner}>
+          <View style={styles.topRow}>
+            <View style={styles.left}>
+              <View style={styles.avatar}>
+                <Text style={styles.avatarText}>{initials}</Text>
+              </View>
 
-            <View style={styles.nameBlock}>
-              {handle ? (
-                <Text style={styles.username} numberOfLines={1}>
-                  {handle}
+              <View style={styles.nameBlock}>
+                {handle ? (
+                  <Text style={styles.username} numberOfLines={1}>
+                    {handle}
+                  </Text>
+                ) : null}
+
+                <Text style={styles.title} numberOfLines={1}>
+                  {name}
                 </Text>
-              ) : null}
 
-              <Text style={styles.title} numberOfLines={1}>
-                {name}
-              </Text>
-
-              <Text style={styles.meta} numberOfLines={1}>
-                {levelLabel} · {goalLabel}
-              </Text>
-              <Text style={styles.joined}>Joined {joinedText}</Text>
+                <Text style={styles.meta} numberOfLines={1}>
+                  {levelLabel} · {goalLabel}
+                </Text>
+                <Text style={styles.joined}>Joined {joinedText}</Text>
+              </View>
             </View>
+
+            {/* Want to add a qr code icon here in the future for sharing profile */}
           </View>
 
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Edit profile"
-            onPress={() =>
-              router.push("/features/profile/settings/EditProfile")
-            }
-            style={({ pressed }) => [
-              styles.iconBtn,
-              {
-                backgroundColor: pressed ? colors.cardPressed : colors.surface,
-              },
-            ]}
-            hitSlop={layout.hitSlop}
-          >
-            {/* Pick whichever icon name exists in your Icon set */}
-            <Icon name="create-outline" size={18} color={colors.text} />
-          </Pressable>
+          <View style={styles.statsRow}>
+            <View style={styles.stat}>
+              <Text style={styles.statValue}>{workouts}</Text>
+              <Text style={styles.statLabel}>Workouts</Text>
+            </View>
+
+            <View style={styles.divider} />
+
+            <Pressable
+              style={styles.statPressable}
+              onPress={() => openConnections("followers")}
+            >
+              <Text style={styles.statValue}>{followers}</Text>
+              <Text style={styles.statLabel}>Followers</Text>
+            </Pressable>
+
+            <View style={styles.divider} />
+
+            <Pressable
+              style={styles.statPressable}
+              onPress={() => openConnections("following")}
+            >
+              <Text style={styles.statValue}>{following}</Text>
+              <Text style={styles.statLabel}>Following</Text>
+            </Pressable>
+          </View>
         </View>
+      </Card>
 
-        <View style={styles.statsRow}>
-          <Pressable style={styles.stat} onPress={() => {}}>
-            <Text style={styles.statValue}>{workouts}</Text>
-            <Text style={styles.statLabel}>Workouts</Text>
+      <Modal
+        visible={connectionsOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={closeConnections}
+      >
+        <Pressable style={styles.modalBackdrop} onPress={closeConnections}>
+          <Pressable onPress={() => {}} style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>{modalTitle}</Text>
+
+              <Pressable style={styles.modalClose} onPress={closeConnections}>
+                <Text style={styles.modalCloseText}>Close</Text>
+              </Pressable>
+            </View>
+
+            <View style={styles.modalBody}>
+              {connectionsLoading ? (
+                <Text style={styles.stateText}>Loading...</Text>
+              ) : connectionsError ? (
+                <Text style={styles.stateText}>{connectionsError}</Text>
+              ) : connectionsData.length === 0 ? (
+                <Text style={styles.stateText}>{emptyText}</Text>
+              ) : (
+                <FlatList
+                  data={connectionsData}
+                  keyExtractor={(item) => item.id}
+                  renderItem={({ item }) => (
+                    <View style={styles.row}>
+                      <Text style={styles.rowName}>
+                        {item.name?.trim() || "Unnamed user"}
+                      </Text>
+                      {item.username ? (
+                        <Text style={styles.rowUsername}>@{item.username}</Text>
+                      ) : null}
+                    </View>
+                  )}
+                />
+              )}
+            </View>
           </Pressable>
-
-          <View style={styles.divider} />
-
-          <Pressable style={styles.stat} onPress={() => {}}>
-            <Text style={styles.statValue}>{followers}</Text>
-            <Text style={styles.statLabel}>Followers</Text>
-          </Pressable>
-
-          <View style={styles.divider} />
-
-          <Pressable style={styles.stat} onPress={() => {}}>
-            <Text style={styles.statValue}>{following}</Text>
-            <Text style={styles.statLabel}>Following</Text>
-          </Pressable>
-        </View>
-      </View>
-    </Card>
+        </Pressable>
+      </Modal>
+    </>
   );
 }

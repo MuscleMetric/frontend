@@ -42,15 +42,6 @@ export function CreateWorkoutModal({
         >
           <View style={{ gap: layout.space.sm }}>
             <Button
-              title="Generate a workout for me"
-              onPress={() => {
-                onClose();
-                router.push("/features/workouts/create/auto-create");
-              }}
-              variant="secondary"
-            />
-
-            <Button
               title="Build my own workout"
               onPress={() => {
                 onClose();

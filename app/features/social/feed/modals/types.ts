@@ -14,6 +14,10 @@ export type WorkoutDetailsPayload = {
   workout_history_id: string;
   workout_title: string | null;
   completed_at: string | null;
+  duration_seconds: number | null;
+  sets_count: number | null;
+  volume_kg: number | null;
+  workout_image_key: string | null;
 
   exercises: Array<{
     workout_exercise_history_id: string;

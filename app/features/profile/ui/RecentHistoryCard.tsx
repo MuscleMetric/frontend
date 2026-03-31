@@ -84,14 +84,6 @@ export default function RecentHistoryCard({ data }: { data: ProfileOverview }) {
       <View style={styles.headerRow}>
         <Text style={styles.title}>Recent History</Text>
 
-        {rows.length > 0 ? (
-          <View style={styles.headerRight}>
-            <Pill tone="neutral" label={`${Math.min(rows.length, 3)} shown`} />
-            <Pressable onPress={goAll}>
-              <Pill tone="primary" label="View all" />
-            </Pressable>
-          </View>
-        ) : null}
       </View>
 
       {rows.length === 0 ? (

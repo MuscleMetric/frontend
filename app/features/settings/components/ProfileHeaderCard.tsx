@@ -13,11 +13,9 @@ function getInitials(name: string) {
 export function ProfileHeaderCard({
   name,
   username,
-  onPressEdit,
 }: {
   name: string;
   username: string;
-  onPressEdit: () => void;
 }) {
   const { colors, typography, layout } = useAppTheme();
 
@@ -35,7 +33,12 @@ export function ProfileHeaderCard({
           justifyContent: "space-between",
           gap: layout.space.md,
         },
-        left: { flexDirection: "row", alignItems: "center", gap: layout.space.md, flex: 1 },
+        left: {
+          flexDirection: "row",
+          alignItems: "center",
+          gap: layout.space.md,
+          flex: 1,
+        },
         avatar: {
           width: 44,
           height: 44,
@@ -76,34 +79,24 @@ export function ProfileHeaderCard({
           fontSize: typography.size.meta,
         },
       }),
-    [colors, typography, layout]
+    [colors, typography, layout],
   );
 
   const initials = getInitials(name || "User");
 
   return (
     <View style={styles.card}>
-      <View style={styles.left}>
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>{initials}</Text>
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.name} numberOfLines={1}>
-            {name}
-          </Text>
-          <Text style={styles.handle} numberOfLines={1}>
-            @{username}
-          </Text>
-        </View>
+      <View style={styles.avatar}>
+        <Text style={styles.avatarText}>{initials}</Text>
       </View>
 
-      <Pressable
-        onPress={onPressEdit}
-        style={({ pressed }) => [styles.editBtn, { opacity: pressed ? 0.7 : 1 }]}
-        hitSlop={10}
-      >
-        <Text style={styles.editText}>Edit Profile</Text>
-      </Pressable>
+      <Text style={styles.name} numberOfLines={1}>
+        {name}
+      </Text>
+
+      <Text style={styles.handle} numberOfLines={1}>
+        @{username}
+      </Text>
     </View>
   );
 }
