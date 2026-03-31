@@ -13,12 +13,27 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useAppTheme } from "@/lib/useAppTheme";
 import { supabase } from "@/lib/supabase";
 
+import { WorkoutPostCard } from "@/app/features/social/feed/posts/WorkoutPostCard";
+import { PrPostCard } from "@/app/features/social/feed/posts/PrPostCard";
+import type { FeedRow } from "@/app/features/social/feed/types";
+
 type RecentPostPreview = {
   post_id: string;
+  user_id: string;
+  user_name: string | null;
+  user_username: string | null;
   post_type: "workout" | "pr" | "text" | string;
   visibility: "public" | "followers" | "private" | string;
   caption: string | null;
   created_at: string;
+  like_count: number;
+  comment_count: number;
+  viewer_liked: boolean;
+  workout_history_id: string | null;
+  exercise_id: string | null;
+  exercise_name: string | null;
+  workout_snapshot: any;
+  pr_snapshot: any;
 };
 
 type ProfileCardRow = {
@@ -230,28 +245,6 @@ export default function ProfileModalContent({
           textTransform: "uppercase",
         },
 
-        postCard: {
-          borderWidth: 1,
-          borderColor: colors.border,
-          backgroundColor: colors.surface,
-          borderRadius: layout.radius.lg,
-          padding: layout.space.lg,
-          gap: 6,
-          marginBottom: layout.space.md,
-        },
-        postMeta: {
-          color: colors.textMuted,
-          fontFamily: typography.fontFamily.medium,
-          fontSize: typography.size.meta,
-        },
-        postCaption: {
-          marginTop: 2,
-          color: colors.text,
-          fontFamily: typography.fontFamily.regular,
-          fontSize: typography.size.body,
-          lineHeight: typography.lineHeight.body,
-        },
-
         center: {
           flex: 1,
           alignItems: "center",
@@ -430,6 +423,11 @@ export default function ProfileModalContent({
   const initials = initialsFromName(card.name);
   const posts = Array.isArray(card.recent_posts) ? card.recent_posts : [];
 
+  const canSeePosts =
+    card.follow_state === "self" ||
+    card.follow_state === "following" ||
+    card.visibility === "public";
+
   return (
     <SafeAreaView style={styles.safe} edges={["bottom", "left", "right"]}>
       <View style={styles.screen}>
@@ -443,7 +441,7 @@ export default function ProfileModalContent({
         </View>
 
         <FlatList
-          data={posts}
+          data={canSeePosts ? posts : []}
           keyExtractor={(p) => p.post_id}
           contentContainerStyle={styles.content}
           refreshControl={
@@ -506,7 +504,7 @@ export default function ProfileModalContent({
                   ) : null}
                 </View>
 
-                {card.can_view ? (
+                {canSeePosts ? (
                   <View style={styles.statsRow}>
                     <View style={styles.stat}>
                       <Text style={styles.statValue}>
@@ -544,28 +542,53 @@ export default function ProfileModalContent({
                 {err ? <Text style={styles.error}>{err}</Text> : null}
               </View>
 
-              {card.can_view ? (
+              {canSeePosts ? (
                 <Text style={styles.sectionTitle}>Recent posts</Text>
               ) : null}
 
-              {card.can_view && posts.length === 0 ? (
+              {canSeePosts && posts.length === 0 ? (
                 <View style={styles.privateBox}>
                   <Text style={styles.meta}>No posts yet.</Text>
                 </View>
               ) : null}
             </>
           }
-          renderItem={({ item }) => (
-            <View style={styles.postCard}>
-              <Text style={styles.postMeta}>
-                {item.post_type} • {item.visibility} • {fmtTs(item.created_at)}
-              </Text>
+          renderItem={({ item }) => {
+            const feedItem = item as unknown as FeedRow;
 
-              {!!item.caption && (
-                <Text style={styles.postCaption}>{item.caption}</Text>
-              )}
-            </View>
-          )}
+            if (item.post_type === "workout") {
+              return (
+                <WorkoutPostCard
+                  item={feedItem}
+                  showHeader={true}
+                  showActions={false}
+                />
+              );
+            }
+
+            if (item.post_type === "pr") {
+              return (
+                <PrPostCard
+                  item={feedItem}
+                  showHeader={true}
+                  showActions={false}
+                />
+              );
+            }
+
+            return (
+              <View style={styles.privateBox}>
+                <Text style={styles.subtleText}>
+                  {item.post_type} • {item.visibility} •{" "}
+                  {fmtTs(item.created_at)}
+                </Text>
+
+                {!!item.caption ? (
+                  <Text style={styles.meta}>{item.caption}</Text>
+                ) : null}
+              </View>
+            );
+          }}
           ListFooterComponent={<View style={{ height: layout.space.xxl }} />}
         />
       </View>
