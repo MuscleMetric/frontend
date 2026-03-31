@@ -35,7 +35,14 @@ function DonutRing({
   const dash = (pct / 100) * c;
 
   return (
-    <View style={{ width: size, height: size, alignItems: "center", justifyContent: "center" }}>
+    <View
+      style={{
+        width: size,
+        height: size,
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
       <Svg width={size} height={size}>
         {/* background */}
         <Circle
@@ -64,7 +71,13 @@ function DonutRing({
         />
       </Svg>
 
-      <View style={{ position: "absolute", alignItems: "center", justifyContent: "center" }}>
+      <View
+        style={{
+          position: "absolute",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
         {children}
       </View>
     </View>
@@ -219,7 +232,7 @@ export default function ActivityCard({
           color: colors.textMuted,
         },
       }),
-    [colors, typography, layout]
+    [colors, typography, layout],
   );
 
   return (
@@ -249,26 +262,26 @@ export default function ActivityCard({
 
             {showPlanned ? (
               <View style={styles.legendItem}>
-                <View style={[styles.dot, { backgroundColor: colors.trackBorder }]} />
+                <View
+                  style={[styles.dot, { backgroundColor: colors.trackBorder }]}
+                />
                 <Text style={styles.legendText}>Planned ({plannedLeft})</Text>
               </View>
             ) : null}
           </View>
         </View>
 
-        <View style={styles.tilesRow}>
-          <View style={styles.tile}>
-            <Text style={styles.tileTitle}>Weekly Streak</Text>
-            <Text style={styles.tileValue}>{plural(weeklyStreak, "week")}</Text>
-            <Text style={styles.tileHint}>You’re on fire! Keep it up.</Text>
+        {weeklyStreak > 0 ? (
+          <View style={styles.tilesRow}>
+            <View style={styles.tile}>
+              <Text style={styles.tileTitle}>Weekly Streak</Text>
+              <Text style={styles.tileValue}>
+                {plural(weeklyStreak, "week")}
+              </Text>
+              <Text style={styles.tileHint}>You’re on fire! Keep it up.</Text>
+            </View>
           </View>
-
-          <View style={styles.tile}>
-            <Text style={styles.tileTitle}>Step streak</Text>
-            <Text style={styles.tileValue}>{plural(stepsStreak, "day")}</Text>
-            <Text style={styles.tileHint}>Consistency builds momentum.</Text>
-          </View>
-        </View>
+        ) : null}
 
         <View style={styles.divider} />
 
