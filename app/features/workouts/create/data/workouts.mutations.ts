@@ -9,112 +9,112 @@ function assertUser(userId: string | null | undefined) {
   if (!userId) throw new Error("Missing user session");
 }
 
-/**
- * Creates a "loose workout" (not plan-bound):
- * - inserts into workouts
- * - inserts ordered workout_exercises rows
- *
- * Assumes tables:
- * - workouts: id, user_id, title, notes, is_favourite, created_at
- * - workout_exercises: workout_id, exercise_id, order_index, note? (optional)
- */
-export async function createWorkoutFromDraft(
-  userId: string | null | undefined,
-  draft: WorkoutDraft
-): Promise<CreateWorkoutResult> {
-  assertUser(userId);
-
+function normaliseWorkoutPayload(draft: WorkoutDraft) {
   const title = String(draft.title ?? "").trim();
   if (!title) throw new Error("Workout name is required");
 
-  // 1) create workout
-  const { data: wRow, error: wErr } = await supabase
-    .from("workouts")
-    .insert({
-      user_id: userId,
-      title,
-      notes: draft.note ?? null,
-      is_favourite: !!draft.isFavourite,
-    })
-    .select("id")
-    .single();
+  const notes = draft.note ? String(draft.note).trim() : null;
 
-  if (wErr) throw wErr;
-
-  const workoutId = String((wRow as any).id);
-
-  // 2) add workout exercises (ordered)
-  if (draft.exercises.length) {
-    const rows = draft.exercises.map((e, idx) => ({
-      workout_id: workoutId,
+  return {
+    title,
+    notes,
+    exercises: (draft.exercises ?? []).map((e, idx) => ({
+      // create_workout_v1 expects snake_case keys
       exercise_id: e.exerciseId,
       order_index: idx,
-      // If your workout_exercises table doesn't have "note", remove this line.
-      note: e.note ?? null,
-    }));
+      notes: e.note ?? null,
 
-    const { error: weErr } = await supabase.from("workout_exercises").insert(rows);
-    if (weErr) throw weErr;
-  }
-
-  return { workoutId };
+      // keep these aligned with the RPC contract
+      is_dropset: !!e.isDropset,
+      superset_group: e.supersetGroup ?? null,
+      superset_index: e.supersetIndex ?? null,
+    })),
+  };
 }
 
 /**
- * If you ever need an "edit workout" later:
- * - update workouts row
- * - delete + reinsert workout_exercises for simplicity
+ * Creates a counted user workout template through the guarded RPC.
+ * This must go through create_workout_v1 so billing/template limits are enforced.
+ */
+export async function createWorkoutFromDraft(
+  userId: string | null | undefined,
+  draft: WorkoutDraft,
+): Promise<CreateWorkoutResult> {
+  assertUser(userId);
+
+  const payload = normaliseWorkoutPayload(draft);
+
+  if (!payload.exercises.length) {
+    throw new Error("Workout must contain at least one exercise");
+  }
+
+  const { data, error } = await supabase.rpc("create_workout_v1", {
+    p_workout: payload,
+  });
+
+  if (error) {
+    // pass through structured error
+    throw {
+      message: error.message,
+      code: (error as any)?.code ?? null,
+      details: (error as any)?.details ?? null,
+    };
+  }
+
+  return { workoutId: String(data) };
+}
+
+/**
+ * Updates an existing workout template through the hardened RPC.
  */
 export async function updateWorkoutFromDraft(
   userId: string | null | undefined,
   workoutId: string,
-  draft: WorkoutDraft
+  draft: WorkoutDraft,
 ) {
   assertUser(userId);
 
-  const title = String(draft.title ?? "").trim();
-  if (!title) throw new Error("Workout name is required");
+  const base = normaliseWorkoutPayload(draft);
 
-  const { error: upErr } = await supabase
-    .from("workouts")
-    .update({
-      title,
-      notes: draft.note ?? null,
-      is_favourite: !!draft.isFavourite,
-    })
-    .eq("id", workoutId)
-    .eq("user_id", userId);
+  if (!base.exercises.length) {
+    throw new Error("Workout must contain at least one exercise");
+  }
 
-  if (upErr) throw upErr;
+  const isUuid = (s: string) =>
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      s,
+    );
 
-  // reset exercises
-  const { error: delErr } = await supabase
-    .from("workout_exercises")
-    .delete()
-    .eq("workout_id", workoutId);
-
-  if (delErr) throw delErr;
-
-  if (draft.exercises.length) {
-    const rows = draft.exercises.map((e, idx) => ({
-      workout_id: workoutId,
+  const payload = {
+    workout_id: workoutId,
+    title: base.title,
+    notes: base.notes,
+    exercises: (draft.exercises ?? []).map((e, idx) => ({
+      id: e.key && isUuid(e.key) ? e.key : null,
       exercise_id: e.exerciseId,
       order_index: idx,
-      note: e.note ?? null,
-    }));
+      notes: e.note ?? null,
+      is_dropset: !!e.isDropset,
+      superset_group: e.supersetGroup ?? null,
+      superset_index: e.supersetIndex ?? null,
+    })),
+  };
 
-    const { error: insErr } = await supabase.from("workout_exercises").insert(rows);
-    if (insErr) throw insErr;
-  }
+  const { data, error } = await supabase.rpc("update_workout_v1", {
+    p_workout: payload,
+  });
+
+  if (error) throw error;
+
+  return { workoutId: String(data ?? workoutId) };
 }
 
 /**
  * Convenience for "Save & Start" flow.
- * You’ll call createWorkoutFromDraft, then navigate to your workout overview/live start.
  */
 export async function createWorkoutAndReturnId(
   userId: string | null | undefined,
-  draft: WorkoutDraft
+  draft: WorkoutDraft,
 ) {
   const res = await createWorkoutFromDraft(userId, draft);
   return res.workoutId;
