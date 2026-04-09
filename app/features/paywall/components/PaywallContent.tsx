@@ -16,6 +16,7 @@ import {
   Sparkles,
 } from "lucide-react-native";
 import PaywallBenefitItem from "./PaywallBenefitItem";
+import { useAppTheme } from "@/lib/useAppTheme";
 
 export type PaywallReason =
   | "deep_analytics"
@@ -243,41 +244,203 @@ export default function PaywallContent({
   onRestorePurchases,
   onClose,
 }: PaywallContentProps) {
+  const { scheme, colors, typography, layout } = useAppTheme();
   const content = useMemo(() => getContent(reason), [reason]);
 
   return (
     <ScrollView
-      contentContainerStyle={styles.contentContainer}
+      contentContainerStyle={[
+        styles.contentContainer,
+        {
+          backgroundColor: colors.bg,
+          paddingHorizontal: layout.space.lg,
+          paddingTop: layout.space.sm,
+          paddingBottom: layout.space.xxl + layout.space.sm,
+        },
+      ]}
       showsVerticalScrollIndicator={false}
     >
-      <View style={styles.header}>
-        <Text style={styles.brand}>MUSCLEMETRIC</Text>
+      <View
+        style={[
+          styles.header,
+          {
+            marginBottom: layout.space.lg,
+          },
+        ]}
+      >
+        <Text
+          style={[
+            styles.brand,
+            {
+              color: colors.text,
+              fontSize: typography.size.h1 + 4,
+              lineHeight: typography.lineHeight.h1 + 4,
+              fontFamily: typography.fontFamily.bold,
+            },
+          ]}
+        >
+          MUSCLEMETRIC
+        </Text>
       </View>
 
-      <View style={styles.hero}>
-        {!!content.eyebrow && <Text style={styles.eyebrow}>{content.eyebrow}</Text>}
-        <Text style={styles.title}>{content.title}</Text>
-        <Text style={styles.subtitle}>{content.subtitle}</Text>
+      <View
+        style={[
+          styles.hero,
+          {
+            marginBottom: layout.space.xl,
+          },
+        ]}
+      >
+        {!!content.eyebrow && (
+          <Text
+            style={[
+              styles.eyebrow,
+              {
+                color: colors.textMuted,
+                fontSize: typography.size.meta,
+                lineHeight: typography.lineHeight.meta,
+                fontFamily: typography.fontFamily.bold,
+                marginBottom: layout.space.sm,
+              },
+            ]}
+          >
+            {content.eyebrow}
+          </Text>
+        )}
+
+        <Text
+          style={[
+            styles.title,
+            {
+              color: colors.text,
+              fontSize: typography.size.hero,
+              lineHeight: typography.lineHeight.hero,
+              fontFamily: typography.fontFamily.bold,
+            },
+          ]}
+        >
+          {content.title}
+        </Text>
+
+        <Text
+          style={[
+            styles.subtitle,
+            {
+              color: colors.textMuted,
+              fontSize: typography.size.h3 + 1,
+              lineHeight: typography.lineHeight.h3 + 4,
+              fontFamily: typography.fontFamily.medium,
+              marginTop: layout.space.md,
+            },
+          ]}
+        >
+          {content.subtitle}
+        </Text>
       </View>
 
-      <View style={styles.visualCard}>
-        <View style={styles.visualGlowA} />
-        <View style={styles.visualGlowB} />
+      <View
+        style={[
+          styles.visualCard,
+          {
+            backgroundColor: colors.surface,
+            borderRadius: layout.radius.xl + 2,
+            marginBottom: layout.space.lg,
+            padding: layout.space.xl,
+          },
+        ]}
+      >
+        <View
+          style={[
+            styles.visualGlowA,
+            {
+              backgroundColor:
+                scheme === "dark"
+                  ? "rgba(37,99,235,0.22)"
+                  : "rgba(37,99,235,0.14)",
+            },
+          ]}
+        />
+        <View
+          style={[
+            styles.visualGlowB,
+            {
+              backgroundColor:
+                scheme === "dark"
+                  ? "rgba(37,99,235,0.10)"
+                  : "rgba(37,99,235,0.08)",
+            },
+          ]}
+        />
 
         <View style={styles.visualFooter}>
           <View>
-            <Text style={styles.metricLabel}>{content.metricLabel}</Text>
-            <Text style={styles.metricValue}>{content.metricValue}</Text>
+            <Text
+              style={[
+                styles.metricLabel,
+                {
+                  color: colors.primary,
+                  fontSize: typography.size.meta - 1,
+                  lineHeight: typography.lineHeight.meta,
+                  fontFamily: typography.fontFamily.bold,
+                  marginBottom: 6,
+                },
+              ]}
+            >
+              {content.metricLabel}
+            </Text>
+
+            <Text
+              style={[
+                styles.metricValue,
+                {
+                  color: colors.text,
+                  fontSize: typography.size.hero + 4,
+                  lineHeight: typography.lineHeight.hero + 2,
+                  fontFamily: typography.fontFamily.bold,
+                },
+              ]}
+            >
+              {content.metricValue}
+            </Text>
           </View>
 
-          <View style={styles.proBadge}>
-            <Sparkles size={14} color="#D9E3FF" />
-            <Text style={styles.proBadgeText}>PRO</Text>
+          <View
+            style={[
+              styles.proBadge,
+              {
+                backgroundColor: colors.cardPressed,
+                borderColor: colors.trackBorder,
+                borderRadius: layout.radius.pill,
+              },
+            ]}
+          >
+            <Sparkles size={14} color={colors.primary} />
+            <Text
+              style={[
+                styles.proBadgeText,
+                {
+                  color: colors.primary,
+                  fontSize: typography.size.meta,
+                  lineHeight: typography.lineHeight.meta,
+                  fontFamily: typography.fontFamily.bold,
+                },
+              ]}
+            >
+              PRO
+            </Text>
           </View>
         </View>
       </View>
 
-      <View style={styles.benefits}>
+      <View
+        style={[
+          styles.benefits,
+          {
+            gap: layout.space.md,
+            marginBottom: layout.space.xl,
+          },
+        ]}
+      >
         {content.benefits.map((benefit, idx) => (
           <PaywallBenefitItem
             key={`${benefit.title}-${idx}`}
@@ -288,41 +451,182 @@ export default function PaywallContent({
         ))}
       </View>
 
-      <View style={styles.pricingWrap}>
-        <View style={styles.trialPill}>
-          <Text style={styles.trialPillText}>START 14-DAY FREE TRIAL</Text>
+      <View
+        style={[
+          styles.pricingWrap,
+          {
+            marginTop: layout.space.xs,
+          },
+        ]}
+      >
+        <View
+          style={[
+            styles.trialPill,
+            {
+              backgroundColor: colors.trackBg,
+              borderRadius: layout.radius.pill,
+              paddingHorizontal: layout.space.lg + 2,
+              paddingVertical: layout.space.sm,
+              marginBottom: layout.space.md,
+            },
+          ]}
+        >
+          <Text
+            style={[
+              styles.trialPillText,
+              {
+                color: colors.primary,
+                fontSize: typography.size.meta + 1,
+                lineHeight: typography.lineHeight.meta,
+                fontFamily: typography.fontFamily.bold,
+              },
+            ]}
+          >
+            START 14-DAY FREE TRIAL
+          </Text>
         </View>
 
-        <Text style={styles.priceLine}>{content.pricingLine}</Text>
+        <Text
+          style={[
+            styles.priceLine,
+            {
+              color: colors.text,
+              fontSize: typography.size.body + 1,
+              lineHeight: typography.lineHeight.body,
+              fontFamily: typography.fontFamily.medium,
+              marginBottom: layout.space.lg,
+            },
+          ]}
+        >
+          {content.pricingLine}
+        </Text>
 
-        <Pressable style={styles.primaryButton} onPress={onStartTrial}>
-          <Text style={styles.primaryButtonText}>{content.primaryCta}</Text>
+        <Pressable
+          style={[
+            styles.primaryButton,
+            {
+              backgroundColor: colors.primary,
+              borderRadius: layout.radius.xl,
+              marginBottom: layout.space.md,
+            },
+          ]}
+          onPress={onStartTrial}
+        >
+          <Text
+            style={[
+              styles.primaryButtonText,
+              {
+                color: colors.onPrimary,
+                fontSize: typography.size.h2,
+                lineHeight: typography.lineHeight.h2,
+                fontFamily: typography.fontFamily.bold,
+              },
+            ]}
+          >
+            {content.primaryCta}
+          </Text>
         </Pressable>
 
-        <View style={styles.secondaryActions}>
+        <View
+          style={[
+            styles.secondaryActions,
+            {
+              gap: layout.space.xl,
+            },
+          ]}
+        >
           <Pressable onPress={onRestorePurchases}>
-            <Text style={styles.secondaryActionText}>Restore purchases</Text>
+            <Text
+              style={[
+                styles.secondaryActionText,
+                {
+                  color: colors.textMuted,
+                  fontSize: typography.size.sub,
+                  lineHeight: typography.lineHeight.sub,
+                  fontFamily: typography.fontFamily.medium,
+                },
+              ]}
+            >
+              Restore purchases
+            </Text>
           </Pressable>
 
           <Pressable onPress={onClose}>
-            <Text style={styles.secondaryActionText}>Not now</Text>
+            <Text
+              style={[
+                styles.secondaryActionText,
+                {
+                  color: colors.textMuted,
+                  fontSize: typography.size.sub,
+                  lineHeight: typography.lineHeight.sub,
+                  fontFamily: typography.fontFamily.medium,
+                },
+              ]}
+            >
+              Not now
+            </Text>
           </Pressable>
         </View>
       </View>
 
-      <View style={styles.trustRow}>
+      <View
+        style={[
+          styles.trustRow,
+          {
+            marginTop: layout.space.xl + layout.space.xs,
+            borderTopColor: colors.border,
+            paddingTop: layout.space.lg + 4,
+            gap: layout.space.md,
+          },
+        ]}
+      >
         <View style={styles.trustItem}>
-          <ShieldCheck size={15} color="#AAB6D6" />
-          <Text style={styles.trustText}>CANCEL ANYTIME</Text>
+          <ShieldCheck size={15} color={colors.textMuted} />
+          <Text
+            style={[
+              styles.trustText,
+              {
+                color: colors.textMuted,
+                fontSize: typography.size.meta,
+                lineHeight: typography.lineHeight.meta,
+                fontFamily: typography.fontFamily.bold,
+              },
+            ]}
+          >
+            CANCEL ANYTIME
+          </Text>
         </View>
 
         <View style={styles.trustItem}>
-          <CalendarCheck2 size={15} color="#AAB6D6" />
-          <Text style={styles.trustText}>NO CHARGE UNTIL TRIAL ENDS</Text>
+          <CalendarCheck2 size={15} color={colors.textMuted} />
+          <Text
+            style={[
+              styles.trustText,
+              {
+                color: colors.textMuted,
+                fontSize: typography.size.meta,
+                lineHeight: typography.lineHeight.meta,
+                fontFamily: typography.fontFamily.bold,
+              },
+            ]}
+          >
+            NO CHARGE UNTIL TRIAL ENDS
+          </Text>
         </View>
       </View>
 
-      <Text style={styles.legalText}>
+      <Text
+        style={[
+          styles.legalText,
+          {
+            color: colors.textMuted,
+            fontSize: typography.size.meta - 1,
+            lineHeight: typography.lineHeight.meta + 2,
+            fontFamily: typography.fontFamily.regular,
+            marginTop: layout.space.xl,
+          },
+        ]}
+      >
         Subscription automatically renews unless turned off in your account
         settings at least 24 hours before the current period ends. By tapping
         “Start Free Trial”, you agree to the applicable terms.
@@ -332,56 +636,31 @@ export default function PaywallContent({
 }
 
 const styles = StyleSheet.create({
-  contentContainer: {
-    paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 40,
-    backgroundColor: "#081120",
-  },
+  contentContainer: {},
   header: {
     alignItems: "center",
-    marginBottom: 18,
   },
   brand: {
-    color: "#F2F5FF",
-    fontSize: 28,
-    fontWeight: "900",
     letterSpacing: 0.8,
   },
   hero: {
     alignItems: "center",
-    marginBottom: 24,
   },
   eyebrow: {
-    color: "#A9B8E2",
-    fontSize: 12,
-    fontWeight: "800",
     letterSpacing: 1.4,
-    marginBottom: 10,
+    textTransform: "uppercase",
+    textAlign: "center",
   },
   title: {
-    color: "#F4F7FF",
-    fontSize: 38,
-    fontWeight: "900",
-    lineHeight: 42,
     textAlign: "center",
     letterSpacing: -1.2,
   },
   subtitle: {
-    marginTop: 14,
-    color: "#C2CBE0",
-    fontSize: 19,
-    lineHeight: 28,
     textAlign: "center",
-    fontWeight: "500",
   },
   visualCard: {
     height: 200,
-    borderRadius: 24,
-    backgroundColor: "#10192B",
     overflow: "hidden",
-    marginBottom: 18,
-    padding: 22,
     justifyContent: "flex-end",
   },
   visualGlowA: {
@@ -389,7 +668,6 @@ const styles = StyleSheet.create({
     width: 260,
     height: 260,
     borderRadius: 999,
-    backgroundColor: "rgba(85, 132, 255, 0.22)",
     top: -40,
     right: -30,
   },
@@ -398,7 +676,6 @@ const styles = StyleSheet.create({
     width: 260,
     height: 260,
     borderRadius: 999,
-    backgroundColor: "rgba(180, 197, 255, 0.10)",
     bottom: -120,
     left: -80,
   },
@@ -408,73 +685,39 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   metricLabel: {
-    color: "#C7D3F8",
-    fontSize: 11,
-    fontWeight: "800",
-    letterSpacing: 1.1,
     textTransform: "uppercase",
-    marginBottom: 6,
+    letterSpacing: 1.1,
   },
   metricValue: {
-    color: "#F3F6FF",
-    fontSize: 40,
-    fontWeight: "900",
     letterSpacing: -1.4,
   },
   proBadge: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    backgroundColor: "rgba(180, 197, 255, 0.18)",
-    borderColor: "rgba(180, 197, 255, 0.28)",
     borderWidth: 1,
     paddingHorizontal: 16,
     paddingVertical: 10,
-    borderRadius: 999,
   },
   proBadgeText: {
-    color: "#D9E3FF",
-    fontSize: 12,
-    fontWeight: "900",
     letterSpacing: 1.2,
   },
-  benefits: {
-    gap: 14,
-    marginBottom: 24,
-  },
+  benefits: {},
   pricingWrap: {
     alignItems: "center",
-    marginTop: 6,
   },
-  trialPill: {
-    backgroundColor: "#1B2640",
-    borderRadius: 999,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    marginBottom: 14,
-  },
+  trialPill: {},
   trialPillText: {
-    color: "#D5DFFF",
-    fontSize: 13,
-    fontWeight: "900",
     letterSpacing: 1.1,
   },
   priceLine: {
-    color: "#E6EBFB",
-    fontSize: 17,
-    lineHeight: 24,
     textAlign: "center",
-    marginBottom: 18,
-    fontWeight: "600",
   },
   primaryButton: {
     width: "100%",
     minHeight: 60,
-    borderRadius: 22,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#5C8DFF",
-    marginBottom: 16,
     shadowColor: "#000",
     shadowOpacity: 0.28,
     shadowRadius: 18,
@@ -482,28 +725,16 @@ const styles = StyleSheet.create({
     elevation: 6,
   },
   primaryButtonText: {
-    color: "#081120",
-    fontSize: 21,
-    fontWeight: "900",
     letterSpacing: -0.4,
   },
   secondaryActions: {
     width: "100%",
     flexDirection: "row",
     justifyContent: "center",
-    gap: 28,
   },
-  secondaryActionText: {
-    color: "#C4CDE4",
-    fontSize: 15,
-    fontWeight: "600",
-  },
+  secondaryActionText: {},
   trustRow: {
-    marginTop: 28,
     borderTopWidth: 1,
-    borderTopColor: "rgba(172, 184, 214, 0.10)",
-    paddingTop: 22,
-    gap: 16,
     alignItems: "center",
   },
   trustItem: {
@@ -512,16 +743,9 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   trustText: {
-    color: "#AAB6D6",
-    fontSize: 12,
-    fontWeight: "800",
     letterSpacing: 1.3,
   },
   legalText: {
-    marginTop: 26,
-    color: "rgba(170, 182, 214, 0.50)",
-    fontSize: 11,
-    lineHeight: 18,
     textAlign: "center",
   },
 });

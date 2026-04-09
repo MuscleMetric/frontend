@@ -1,6 +1,7 @@
 import React from "react";
 import { View, Text, StyleSheet } from "react-native";
 import { LucideIcon } from "lucide-react-native";
+import { useAppTheme } from "@/lib/useAppTheme";
 
 type PaywallBenefitItemProps = {
   icon: LucideIcon;
@@ -15,15 +16,62 @@ export default function PaywallBenefitItem({
   description,
   compact = false,
 }: PaywallBenefitItemProps) {
+  const { colors, typography, layout } = useAppTheme();
+
   return (
-    <View style={[styles.card, compact && styles.compactCard]}>
-      <View style={styles.iconWrap}>
-        <Icon size={18} color="#B4C5FF" />
+    <View
+      style={[
+        styles.card,
+        {
+          backgroundColor: colors.surface,
+          borderRadius: layout.radius.xl,
+          padding: layout.space.lg,
+        },
+        compact && styles.compactCard,
+      ]}
+    >
+      <View
+        style={[
+          styles.iconWrap,
+          {
+            borderRadius: layout.radius.md,
+            backgroundColor: colors.cardPressed, // subtle tinted background
+          },
+        ]}
+      >
+        <Icon size={18} color={colors.primary} />
       </View>
 
       <View style={styles.textWrap}>
-        <Text style={styles.title}>{title}</Text>
-        {!!description && <Text style={styles.description}>{description}</Text>}
+        <Text
+          style={[
+            styles.title,
+            {
+              color: colors.text,
+              fontSize: typography.size.h3,
+              lineHeight: typography.lineHeight.h3,
+              fontFamily: typography.fontFamily.bold,
+            },
+          ]}
+        >
+          {title}
+        </Text>
+
+        {!!description && (
+          <Text
+            style={[
+              styles.description,
+              {
+                color: colors.textMuted,
+                fontSize: typography.size.sub,
+                lineHeight: typography.lineHeight.sub,
+                fontFamily: typography.fontFamily.medium,
+              },
+            ]}
+          >
+            {description}
+          </Text>
+        )}
       </View>
     </View>
   );
@@ -31,9 +79,6 @@ export default function PaywallBenefitItem({
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: "#121B2E",
-    borderRadius: 22,
-    padding: 18,
     flexDirection: "row",
     alignItems: "flex-start",
     gap: 14,
@@ -44,25 +89,14 @@ const styles = StyleSheet.create({
   iconWrap: {
     width: 40,
     height: 40,
-    borderRadius: 12,
-    backgroundColor: "rgba(180, 197, 255, 0.10)",
     alignItems: "center",
     justifyContent: "center",
   },
   textWrap: {
     flex: 1,
   },
-  title: {
-    color: "#F2F5FF",
-    fontSize: 18,
-    fontWeight: "800",
-    lineHeight: 24,
-  },
+  title: {},
   description: {
     marginTop: 6,
-    color: "#B7C0D9",
-    fontSize: 14,
-    lineHeight: 20,
-    fontWeight: "500",
   },
 });

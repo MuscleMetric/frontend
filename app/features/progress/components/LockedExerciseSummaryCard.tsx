@@ -1,81 +1,139 @@
 import React from "react";
 import { View, Text, Pressable, StyleSheet } from "react-native";
 import { Lock, ChevronRight } from "lucide-react-native";
+import { useAppTheme } from "@/lib/useAppTheme";
+import { getTheme } from "@/ui/tokens/theme";
 
 type Props = {
   onPress: () => void;
 };
 
 export default function LockedExerciseSummaryCard({ onPress }: Props) {
+  const { scheme, typography, layout } = useAppTheme();
+
+  const contrastTheme = getTheme(scheme === "dark" ? "light" : "dark");
+  const { colors } = contrastTheme;
+
   return (
-    <View style={styles.card}>
-      <View style={styles.header}>
-        <View style={styles.iconWrap}>
-          <Lock size={18} color="#B4C5FF" />
+    <View
+      style={[
+        styles.card,
+        {
+          backgroundColor: colors.surface,
+          borderRadius: layout.radius.xl,
+          padding: layout.space.lg,
+          borderWidth: 1,
+          borderColor: colors.border,
+        },
+      ]}
+    >
+      <View
+        style={[
+          styles.header,
+          {
+            marginBottom: layout.space.md,
+            gap: layout.space.md,
+          },
+        ]}
+      >
+        <View
+          style={[
+            styles.iconWrap,
+            {
+              width: 40,
+              height: 40,
+              borderRadius: layout.radius.md,
+              backgroundColor: colors.cardPressed,
+            },
+          ]}
+        >
+          <Lock size={18} color={colors.primary} />
         </View>
 
         <View style={styles.textWrap}>
-          <Text style={styles.title}>Exercise Summary</Text>
-          <Text style={styles.subtitle}>
-            Pro unlocks deeper analytics, trends, and insights for your exercises.
+          <Text
+            style={[
+              styles.title,
+              {
+                color: colors.text,
+                fontSize: typography.size.h3,
+                lineHeight: typography.lineHeight.h3,
+                fontFamily: typography.fontFamily.bold,
+                marginBottom: 4,
+              },
+            ]}
+          >
+            Exercise Summary
+          </Text>
+
+          <Text
+            style={[
+              styles.subtitle,
+              {
+                color: colors.textMuted,
+                fontSize: typography.size.sub,
+                lineHeight: typography.lineHeight.sub,
+                fontFamily: typography.fontFamily.medium,
+              },
+            ]}
+          >
+            Pro unlocks deeper analytics, trends, and insights for your
+            exercises.
           </Text>
         </View>
       </View>
 
-      <Pressable style={styles.button} onPress={onPress}>
-        <Text style={styles.buttonText}>See Pro Features</Text>
-        <ChevronRight size={18} color="#081120" />
+      <Pressable
+        style={[
+          styles.button,
+          {
+            minHeight: 52,
+            borderRadius: layout.radius.lg,
+            backgroundColor: colors.primary,
+          },
+        ]}
+        onPress={onPress}
+      >
+        <Text
+          style={[
+            styles.buttonText,
+            {
+              color: colors.onPrimary,
+              fontSize: typography.size.body,
+              lineHeight: typography.lineHeight.body,
+              fontFamily: typography.fontFamily.bold,
+            },
+          ]}
+        >
+          See Pro Features
+        </Text>
+
+        <ChevronRight size={18} color={colors.onPrimary} />
       </Pressable>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  card: {
-    backgroundColor: "#121B2E",
-    borderRadius: 22,
-    padding: 18,
-  },
+  card: {},
   header: {
     flexDirection: "row",
-    gap: 14,
-    marginBottom: 16,
+    alignItems: "flex-start",
   },
   iconWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: "rgba(180, 197, 255, 0.10)",
     alignItems: "center",
     justifyContent: "center",
   },
   textWrap: {
     flex: 1,
   },
-  title: {
-    color: "#F2F5FF",
-    fontSize: 18,
-    fontWeight: "800",
-    marginBottom: 4,
-  },
-  subtitle: {
-    color: "#B7C0D9",
-    fontSize: 14,
-    lineHeight: 20,
-    fontWeight: "500",
-  },
+  title: {},
+  subtitle: {},
   button: {
-    minHeight: 52,
-    borderRadius: 18,
-    backgroundColor: "#5C8DFF",
     alignItems: "center",
     justifyContent: "center",
     flexDirection: "row",
     gap: 8,
   },
-  buttonText: {
-    color: "#081120",
-    fontSize: 16,
-    fontWeight: "900",
-  },
+  buttonText: {},
 });

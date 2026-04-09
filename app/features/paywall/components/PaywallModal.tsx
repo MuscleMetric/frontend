@@ -4,11 +4,11 @@ import {
   View,
   StyleSheet,
   Pressable,
-  Text,
   SafeAreaView,
 } from "react-native";
 import { X } from "lucide-react-native";
 import PaywallContent, { PaywallReason } from "./PaywallContent";
+import { useAppTheme } from "@/lib/useAppTheme";
 
 type PaywallModalProps = {
   visible: boolean;
@@ -25,6 +25,8 @@ export default function PaywallModal({
   onStartTrial,
   onRestorePurchases,
 }: PaywallModalProps) {
+  const { colors, layout } = useAppTheme();
+
   return (
     <Modal
       visible={visible}
@@ -32,19 +34,41 @@ export default function PaywallModal({
       presentationStyle="fullScreen"
       onRequestClose={onClose}
     >
-      <SafeAreaView style={styles.safeArea}>
-        <View style={styles.topBar}>
+      <SafeAreaView
+        style={[
+          styles.safeArea,
+          {
+            backgroundColor: colors.bg,
+          },
+        ]}
+      >
+        <View
+          style={[
+            styles.topBar,
+            {
+              backgroundColor: colors.bg,
+              paddingHorizontal: layout.space.md,
+              paddingTop: 4,
+              paddingBottom: 2,
+            },
+          ]}
+        >
           <Pressable
             onPress={onClose}
-            hitSlop={12}
-            style={styles.closeButton}
+            hitSlop={layout.hitSlop}
+            style={[
+              styles.closeButton,
+              {
+                borderRadius: layout.radius.pill,
+              },
+            ]}
             accessibilityRole="button"
             accessibilityLabel="Close paywall"
           >
-            <X size={24} color="#DDE5FA" />
+            <X size={24} color={colors.text} />
           </Pressable>
 
-          <Text style={styles.topSpacer} />
+          <View style={styles.topSpacer} />
         </View>
 
         <PaywallContent
@@ -61,13 +85,8 @@ export default function PaywallModal({
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: "#081120",
   },
   topBar: {
-    backgroundColor: "#081120",
-    paddingHorizontal: 16,
-    paddingTop: 4,
-    paddingBottom: 2,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
@@ -75,11 +94,11 @@ const styles = StyleSheet.create({
   closeButton: {
     width: 40,
     height: 40,
-    borderRadius: 999,
     alignItems: "center",
     justifyContent: "center",
   },
   topSpacer: {
     width: 40,
+    height: 40,
   },
 });
