@@ -1,7 +1,13 @@
-// app/features/workouts/screens/WorkoutsHome.tsx
-
-import React, { useCallback, useState } from "react";
-import { ScrollView, StyleSheet } from "react-native";
+import React, { useCallback, useRef, useState } from "react";
+import {
+  ScrollView,
+  StyleSheet,
+  FlatList,
+  useWindowDimensions,
+  NativeSyntheticEvent,
+  NativeScrollEvent,
+  View,
+} from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { router } from "expo-router";
 
@@ -30,6 +36,9 @@ const ROUTES = {
   planEdit: "/features/plans/edit",
   planCreate: "/features/plans/create/planInfo",
 } as const;
+
+type ActivePlansEntry = NonNullable<WorkoutsTabPayload["activePlans"]>[number];
+type PaywallReason = "template_limit" | "plan_limit" | null;
 
 export default function WorkoutsHome() {
   const { session } = useAuth();
@@ -65,12 +74,13 @@ export default function WorkoutsHome() {
         contentContainerStyle={{
           padding: layout.space.lg,
           gap: layout.space.md,
-          paddingBottom: layout.space.xxl, // breathing room above tab bar
+          paddingBottom: layout.space.xxl,
         }}
         showsVerticalScrollIndicator={false}
       >
         <StateRenderer
           payload={data}
+          userId={userId}
           onOpenCreate={() => setCreateOpen(true)}
         />
       </ScrollView>
@@ -85,12 +95,23 @@ export default function WorkoutsHome() {
 
 function StateRenderer({
   payload,
+  userId,
   onOpenCreate,
 }: {
   payload: WorkoutsTabPayload;
+  userId: string | null;
   onOpenCreate: () => void;
 }) {
-  const [paywallOpen, setPaywallOpen] = useState(false);
+  const { capabilities } = useAuth();
+  const { layout } = useAppTheme();
+  const { width: windowWidth } = useWindowDimensions();
+
+  const [paywallReason, setPaywallReason] = useState<PaywallReason>(null);
+  const [selectedPlanIndex, setSelectedPlanIndex] = useState(0);
+
+  const heroListRef = useRef<FlatList<ActivePlansEntry>>(null);
+  const scheduleListRef = useRef<FlatList<ActivePlansEntry>>(null);
+  const selectedPlanIndexRef = useRef(0);
 
   if (payload.state === "new_user") {
     return (
@@ -155,44 +176,150 @@ function StateRenderer({
     );
   }
 
-  const activePlan = payload.activePlan;
-  if (!activePlan) return null;
+  const activePlans = payload.activePlans ?? [];
+  if (activePlans.length === 0) return null;
+
+  const safeSelectedIndex = Math.min(
+    selectedPlanIndex,
+    Math.max(activePlans.length - 1, 0),
+  );
+
+  const selectedEntry = activePlans[safeSelectedIndex] ?? null;
+  if (!selectedEntry?.activePlan) return null;
+
+  const selectedActivePlan = selectedEntry.activePlan;
+  const activePlanCount = activePlans.length;
+  const isAtPlanLimit = activePlanCount >= capabilities.maxActivePlans;
+
+  const cardWidth = windowWidth - layout.space.lg * 2;
+
+  const syncToIndex = (
+    nextIndex: number,
+    source: "hero" | "schedule",
+  ): void => {
+    if (nextIndex < 0 || nextIndex >= activePlans.length) return;
+    if (selectedPlanIndexRef.current === nextIndex) return;
+
+    selectedPlanIndexRef.current = nextIndex;
+    setSelectedPlanIndex(nextIndex);
+
+    if (source === "hero") {
+      scheduleListRef.current?.scrollToIndex({
+        index: nextIndex,
+        animated: true,
+      });
+    } else {
+      heroListRef.current?.scrollToIndex({
+        index: nextIndex,
+        animated: true,
+      });
+    }
+  };
+
+  const getIndexFromOffset = (x: number) => {
+    if (cardWidth <= 0) return 0;
+    return Math.round(x / cardWidth);
+  };
+
+  const handleHeroMomentumEnd = (
+    e: NativeSyntheticEvent<NativeScrollEvent>,
+  ) => {
+    const nextIndex = getIndexFromOffset(e.nativeEvent.contentOffset.x);
+    syncToIndex(nextIndex, "hero");
+  };
+
+  const handleScheduleMomentumEnd = (
+    e: NativeSyntheticEvent<NativeScrollEvent>,
+  ) => {
+    const nextIndex = getIndexFromOffset(e.nativeEvent.contentOffset.x);
+    syncToIndex(nextIndex, "schedule");
+  };
+
+  const handleOpenPlanCreate = () => {
+    if (isAtPlanLimit) {
+      setPaywallReason("plan_limit");
+      return;
+    }
+
+    router.push(ROUTES.planCreate);
+  };
 
   return (
     <>
-      <ActivePlanHeroSection
-        activePlan={activePlan}
-        onStartNext={({ workoutId, planWorkoutId }) =>
-          router.push({
-            pathname: ROUTES.workoutPreview,
-            params: { workoutId, planWorkoutId },
-          })
-        }
+      <FlatList
+        ref={heroListRef}
+        data={activePlans}
+        horizontal
+        pagingEnabled
+        scrollEnabled={activePlans.length > 1}
+        showsHorizontalScrollIndicator={false}
+        keyExtractor={(item) => item.activePlan.planId}
+        onMomentumScrollEnd={handleHeroMomentumEnd}
+        getItemLayout={(_, index) => ({
+          length: cardWidth,
+          offset: cardWidth * index,
+          index,
+        })}
+        renderItem={({ item }) => (
+          <View style={{ width: cardWidth }}>
+            <ActivePlanHeroSection
+              userId={userId}
+              activePlan={item.activePlan}
+              onStartNext={({ workoutId, planWorkoutId }) =>
+                router.push({
+                  pathname: ROUTES.workoutPreview,
+                  params: { workoutId, planWorkoutId },
+                })
+              }
+            />
+          </View>
+        )}
       />
 
-      {payload.planSchedule ? (
-        <PlanScheduleSection
-          schedule={payload.planSchedule}
-          onPressWorkout={({ workoutId, planWorkoutId }) =>
-            router.push({
-              pathname: ROUTES.workoutPreview,
-              params: { workoutId, planWorkoutId },
-            })
-          }
-          onViewAll={() =>
-            router.push({
-              pathname: ROUTES.planView,
-              params: { planId: activePlan.planId },
-            })
-          }
-          onEdit={() =>
-            router.push({
-              pathname: ROUTES.planEdit,
-              params: { planId: activePlan.planId },
-            })
-          }
-        />
-      ) : null}
+      <FlatList
+        ref={scheduleListRef}
+        data={activePlans}
+        horizontal
+        pagingEnabled
+        scrollEnabled={activePlans.length > 1}
+        showsHorizontalScrollIndicator={false}
+        keyExtractor={(item) => `${item.activePlan.planId}-schedule`}
+        onMomentumScrollEnd={handleScheduleMomentumEnd}
+        getItemLayout={(_, index) => ({
+          length: cardWidth,
+          offset: cardWidth * index,
+          index,
+        })}
+        renderItem={({ item }) => (
+          <View style={{ width: cardWidth }}>
+            {item.planSchedule ? (
+              <PlanScheduleSection
+                schedule={item.planSchedule}
+                onPressWorkout={({ workoutId, planWorkoutId }) =>
+                  router.push({
+                    pathname: ROUTES.workoutPreview,
+                    params: { workoutId, planWorkoutId },
+                  })
+                }
+                onViewAll={() =>
+                  router.push({
+                    pathname: ROUTES.planView,
+                    params: { planId: item.activePlan.planId },
+                  })
+                }
+                onEdit={() =>
+                  router.push({
+                    pathname: ROUTES.planEdit,
+                    params: { planId: item.activePlan.planId },
+                  })
+                }
+                showCreate={true}
+                onCreate={handleOpenPlanCreate}
+              />
+            ) : null}
+          </View>
+        )}
+      />
 
       {payload.optionalSessions ? (
         <OptionalSessionsSection
@@ -206,17 +333,17 @@ function StateRenderer({
           onPressWorkout={(workoutId) =>
             router.push({ pathname: ROUTES.workoutUse, params: { workoutId } })
           }
-          onTemplateLimitReached={() => setPaywallOpen(true)}
+          onTemplateLimitReached={() => setPaywallReason("template_limit")}
         />
       ) : null}
 
       <PaywallModal
-        visible={paywallOpen}
-        reason="template_limit"
-        onClose={() => setPaywallOpen(false)}
+        visible={!!paywallReason}
+        reason={paywallReason ?? "generic"}
+        onClose={() => setPaywallReason(null)}
         onStartTrial={() => {
-          console.log("[Paywall] Start trial tapped");
-          setPaywallOpen(false);
+          console.log("[Paywall] Start trial tapped:", paywallReason);
+          setPaywallReason(null);
         }}
         onRestorePurchases={() => {
           console.log("[Paywall] Restore purchases tapped");
