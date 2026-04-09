@@ -171,7 +171,7 @@ function getContent(reason: PaywallReason): PaywallContentModel {
         title: "Unlock Advanced Analytics",
         subtitle:
           "Track your progress, improve faster, and train smarter with premium insights.",
-        metricLabel: "Volume (lbs)",
+        metricLabel: "Volume (kgs)",
         metricValue: "14,250",
         primaryCta: "Start Free Trial",
         pricingLine: "£2.99/month or £31.99/year (Save 10%)",

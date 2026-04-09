@@ -34,6 +34,18 @@ export default function ProgressScreen() {
 
   if (loading) return <ProgressSkeleton />;
 
+  const handleOpenDeepAnalytics = (exerciseId: string) => {
+    if (capabilities.canViewDeepAnalytics) {
+      router.push({
+        pathname: "/features/progress/screens/deep-analytics",
+        params: { exerciseId },
+      });
+      return;
+    }
+
+    setPaywallOpen(true);
+  };
+
   return (
     <Screen>
       {error || !vm ? (
@@ -80,12 +92,7 @@ export default function ProgressScreen() {
 
                 <StrengthHighlightsSection
                   highlights={vm.highlights}
-                  onOpenExercise={(exerciseId) =>
-                    router.push({
-                      pathname: "/features/progress/screens/deep-analytics",
-                      params: { exerciseId },
-                    })
-                  }
+                  onOpenExercise={handleOpenDeepAnalytics}
                 />
 
                 {capabilities.canViewDeepAnalytics ? (
