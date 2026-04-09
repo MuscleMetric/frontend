@@ -21,6 +21,7 @@ import { ActivePlanHeroSection } from "../sections/ActivePlanHeroSection";
 import { PlanScheduleSection } from "../sections/PlanScheduleSection";
 import { OptionalSessionsSection } from "../sections/OptionalSessionsSection";
 import { NoPlanCtaSection } from "../sections/NoPlanCtaSection";
+import PaywallModal from "../../paywall/components/PaywallModal";
 
 const ROUTES = {
   workoutPreview: "/features/workouts/screens/WorkoutOverview",
@@ -89,6 +90,8 @@ function StateRenderer({
   payload: WorkoutsTabPayload;
   onOpenCreate: () => void;
 }) {
+  const [paywallOpen, setPaywallOpen] = useState(false);
+
   if (payload.state === "new_user") {
     return (
       <>
@@ -203,8 +206,22 @@ function StateRenderer({
           onPressWorkout={(workoutId) =>
             router.push({ pathname: ROUTES.workoutUse, params: { workoutId } })
           }
+          onTemplateLimitReached={() => setPaywallOpen(true)}
         />
       ) : null}
+
+      <PaywallModal
+        visible={paywallOpen}
+        reason="template_limit"
+        onClose={() => setPaywallOpen(false)}
+        onStartTrial={() => {
+          console.log("[Paywall] Start trial tapped");
+          setPaywallOpen(false);
+        }}
+        onRestorePurchases={() => {
+          console.log("[Paywall] Restore purchases tapped");
+        }}
+      />
     </>
   );
 }
