@@ -32,9 +32,9 @@ import {
   type GoalDraft,
 } from "./store";
 
-// Your custom header + icons
 import { ScreenHeader } from "@/ui";
 import { Icon } from "@/ui/icons/Icon";
+import PaywallModal from "@/app/features/paywall/components/PaywallModal";
 
 function fmtDateShort(iso?: string | null) {
   if (!iso) return "—";
@@ -44,7 +44,6 @@ function fmtDateShort(iso?: string | null) {
     : d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
-/** Normalize plan state for stable dirty-checking */
 function normalizePlanSnapshot(input: {
   title: string;
   endDate: string | null;
@@ -82,16 +81,27 @@ function normalizePlanSnapshot(input: {
   return { planInfo, workouts, goals };
 }
 
+function isGoalLimitError(err: any) {
+  const message = String(err?.message ?? "").toLowerCase();
+  const code = String(err?.code ?? "").toUpperCase();
+  const details = String(err?.details ?? "").toLowerCase();
+
+  return (
+    code === "FREE_LIMIT_REACHED" ||
+    code === "PREMIUM_REQUIRED" ||
+    message.includes("goal") && message.includes("limit") ||
+    details.includes("goal") && details.includes("limit") ||
+    message.includes("maxgoalsperplan") ||
+    details.includes("maxgoalsperplan")
+  );
+}
+
 export default function EditPlan() {
-  // Hide native header so ScreenHeader is used instead
-  // (Expo Router per-screen)
-  // eslint-disable-next-line react/jsx-no-undef
-  // @ts-ignore
   const _ = <Stack.Screen options={{ headerShown: false }} />;
 
   const { planId } = useLocalSearchParams<{ planId: string }>();
   const router = useRouter();
-  const { session } = useAuth();
+  const { session, capabilities } = useAuth();
   const userId = session?.user?.id ?? null;
 
   const { colors, typography, layout } = useAppTheme() as any;
@@ -105,11 +115,11 @@ export default function EditPlan() {
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [saveErrorMessage, setSaveErrorMessage] = useState<string | null>(null);
+  const [paywallOpen, setPaywallOpen] = useState(false);
 
-  // Snapshot used for dirty checks
   const initialSnapRef = useRef<string | null>(null);
 
-  // -------------------- Load --------------------
   useEffect(() => {
     if (!userId || !planId) return;
 
@@ -229,7 +239,6 @@ export default function EditPlan() {
     })();
   }, [userId, planId, initFromLoaded, router]);
 
-  // -------------------- Dirty checks --------------------
   const currentSnap = useMemo(() => {
     return JSON.stringify(
       normalizePlanSnapshot({ title, endDate, workouts, goals })
@@ -285,12 +294,12 @@ export default function EditPlan() {
     />
   );
 
-  // -------------------- Save --------------------
   const saveAll = useCallback(async () => {
     if (!userId || !planId) return;
 
     try {
       setSaving(true);
+      setSaveErrorMessage(null);
 
       const payload = {
         p_plan_id: planId,
@@ -330,13 +339,32 @@ export default function EditPlan() {
       router.back();
     } catch (e: any) {
       console.error("saveAll error:", e);
+
+      if (isGoalLimitError(e)) {
+        setSaveErrorMessage(
+          `This plan has too many goals for your current limit. You can save up to ${capabilities.maxGoalsPerPlan} goal${
+            capabilities.maxGoalsPerPlan === 1 ? "" : "s"
+          } per plan on your current tier.`
+        );
+        return;
+      }
+
       Alert.alert("Could not save changes", e?.message ?? String(e));
     } finally {
       setSaving(false);
     }
-  }, [userId, planId, title, endDate, workouts, goals, router, currentSnap]);
+  }, [
+    userId,
+    planId,
+    title,
+    endDate,
+    workouts,
+    goals,
+    router,
+    currentSnap,
+    capabilities.maxGoalsPerPlan,
+  ]);
 
-  // -------------------- Cancel / Archive --------------------
   const onCancel = () => {
     if (!isDirty) {
       router.back();
@@ -392,7 +420,6 @@ export default function EditPlan() {
     );
   };
 
-  // -------------------- UI --------------------
   if (!userId || loading) {
     return (
       <View style={s.center}>
@@ -448,7 +475,6 @@ export default function EditPlan() {
         <Text style={s.sectionLabel}>PLAN CONFIGURATION</Text>
 
         <View style={s.card}>
-          {/* Plan Info */}
           <Pressable
             style={s.row}
             onPress={() =>
@@ -485,7 +511,6 @@ export default function EditPlan() {
 
           <View style={s.divider} />
 
-          {/* Workouts */}
           <Pressable
             style={s.row}
             onPress={() =>
@@ -531,7 +556,6 @@ export default function EditPlan() {
 
           <View style={s.divider} />
 
-          {/* Goals */}
           <Pressable
             style={s.row}
             onPress={() =>
@@ -565,6 +589,24 @@ export default function EditPlan() {
           </Pressable>
         </View>
 
+        {saveErrorMessage ? (
+          <View style={s.limitCard}>
+            <View style={s.limitHeader}>
+              <Icon name="lock-closed" size={18} color={colors.primary} />
+              <Text style={s.limitTitle}>Upgrade required</Text>
+            </View>
+
+            <Text style={s.limitBody}>{saveErrorMessage}</Text>
+
+            <Pressable
+              style={s.limitButton}
+              onPress={() => setPaywallOpen(true)}
+            >
+              <Text style={s.limitButtonText}>Unlock more goals</Text>
+            </Pressable>
+          </View>
+        ) : null}
+
         {isDirty ? (
           <Text style={s.dirtyHint}>You have unsaved changes.</Text>
         ) : (
@@ -572,7 +614,6 @@ export default function EditPlan() {
         )}
       </ScrollView>
 
-      {/* Sticky footer */}
       <View style={[s.footer, { paddingBottom: insets.bottom + 14 }]}>
         <View style={{ flexDirection: "row", gap: 12 }}>
           <Pressable
@@ -606,6 +647,19 @@ export default function EditPlan() {
           <Text style={s.archiveText}>Archive plan</Text>
         </Pressable>
       </View>
+
+      <PaywallModal
+        visible={paywallOpen}
+        reason="goal_limit"
+        onClose={() => setPaywallOpen(false)}
+        onStartTrial={() => {
+          console.log("[Paywall] Start trial tapped: goal_limit");
+          setPaywallOpen(false);
+        }}
+        onRestorePurchases={() => {
+          console.log("[Paywall] Restore purchases tapped");
+        }}
+      />
     </SafeAreaView>
   );
 }
@@ -630,7 +684,7 @@ const makeStyles = (colors: any, typography: any, layout: any) =>
     },
 
     headerCard: {
-      backgroundColor: colors.card,
+      backgroundColor: colors.surface,
       borderRadius: 18,
       padding: 18,
       borderWidth: StyleSheet.hairlineWidth,
@@ -645,7 +699,7 @@ const makeStyles = (colors: any, typography: any, layout: any) =>
       letterSpacing: -0.2,
     },
     subTitle: {
-      color: colors.textMuted ?? colors.subtle,
+      color: colors.textMuted,
       fontFamily: typography?.fontFamily?.medium ?? undefined,
       fontSize: 13,
     },
@@ -653,14 +707,14 @@ const makeStyles = (colors: any, typography: any, layout: any) =>
     sectionLabel: {
       marginTop: 6,
       marginBottom: -8,
-      color: colors.textMuted ?? colors.subtle,
+      color: colors.textMuted,
       fontSize: 12,
       letterSpacing: 0.9,
       fontWeight: "900",
     },
 
     card: {
-      backgroundColor: colors.card,
+      backgroundColor: colors.surface,
       borderRadius: 18,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.border,
@@ -691,7 +745,7 @@ const makeStyles = (colors: any, typography: any, layout: any) =>
       width: 38,
       height: 38,
       borderRadius: 12,
-      backgroundColor: colors.surface,
+      backgroundColor: colors.bg,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.border,
       alignItems: "center",
@@ -705,7 +759,7 @@ const makeStyles = (colors: any, typography: any, layout: any) =>
     },
     rowSub: {
       marginTop: 4,
-      color: colors.textMuted ?? colors.subtle,
+      color: colors.textMuted,
       fontSize: 12,
       fontWeight: "600",
     },
@@ -722,13 +776,52 @@ const makeStyles = (colors: any, typography: any, layout: any) =>
       borderRadius: 999,
     },
 
+    limitCard: {
+      backgroundColor: colors.surface,
+      borderRadius: 16,
+      padding: 16,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      gap: 10,
+    },
+    limitHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+    },
+    limitTitle: {
+      color: colors.text,
+      fontFamily: typography?.fontFamily?.bold ?? undefined,
+      fontSize: 15,
+      fontWeight: "900",
+    },
+    limitBody: {
+      color: colors.textMuted,
+      fontFamily: typography?.fontFamily?.medium ?? undefined,
+      fontSize: 13,
+      lineHeight: 18,
+    },
+    limitButton: {
+      alignSelf: "flex-start",
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+      borderRadius: 999,
+      backgroundColor: colors.primary,
+    },
+    limitButtonText: {
+      color: colors.onPrimary ?? "#fff",
+      fontFamily: typography?.fontFamily?.bold ?? undefined,
+      fontSize: 13,
+      fontWeight: "900",
+    },
+
     dirtyHint: {
       color: colors.primary,
       fontWeight: "900",
       marginTop: 2,
     },
     cleanHint: {
-      color: colors.textMuted ?? colors.subtle,
+      color: colors.textMuted,
       fontWeight: "700",
       marginTop: 2,
     },
