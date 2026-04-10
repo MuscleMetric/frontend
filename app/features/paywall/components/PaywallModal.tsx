@@ -5,6 +5,7 @@ import {
   StyleSheet,
   Pressable,
   SafeAreaView,
+  Text,
 } from "react-native";
 import { X } from "lucide-react-native";
 import PaywallContent, { PaywallReason } from "./PaywallContent";
@@ -25,7 +26,7 @@ export default function PaywallModal({
   onStartTrial,
   onRestorePurchases,
 }: PaywallModalProps) {
-  const { colors, layout } = useAppTheme();
+  const { colors, layout, typography } = useAppTheme();
 
   return (
     <Modal
@@ -53,6 +54,7 @@ export default function PaywallModal({
             },
           ]}
         >
+          {/* Left: Close button */}
           <Pressable
             onPress={onClose}
             hitSlop={layout.hitSlop}
@@ -68,6 +70,22 @@ export default function PaywallModal({
             <X size={24} color={colors.text} />
           </Pressable>
 
+          {/* Center: Title (absolute centered) */}
+          <View pointerEvents="none" style={styles.centerContainer}>
+            <Text
+              style={[
+                styles.title,
+                {
+                  color: colors.text,
+                  fontFamily: typography.fontFamily?.medium,
+                },
+              ]}
+            >
+              MuscleMetricPro
+            </Text>
+          </View>
+
+          {/* Right: spacer to balance layout */}
           <View style={styles.topSpacer} />
         </View>
 
@@ -100,5 +118,15 @@ const styles = StyleSheet.create({
   topSpacer: {
     width: 40,
     height: 40,
+  },
+  centerContainer: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    alignItems: "center",
+  },
+  title: {
+    fontSize: 16,
+    fontWeight: "600",
   },
 });
