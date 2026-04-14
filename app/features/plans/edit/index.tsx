@@ -37,6 +37,7 @@ import { Icon } from "@/ui/icons/Icon";
 import PaywallModal from "@/app/features/paywall/components/PaywallModal";
 
 import { log } from "@/lib/logger";
+import FeaturePaywallModal from "../../paywall/components/FeaturePaywallModal";
 
 function fmtDateShort(iso?: string | null) {
   if (!iso) return "—";
@@ -91,8 +92,8 @@ function isGoalLimitError(err: any) {
   return (
     code === "FREE_LIMIT_REACHED" ||
     code === "PREMIUM_REQUIRED" ||
-    message.includes("goal") && message.includes("limit") ||
-    details.includes("goal") && details.includes("limit") ||
+    (message.includes("goal") && message.includes("limit")) ||
+    (details.includes("goal") && details.includes("limit")) ||
     message.includes("maxgoalsperplan") ||
     details.includes("maxgoalsperplan")
   );
@@ -109,7 +110,7 @@ export default function EditPlan() {
   const { colors, typography, layout } = useAppTheme() as any;
   const s = useMemo(
     () => makeStyles(colors, typography, layout),
-    [colors, typography, layout]
+    [colors, typography, layout],
   );
   const insets = useSafeAreaInsets();
 
@@ -150,7 +151,7 @@ export default function EditPlan() {
                 exercises ( id, name, type )
               )
             )
-          `
+          `,
           )
           .eq("plan_id", planId)
           .eq("is_archived", false)
@@ -166,7 +167,7 @@ export default function EditPlan() {
           const exs = (w?.workout_exercises ?? [])
             .slice()
             .sort(
-              (a: any, b: any) => (a.order_index ?? 0) - (b.order_index ?? 0)
+              (a: any, b: any) => (a.order_index ?? 0) - (b.order_index ?? 0),
             )
             .map((we: any, i: number) => ({
               id: String(we.id ?? ""),
@@ -192,7 +193,7 @@ export default function EditPlan() {
         const { data: g, error: gErr } = await supabase
           .from("goals")
           .select(
-            `id, type, target_number, unit, notes, exercises ( id, name, type )`
+            `id, type, target_number, unit, notes, exercises ( id, name, type )`,
           )
           .eq("plan_id", planId)
           .eq("user_id", userId)
@@ -228,7 +229,7 @@ export default function EditPlan() {
             endDate: p?.end_date ?? null,
             workouts: workoutDrafts,
             goals: goalDrafts,
-          })
+          }),
         );
         initialSnapRef.current = snap;
       } catch (e: any) {
@@ -243,7 +244,7 @@ export default function EditPlan() {
 
   const currentSnap = useMemo(() => {
     return JSON.stringify(
-      normalizePlanSnapshot({ title, endDate, workouts, goals })
+      normalizePlanSnapshot({ title, endDate, workouts, goals }),
     );
   }, [title, endDate, workouts, goals]);
 
@@ -290,7 +291,9 @@ export default function EditPlan() {
       style={[
         s.statusDot,
         {
-          backgroundColor: dirty ? colors.primary : colors.success ?? "#22c55e",
+          backgroundColor: dirty
+            ? colors.primary
+            : (colors.success ?? "#22c55e"),
         },
       ]}
     />
@@ -346,7 +349,7 @@ export default function EditPlan() {
         setSaveErrorMessage(
           `This plan has too many goals for your current limit. You can save up to ${capabilities.maxGoalsPerPlan} goal${
             capabilities.maxGoalsPerPlan === 1 ? "" : "s"
-          } per plan on your current tier.`
+          } per plan on your current tier.`,
         );
         return;
       }
@@ -379,7 +382,7 @@ export default function EditPlan() {
       [
         { text: "Keep editing", style: "cancel" },
         { text: "Discard", style: "destructive", onPress: () => router.back() },
-      ]
+      ],
     );
   };
 
@@ -411,14 +414,14 @@ export default function EditPlan() {
               Alert.alert(
                 "Could not archive",
                 e?.message ??
-                  "Your plans table may not have an is_archived column yet."
+                  "Your plans table may not have an is_archived column yet.",
               );
             } finally {
               setSaving(false);
             }
           },
         },
-      ]
+      ],
     );
   };
 
@@ -533,12 +536,12 @@ export default function EditPlan() {
                   {workouts.length} workout{workouts.length === 1 ? "" : "s"} •{" "}
                   {workouts.reduce(
                     (sum, w) => sum + (w.exercises?.length ?? 0),
-                    0
+                    0,
                   )}{" "}
                   exercise
                   {workouts.reduce(
                     (sum, w) => sum + (w.exercises?.length ?? 0),
-                    0
+                    0,
                   ) === 1
                     ? ""
                     : "s"}
@@ -650,17 +653,10 @@ export default function EditPlan() {
         </Pressable>
       </View>
 
-      <PaywallModal
+      <FeaturePaywallModal
         visible={paywallOpen}
         reason="goal_limit"
         onClose={() => setPaywallOpen(false)}
-        onStartTrial={() => {
-          log("[Paywall] Start trial tapped: goal_limit");
-          setPaywallOpen(false);
-        }}
-        onRestorePurchases={() => {
-          log("[Paywall] Restore purchases tapped");
-        }}
       />
     </SafeAreaView>
   );

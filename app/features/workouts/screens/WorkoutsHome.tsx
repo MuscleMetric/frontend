@@ -27,7 +27,6 @@ import { ActivePlanHeroSection } from "../sections/ActivePlanHeroSection";
 import { PlanScheduleSection } from "../sections/PlanScheduleSection";
 import { OptionalSessionsSection } from "../sections/OptionalSessionsSection";
 import { NoPlanCtaSection } from "../sections/NoPlanCtaSection";
-import PaywallModal from "../../paywall/components/PaywallModal";
 
 const ROUTES = {
   workoutPreview: "/features/workouts/screens/WorkoutOverview",
@@ -38,6 +37,7 @@ const ROUTES = {
 } as const;
 
 import { log } from "@/lib/logger";
+import FeaturePaywallModal from "../../paywall/components/FeaturePaywallModal";
 
 type ActivePlansEntry = NonNullable<WorkoutsTabPayload["activePlans"]>[number];
 type PaywallReason = "template_limit" | "plan_limit" | null;
@@ -339,17 +339,10 @@ function StateRenderer({
         />
       ) : null}
 
-      <PaywallModal
+      <FeaturePaywallModal
         visible={!!paywallReason}
         reason={paywallReason ?? "generic"}
         onClose={() => setPaywallReason(null)}
-        onStartTrial={() => {
-          log("[Paywall] Start trial tapped:", paywallReason);
-          setPaywallReason(null);
-        }}
-        onRestorePurchases={() => {
-          log("[Paywall] Restore purchases tapped");
-        }}
       />
     </>
   );

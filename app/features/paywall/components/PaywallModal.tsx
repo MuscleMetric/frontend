@@ -1,12 +1,12 @@
+// app/features/paywall/components/PaywallModal.tsx
 import React from "react";
 import {
   Modal,
   View,
   StyleSheet,
   Pressable,
-  SafeAreaView,
-  Text,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { X } from "lucide-react-native";
 import PaywallContent, { PaywallReason } from "./PaywallContent";
 import { useAppTheme } from "@/lib/useAppTheme";
@@ -17,6 +17,8 @@ type PaywallModalProps = {
   onClose: () => void;
   onStartTrial: () => void;
   onRestorePurchases?: () => void;
+  purchaseDisabled?: boolean;
+  purchaseStatusText?: string | null;
 };
 
 export default function PaywallModal({
@@ -25,8 +27,10 @@ export default function PaywallModal({
   onClose,
   onStartTrial,
   onRestorePurchases,
+  purchaseDisabled = false,
+  purchaseStatusText = null,
 }: PaywallModalProps) {
-  const { colors, layout, typography } = useAppTheme();
+  const { colors, layout } = useAppTheme();
 
   return (
     <Modal
@@ -48,52 +52,24 @@ export default function PaywallModal({
             styles.topBar,
             {
               backgroundColor: colors.bg,
-              paddingHorizontal: layout.space.md,
-              paddingTop: 4,
-              paddingBottom: 2,
+              borderBottomColor: colors.border,
+              paddingHorizontal: layout.space.lg,
             },
           ]}
         >
-          {/* Left: Close button */}
-          <Pressable
-            onPress={onClose}
-            hitSlop={layout.hitSlop}
-            style={[
-              styles.closeButton,
-              {
-                borderRadius: layout.radius.pill,
-              },
-            ]}
-            accessibilityRole="button"
-            accessibilityLabel="Close paywall"
-          >
-            <X size={24} color={colors.text} />
+          <View style={{ flex: 1 }} />
+          <Pressable onPress={onClose} hitSlop={10} accessibilityRole="button">
+            <X color={colors.text} size={22} />
           </Pressable>
-
-          {/* Center: Title (absolute centered) */}
-          <View pointerEvents="none" style={styles.centerContainer}>
-            <Text
-              style={[
-                styles.title,
-                {
-                  color: colors.text,
-                  fontFamily: typography.fontFamily?.medium,
-                },
-              ]}
-            >
-              MuscleMetricPro
-            </Text>
-          </View>
-
-          {/* Right: spacer to balance layout */}
-          <View style={styles.topSpacer} />
         </View>
 
         <PaywallContent
           reason={reason}
-          onClose={onClose}
           onStartTrial={onStartTrial}
           onRestorePurchases={onRestorePurchases}
+          onClose={onClose}
+          purchaseDisabled={purchaseDisabled}
+          purchaseStatusText={purchaseStatusText}
         />
       </SafeAreaView>
     </Modal>
@@ -105,28 +81,9 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   topBar: {
+    minHeight: 52,
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-  },
-  closeButton: {
-    width: 40,
-    height: 40,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  topSpacer: {
-    width: 40,
-    height: 40,
-  },
-  centerContainer: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    alignItems: "center",
-  },
-  title: {
-    fontSize: 16,
-    fontWeight: "600",
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
 });

@@ -1,11 +1,5 @@
 import React, { useMemo } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  Pressable,
-  ScrollView,
-} from "react-native";
+import { View, Text, StyleSheet, Pressable, ScrollView } from "react-native";
 import {
   TrendingUp,
   LineChart,
@@ -47,6 +41,8 @@ type PaywallContentProps = {
   onStartTrial: () => void;
   onRestorePurchases?: () => void;
   onClose: () => void;
+  purchaseDisabled?: boolean;
+  purchaseStatusText?: string | null;
 };
 
 function getContent(reason: PaywallReason): PaywallContentModel {
@@ -243,6 +239,8 @@ export default function PaywallContent({
   onStartTrial,
   onRestorePurchases,
   onClose,
+  purchaseDisabled = false,
+  purchaseStatusText = null,
 }: PaywallContentProps) {
   const { scheme, colors, typography, layout } = useAppTheme();
   const content = useMemo(() => getContent(reason), [reason]);
@@ -501,6 +499,23 @@ export default function PaywallContent({
           {content.pricingLine}
         </Text>
 
+        {purchaseStatusText ? (
+          <Text
+            style={[
+              styles.statusText,
+              {
+                color: colors.textMuted,
+                fontSize: typography.size.meta,
+                lineHeight: typography.lineHeight.meta + 2,
+                fontFamily: typography.fontFamily.medium,
+                marginBottom: layout.space.md,
+              },
+            ]}
+          >
+            {purchaseStatusText}
+          </Text>
+        ) : null}
+
         <Pressable
           style={[
             styles.primaryButton,
@@ -509,8 +524,10 @@ export default function PaywallContent({
               borderRadius: layout.radius.xl,
               marginBottom: layout.space.md,
             },
+            purchaseDisabled ? styles.primaryButtonDisabled : null,
           ]}
           onPress={onStartTrial}
+          disabled={purchaseDisabled}
         >
           <Text
             style={[
@@ -521,6 +538,7 @@ export default function PaywallContent({
                 lineHeight: typography.lineHeight.h2,
                 fontFamily: typography.fontFamily.bold,
               },
+              purchaseDisabled ? styles.primaryButtonTextDisabled : null,
             ]}
           >
             {content.primaryCta}
@@ -713,6 +731,9 @@ const styles = StyleSheet.create({
   priceLine: {
     textAlign: "center",
   },
+  statusText: {
+    textAlign: "center",
+  },
   primaryButton: {
     width: "100%",
     minHeight: 60,
@@ -724,8 +745,14 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 10 },
     elevation: 6,
   },
+  primaryButtonDisabled: {
+    opacity: 0.5,
+  },
   primaryButtonText: {
     letterSpacing: -0.4,
+  },
+  primaryButtonTextDisabled: {
+    opacity: 0.85,
   },
   secondaryActions: {
     width: "100%",

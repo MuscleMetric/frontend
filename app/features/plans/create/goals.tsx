@@ -15,10 +15,10 @@ import { useAppTheme } from "../../../../lib/useAppTheme";
 import { useAuth } from "../../../../lib/authContext";
 import { usePlanDraft, type ExerciseRow, type GoalDraft } from "./store";
 
-import PaywallModal from "@/app/features/paywall/components/PaywallModal";
 import { Icon } from "@/ui";
 
 import { log } from "@/lib/logger";
+import FeaturePaywallModal from "../../paywall/components/FeaturePaywallModal";
 
 /** Helpers for mode <-> unit */
 const MODE_UNIT: Record<GoalDraft["mode"], string> = {
@@ -140,9 +140,7 @@ export default function Goals() {
     patch: Partial<Pick<GoalDraft, "mode" | "unit" | "start" | "target">>,
   ) {
     setGoals(
-      goals.map((g) =>
-        g.exercise.id === exerciseId ? { ...g, ...patch } : g,
-      ),
+      goals.map((g) => (g.exercise.id === exerciseId ? { ...g, ...patch } : g)),
     );
   }
 
@@ -214,8 +212,7 @@ export default function Goals() {
 
       const t = exercise.type ?? "strength";
       const tabOk =
-        tab === "all" ||
-        (tab === "cardio" ? t === "cardio" : t !== "cardio");
+        tab === "all" || (tab === "cardio" ? t === "cardio" : t !== "cardio");
 
       return nameOk && tabOk;
     });
@@ -224,10 +221,7 @@ export default function Goals() {
   const hasAtLeastOneGoal = goals.length >= 1;
   const allGoalsFilled = goals.every(
     (g) =>
-      g.start != null &&
-      g.start !== 0 &&
-      g.target != null &&
-      g.target !== 0,
+      g.start != null && g.start !== 0 && g.target != null && g.target !== 0,
   );
   const canContinue = hasAtLeastOneGoal && allGoalsFilled;
 
@@ -395,7 +389,9 @@ export default function Goals() {
                           onPress={() => onChangeMode(g.exercise, g, m)}
                           style={[s.modePill, active && s.modePillActive]}
                         >
-                          <Text style={[s.modeText, active && s.modeTextActive]}>
+                          <Text
+                            style={[s.modeText, active && s.modeTextActive]}
+                          >
                             {labelForMode(m)}
                           </Text>
                         </Pressable>
@@ -414,7 +410,8 @@ export default function Goals() {
                         value={g.start != null ? String(g.start) : ""}
                         onChangeText={(v) => {
                           const raw = v === "" ? null : Number(v);
-                          const val = raw == null ? null : roundForMode(g.mode, raw);
+                          const val =
+                            raw == null ? null : roundForMode(g.mode, raw);
 
                           if (val != null && planWeeks > 0) {
                             const { suggested } = calcRangeForMode(
@@ -525,10 +522,7 @@ export default function Goals() {
                   ]}
                 >
                   <Text
-                    style={[
-                      s.pickBadgeText,
-                      selected && { color: "#fff" },
-                    ]}
+                    style={[s.pickBadgeText, selected && { color: "#fff" }]}
                   >
                     {selected ? "Selected" : "Select"}
                   </Text>
@@ -549,17 +543,10 @@ export default function Goals() {
         </Pressable>
       </View>
 
-      <PaywallModal
+      <FeaturePaywallModal
         visible={paywallOpen}
         reason="goal_limit"
         onClose={() => setPaywallOpen(false)}
-        onStartTrial={() => {
-          log("[Paywall] Start trial tapped: goal_limit");
-          setPaywallOpen(false);
-        }}
-        onRestorePurchases={() => {
-          log("[Paywall] Restore purchases tapped");
-        }}
       />
     </SafeAreaView>
   );

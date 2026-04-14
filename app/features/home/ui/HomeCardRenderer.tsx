@@ -10,8 +10,7 @@ import { UnlockPreviewCard } from "./cards/UnlockPreviewCard";
 import { StarterTemplatesCard } from "./cards/StarterTemplatesCard";
 import { useAuth } from "@/lib/authContext";
 import { router } from "expo-router";
-import PaywallModal from "../../paywall/components/PaywallModal";
-import { usePaywallActions } from "@/lib/billing/usePaywallActions";
+import FeaturePaywallModal from "@/app/features/paywall/components/FeaturePaywallModal";
 
 export function HomeCardRenderer({
   card,
@@ -22,8 +21,6 @@ export function HomeCardRenderer({
 }) {
   const [paywallOpen, setPaywallOpen] = useState(false);
   const { capabilities } = useAuth();
-  const { annual, monthly, purchaseSelected, restore, busy } =
-    usePaywallActions(() => setPaywallOpen(false));
 
   const handleOpenDeepAnalytics = (exerciseId: string) => {
     if (capabilities.canViewDeepAnalytics) {
@@ -92,19 +89,10 @@ export function HomeCardRenderer({
     <>
       {content}
 
-      <PaywallModal
+      <FeaturePaywallModal
         visible={paywallOpen}
         reason="deep_analytics"
         onClose={() => setPaywallOpen(false)}
-        onStartTrial={() => {
-          const pkg = annual ?? monthly;
-          if (!pkg || busy) return;
-          void purchaseSelected(pkg);
-        }}
-        onRestorePurchases={() => {
-          if (busy) return;
-          void restore();
-        }}
       />
     </>
   );

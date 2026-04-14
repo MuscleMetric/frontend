@@ -20,6 +20,7 @@ import PaywallModal from "@/app/features/paywall/components/PaywallModal";
 import { Icon } from "@/ui";
 
 import { log } from "@/lib/logger";
+import FeaturePaywallModal from "../../paywall/components/FeaturePaywallModal";
 
 function humanDate(iso?: string | null) {
   if (!iso) return "—";
@@ -100,7 +101,8 @@ export default function Review() {
   const [saving, setSaving] = useState(false);
   const [saveErrorMessage, setSaveErrorMessage] = useState<string | null>(null);
   const [paywallOpen, setPaywallOpen] = useState(false);
-  const [paywallReason, setPaywallReason] = useState<PaywallReason>("goal_limit");
+  const [paywallReason, setPaywallReason] =
+    useState<PaywallReason>("goal_limit");
 
   const router = useRouter();
 
@@ -318,7 +320,10 @@ export default function Review() {
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }}>
       <ScrollView
         style={{ flex: 1, backgroundColor: colors.bg }}
-        contentContainerStyle={{ padding: layout.space.lg, gap: layout.space.md }}
+        contentContainerStyle={{
+          padding: layout.space.lg,
+          gap: layout.space.md,
+        }}
       >
         <View style={s.card}>
           <Text style={s.h2}>Review Plan</Text>
@@ -453,7 +458,8 @@ export default function Review() {
             <View style={{ gap: 6 }}>
               {goals.map((g, i) => (
                 <Text key={i} style={[s.line, s.lineGoal]}>
-                  • {g.exercise.name} — {g.mode.replaceAll("_", " ")} → {g.target}
+                  • {g.exercise.name} — {g.mode.replaceAll("_", " ")} →{" "}
+                  {g.target}
                   {g.unit ? ` ${g.unit}` : ""}
                   {g.start != null ? `  (start ${g.start}${g.unit ?? ""})` : ""}
                 </Text>
@@ -487,17 +493,10 @@ export default function Review() {
         </View>
       </ScrollView>
 
-      <PaywallModal
+      <FeaturePaywallModal
         visible={paywallOpen}
-        reason={paywallReason}
+        reason="goal_limit"
         onClose={() => setPaywallOpen(false)}
-        onStartTrial={() => {
-          log(`[Paywall] Start trial tapped: ${paywallReason}`);
-          setPaywallOpen(false);
-        }}
-        onRestorePurchases={() => {
-          log("[Paywall] Restore purchases tapped");
-        }}
       />
     </SafeAreaView>
   );
