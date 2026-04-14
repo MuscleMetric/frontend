@@ -1,11 +1,20 @@
 // app/features/home/cards/LatestPRCard.tsx
 import React, { useMemo } from "react";
 import { View, Text, StyleSheet, Pressable } from "react-native";
-import { router } from "expo-router";
 import { useAppTheme } from "../../../../../lib/useAppTheme";
 import { Card, Pill } from "@/ui";
 
-export function LatestPRCard({ card, summary }: { card: any; summary?: any }) {
+type LatestPRCardProps = {
+  card: any;
+  summary?: any;
+  onOpenDeepAnalytics: (exerciseId: string) => void;
+};
+
+export function LatestPRCard({
+  card,
+  summary,
+  onOpenDeepAnalytics,
+}: LatestPRCardProps) {
   const { colors, typography, layout } = useAppTheme();
   const styles = useMemo(
     () => makeStyles(colors, typography, layout),
@@ -15,7 +24,8 @@ export function LatestPRCard({ card, summary }: { card: any; summary?: any }) {
   const exerciseId = card?.exercise_id ? String(card.exercise_id) : "";
   const exerciseName = String(card?.exercise_name ?? "Personal record");
 
-  const bestWeight = card?.best_weight == null ? null : Number(card.best_weight);
+  const bestWeight =
+    card?.best_weight == null ? null : Number(card.best_weight);
   const bestReps = card?.best_reps == null ? null : Number(card.best_reps);
 
   const e1rmLabel = String(card?.display_value ?? "");
@@ -36,33 +46,39 @@ export function LatestPRCard({ card, summary }: { card: any; summary?: any }) {
   }, [delta]);
 
   const headline =
-    bestWeight != null && bestReps != null ? `${trim1(bestWeight)} kg × ${bestReps}` : null;
+    bestWeight != null && bestReps != null
+      ? `${trim1(bestWeight)} kg × ${bestReps}`
+      : null;
 
   const dateLabel = useMemo(() => {
     if (!achievedAt) return null;
     const d = new Date(achievedAt);
     if (Number.isNaN(d.getTime())) return null;
-    return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+    return d.toLocaleDateString(undefined, {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
   }, [achievedAt]);
 
   const canOpen = !!exerciseId;
 
-  const onPress = () => {
+  const handlePress = () => {
     if (!exerciseId) return;
-    // Adjust this path to match your actual route file location.
-    router.push({
-      pathname: "features/progress/screens/deep-analytics",
-      params: { exerciseId },
-    });
+    onOpenDeepAnalytics(exerciseId);
   };
 
   return (
     <Pressable
-      onPress={onPress}
+      onPress={handlePress}
       disabled={!canOpen}
       style={({ pressed }) => [pressed && canOpen ? styles.pressed : null]}
       accessibilityRole="button"
-      accessibilityLabel={canOpen ? `Open analytics for ${exerciseName}` : "Personal record"}
+      accessibilityLabel={
+        canOpen
+          ? `Open analytics for ${exerciseName}`
+          : "Personal record"
+      }
     >
       <Card style={styles.card}>
         <View pointerEvents="none" style={styles.accent} />
