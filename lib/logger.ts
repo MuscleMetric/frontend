@@ -1,5 +1,5 @@
 export function log(...args: any[]) {
-  if (__DEV__) log(...args);
+  if (__DEV__) console.log(...args);
 }
 
 export function warn(...args: any[]) {

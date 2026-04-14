@@ -8,6 +8,12 @@ import {
 import { useRevenueCatOffering } from "./useRevenueCatOffering";
 import { useAuth } from "@/lib/authContext";
 
+type PurchaseUnavailableReason =
+  | "loading"
+  | "offerings_error"
+  | "no_packages"
+  | null;
+
 export function usePaywallActions(onClose?: () => void) {
   const { refreshEntitlements } = useAuth();
   const { offering, loading, error, refresh } = useRevenueCatOffering();
@@ -29,6 +35,19 @@ export function usePaywallActions(onClose?: () => void) {
     [offering]
   );
 
+  const defaultPackage = useMemo(() => annual ?? monthly ?? null, [annual, monthly]);
+
+  const hasPackages = !!defaultPackage;
+
+  const purchaseUnavailableReason: PurchaseUnavailableReason = useMemo(() => {
+    if (loading) return "loading";
+    if (error) return "offerings_error";
+    if (!defaultPackage) return "no_packages";
+    return null;
+  }, [loading, error, defaultPackage]);
+
+  const canStartPurchase = !busy && !purchaseUnavailableReason;
+
   const purchaseSelected = async (pkg: PurchasesPackage) => {
     try {
       setBusy(true);
@@ -42,6 +61,36 @@ export function usePaywallActions(onClose?: () => void) {
     } finally {
       setBusy(false);
     }
+  };
+
+  const startDefaultPurchase = async () => {
+    if (busy) return;
+
+    if (loading) {
+      Alert.alert(
+        "Please wait",
+        "We’re still loading purchase options."
+      );
+      return;
+    }
+
+    if (error) {
+      Alert.alert(
+        "Purchases unavailable",
+        "We couldn’t load purchase options right now. Please try again."
+      );
+      return;
+    }
+
+    if (!defaultPackage) {
+      Alert.alert(
+        "Purchases unavailable",
+        "Purchase options are not available right now."
+      );
+      return;
+    }
+
+    await purchaseSelected(defaultPackage);
   };
 
   const restore = async () => {
@@ -66,7 +115,12 @@ export function usePaywallActions(onClose?: () => void) {
     busy,
     monthly,
     annual,
+    defaultPackage,
+    hasPackages,
+    purchaseUnavailableReason,
+    canStartPurchase,
     purchaseSelected,
+    startDefaultPurchase,
     restore,
   };
 }

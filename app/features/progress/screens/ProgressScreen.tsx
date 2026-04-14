@@ -27,8 +27,13 @@ export default function ProgressScreen() {
   const { data, loading, error, refresh } = useProgressOverview();
   const { capabilities } = useAuth();
   const [paywallOpen, setPaywallOpen] = useState(false);
-  const { annual, monthly, purchaseSelected, restore, busy } =
-    usePaywallActions(() => setPaywallOpen(false));
+  const {
+    startDefaultPurchase,
+    restore,
+    busy,
+    canStartPurchase,
+    purchaseUnavailableReason,
+  } = usePaywallActions(() => setPaywallOpen(false));
 
   const vm = useMemo(() => (data ? mapOverview(data) : null), [data]);
 
@@ -137,9 +142,7 @@ export default function ProgressScreen() {
             reason="deep_analytics"
             onClose={() => setPaywallOpen(false)}
             onStartTrial={() => {
-              const pkg = annual ?? monthly;
-              if (!pkg || busy) return;
-              void purchaseSelected(pkg);
+              void startDefaultPurchase();
             }}
             onRestorePurchases={() => {
               if (busy) return;
