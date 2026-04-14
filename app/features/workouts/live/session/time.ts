@@ -1,6 +1,6 @@
 // app/features/workouts/live/session/time.ts
 
-import type { ActiveWorkoutSnapshot } from "./types";
+import type { LiveWorkoutDraft } from "../state/types";
 
 export function nowIso() {
   return new Date().toISOString();
@@ -12,7 +12,7 @@ export function secondsBetween(aIso: string, bIso: string) {
   return Math.max(0, Math.floor((b - a) / 1000));
 }
 
-export function timerSecondsFromSnapshot(d: ActiveWorkoutSnapshot) {
+export function timerSecondsFromSnapshot(d: LiveWorkoutDraft) {
   const base = Number(d.timerElapsedSeconds ?? 0);
   const last = d.timerLastActiveAt;
   if (!last) return base;
