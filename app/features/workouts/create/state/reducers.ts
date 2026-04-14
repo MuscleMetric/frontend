@@ -7,6 +7,8 @@ import {
 } from "./defaults";
 import { normalizeNote, normalizeTitle } from "./helpers";
 
+import { log } from "@/lib/logger";
+
 export const initialDraft = makeInitialDraft;
 
 function recomputeSupersetIndices(exercises: WorkoutDraft["exercises"]) {
@@ -159,8 +161,8 @@ export function workoutDraftReducer(
       const added = action.payload.exercises.map(makeDraftExercise);
       const next = [...state.exercises, ...added];
 
-      console.log("Added:", added.length);
-      console.log("Final:", next.length);
+      log("Added:", added.length);
+      log("Final:", next.length);
 
       return {
         ...state,

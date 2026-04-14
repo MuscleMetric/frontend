@@ -20,6 +20,8 @@ import { useAppTheme } from "@/lib/useAppTheme";
 import { supabase } from "@/lib/supabase";
 import { ChevronLeft } from "lucide-react-native";
 
+import { log } from "@/lib/logger";
+
 type FollowState =
   | "self"
   | "following"
@@ -257,7 +259,7 @@ export default function SearchScreen() {
       });
 
       if (res.error) {
-        console.log("search_users_v1 error:", res.error);
+        log("search_users_v1 error:", res.error);
         setRows([]);
         setErr(res.error.message ?? "Search failed");
       } else {
@@ -272,7 +274,7 @@ export default function SearchScreen() {
         setRows(slim);
       }
     } catch (e: any) {
-      console.log("search_users_v1 exception:", e);
+      log("search_users_v1 exception:", e);
       setRows([]);
       setErr(e?.message ?? "Search failed");
     } finally {
@@ -305,7 +307,7 @@ export default function SearchScreen() {
         .limit(50);
 
       if (fr.error) {
-        console.log("follow_requests read error:", fr.error);
+        log("follow_requests read error:", fr.error);
         setRequested([]);
         setErr(fr.error.message ?? "Failed to load requested");
         setLoading(false);
@@ -326,7 +328,7 @@ export default function SearchScreen() {
         .in("id", ids);
 
       if (pr.error) {
-        console.log("profiles read error:", pr.error);
+        log("profiles read error:", pr.error);
         // still show ids at least
         setRequested(
           ids.map((id: string) => ({
@@ -352,7 +354,7 @@ export default function SearchScreen() {
         })),
       );
     } catch (e: any) {
-      console.log("loadRequested exception:", e);
+      log("loadRequested exception:", e);
       setRequested([]);
       setErr(e?.message ?? "Failed to load requested");
     } finally {
@@ -436,7 +438,7 @@ export default function SearchScreen() {
         return;
       }
     } catch (e: any) {
-      console.log("follow action error:", e);
+      log("follow action error:", e);
       setErr(e?.message ?? "Action failed");
       // fallback refresh current mode
       if (mode === "requested") loadRequested();

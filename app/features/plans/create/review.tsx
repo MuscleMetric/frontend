@@ -19,6 +19,8 @@ import { useAppTheme } from "../../../../lib/useAppTheme";
 import PaywallModal from "@/app/features/paywall/components/PaywallModal";
 import { Icon } from "@/ui";
 
+import { log } from "@/lib/logger";
+
 function humanDate(iso?: string | null) {
   if (!iso) return "—";
   try {
@@ -490,11 +492,11 @@ export default function Review() {
         reason={paywallReason}
         onClose={() => setPaywallOpen(false)}
         onStartTrial={() => {
-          console.log(`[Paywall] Start trial tapped: ${paywallReason}`);
+          log(`[Paywall] Start trial tapped: ${paywallReason}`);
           setPaywallOpen(false);
         }}
         onRestorePurchases={() => {
-          console.log("[Paywall] Restore purchases tapped");
+          log("[Paywall] Restore purchases tapped");
         }}
       />
     </SafeAreaView>

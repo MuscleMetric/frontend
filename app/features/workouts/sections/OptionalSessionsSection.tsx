@@ -7,6 +7,8 @@ import { useAuth } from "@/lib/authContext";
 import { ListRow, Button, WorkoutCover } from "@/ui";
 import { router } from "expo-router";
 
+import { log } from "@/lib/logger";
+
 type OptionalSessions = {
   title: string;
   actionCreate: boolean;
@@ -55,12 +57,12 @@ export function OptionalSessionsSection({
 
   React.useEffect(() => {
     console.group("🟦 Optional Sessions — Rendered Workouts");
-    console.log("templateCount:", templateCount);
-    console.log("maxTemplates:", maxTemplates);
-    console.log("isAtTemplateLimit:", isAtTemplateLimit);
+    log("templateCount:", templateCount);
+    log("maxTemplates:", maxTemplates);
+    log("isAtTemplateLimit:", isAtTemplateLimit);
 
     optional.items.forEach((w, idx) => {
-      console.log({
+      log({
         index: idx,
         workoutId: w.workoutId,
         title: w.title,

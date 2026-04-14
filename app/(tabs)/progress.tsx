@@ -1,6 +1,7 @@
 import React, { useEffect } from "react";
 import { ProgressScreen } from "@/app/features/progress";
 import { useAuth } from "@/lib/authContext";
+import { log } from "../../lib/logger";
 
 export default function ProgressRoute() {
   const auth = useAuth();
@@ -16,7 +17,7 @@ export default function ProgressRoute() {
       capabilities: auth.capabilities,
     };
 
-    console.log("[Progress Debug]", JSON.stringify(debugPayload, null, 2));
+    log("[Progress Debug]", JSON.stringify(debugPayload, null, 2));
   }, [
     auth.loading,
     auth.entitlementsLoading,

@@ -36,6 +36,8 @@ import { ScreenHeader } from "@/ui";
 import { Icon } from "@/ui/icons/Icon";
 import PaywallModal from "@/app/features/paywall/components/PaywallModal";
 
+import { log } from "@/lib/logger";
+
 function fmtDateShort(iso?: string | null) {
   if (!iso) return "—";
   const d = new Date(iso);
@@ -653,11 +655,11 @@ export default function EditPlan() {
         reason="goal_limit"
         onClose={() => setPaywallOpen(false)}
         onStartTrial={() => {
-          console.log("[Paywall] Start trial tapped: goal_limit");
+          log("[Paywall] Start trial tapped: goal_limit");
           setPaywallOpen(false);
         }}
         onRestorePurchases={() => {
-          console.log("[Paywall] Restore purchases tapped");
+          log("[Paywall] Restore purchases tapped");
         }}
       />
     </SafeAreaView>

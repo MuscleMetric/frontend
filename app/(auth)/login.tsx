@@ -12,6 +12,7 @@ import * as Linking from "expo-linking";
 import { supabase } from "../../lib/supabase";
 import { router } from "expo-router";
 import { useAppTheme } from "../../lib/useAppTheme";
+import { log } from "@/lib/logger";
 
 export default function Login() {
   const { colors } = useAppTheme();
@@ -26,7 +27,7 @@ export default function Login() {
       setLoadingProvider(provider);
 
       const redirectTo = Linking.createURL("/callback");
-      console.log("🔐 signInWithProvider called", { provider, redirectTo });
+      log("🔐 signInWithProvider called", { provider, redirectTo });
 
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider,
@@ -36,12 +37,12 @@ export default function Login() {
         },
       });
 
-      console.log("🔐 signInWithOAuth result", { error, data });
+      log("🔐 signInWithOAuth result", { error, data });
 
       if (error) throw error;
       if (!data?.url) throw new Error("No OAuth URL returned from Supabase");
 
-      console.log("🌐 Opening OAuth URL in browser", data.url);
+      log("🌐 Opening OAuth URL in browser", data.url);
       await Linking.openURL(data.url);
     } catch (err: any) {
       console.warn("OAuth login failed", err);

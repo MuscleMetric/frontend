@@ -12,6 +12,8 @@ import {
 import { useAppTheme } from "@/lib/useAppTheme";
 import { supabase } from "@/lib/supabase";
 
+import { log } from "@/lib/logger";
+
 type Goal =
   | "get_stronger"
   | "build_muscle"
@@ -191,7 +193,7 @@ export function PrimaryGoalModal({
     setSaving(false);
 
     if (res.error) {
-      console.log("set_profile_settings_v1(primaryGoal) error:", res.error);
+      log("set_profile_settings_v1(primaryGoal) error:", res.error);
       return;
     }
 

@@ -19,6 +19,8 @@ import { ScreenHeader, Icon } from "@/ui";
 import PaywallModal from "@/app/features/paywall/components/PaywallModal";
 import { useEditPlan, type ExerciseRow, type GoalDraft } from "./store";
 
+import { log } from "@/lib/logger";
+
 /** Helpers for mode <-> unit */
 const MODE_UNIT: Record<GoalDraft["mode"], string> = {
   exercise_weight: "kg",
@@ -644,11 +646,11 @@ export default function EditGoals() {
         reason="goal_limit"
         onClose={() => setPaywallOpen(false)}
         onStartTrial={() => {
-          console.log("[Paywall] Start trial tapped: goal_limit");
+          log("[Paywall] Start trial tapped: goal_limit");
           setPaywallOpen(false);
         }}
         onRestorePurchases={() => {
-          console.log("[Paywall] Restore purchases tapped");
+          log("[Paywall] Restore purchases tapped");
         }}
       />
     </SafeAreaView>

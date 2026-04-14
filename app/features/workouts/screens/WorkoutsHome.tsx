@@ -37,6 +37,8 @@ const ROUTES = {
   planCreate: "/features/plans/create/planInfo",
 } as const;
 
+import { log } from "@/lib/logger";
+
 type ActivePlansEntry = NonNullable<WorkoutsTabPayload["activePlans"]>[number];
 type PaywallReason = "template_limit" | "plan_limit" | null;
 
@@ -342,11 +344,11 @@ function StateRenderer({
         reason={paywallReason ?? "generic"}
         onClose={() => setPaywallReason(null)}
         onStartTrial={() => {
-          console.log("[Paywall] Start trial tapped:", paywallReason);
+          log("[Paywall] Start trial tapped:", paywallReason);
           setPaywallReason(null);
         }}
         onRestorePurchases={() => {
-          console.log("[Paywall] Restore purchases tapped");
+          log("[Paywall] Restore purchases tapped");
         }}
       />
     </>

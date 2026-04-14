@@ -4,11 +4,13 @@ import type { LiveWorkoutDraft } from "../state/types";
 import { saveLiveDraftForUser } from "./local";
 import { upsertServerDraft } from "./server";
 
+import { log } from "@/lib/logger";
+
 const DEBUG_PERSIST = __DEV__;
 
 function dlog(message: string, data?: Record<string, any>) {
   if (!DEBUG_PERSIST) return;
-  console.log(`[persistDraft] ${message}`, data ?? {});
+  log(`[persistDraft] ${message}`, data ?? {});
 }
 
 /**

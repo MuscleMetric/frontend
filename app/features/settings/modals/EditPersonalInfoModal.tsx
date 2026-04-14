@@ -14,6 +14,8 @@ import {
 import { useAppTheme } from "@/lib/useAppTheme";
 import { supabase } from "@/lib/supabase";
 
+import { log } from "@/lib/logger";
+
 export function EditPersonalInfoModal({
   open,
   onClose,
@@ -223,7 +225,7 @@ export function EditPersonalInfoModal({
     setSaving(false);
 
     if (res.error) {
-      console.log("set_personal_info_v1 error:", res.error);
+      log("set_personal_info_v1 error:", res.error);
       Alert.alert("Couldn’t save", res.error.message ?? "Try again.");
       return;
     }

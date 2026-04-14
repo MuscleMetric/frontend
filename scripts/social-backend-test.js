@@ -156,7 +156,7 @@ async function login(label, email, password) {
   const id = data?.session?.user?.id;
   assert(id, `[${label}] No user id after login`);
 
-  console.log(`[${label}] logged in as user_id=${id}`);
+  log(`[${label}] logged in as user_id=${id}`);
   return { client, userId: id };
 }
 
@@ -265,14 +265,14 @@ function buildCommentRow({ postId, userId, body = "secret comment" }) {
 }
 
 async function run() {
-  console.log("Logging in as A and B...");
+  log("Logging in as A and B...");
   const A = await login("A", A_EMAIL, A_PASSWORD);
   const B = await login("B", B_EMAIL, B_PASSWORD);
 
   await ensureProfileRow(A.client, A.userId, "A");
   await ensureProfileRow(B.client, B.userId, "B");
 
-  console.log("Hard reset state...");
+  log("Hard reset state...");
   await hardReset(A, B);
 
   const A_ID = A.userId;
@@ -286,7 +286,7 @@ async function run() {
     try {
       await fn();
       results.push({ name: label, ok: true });
-      console.log("✅", label);
+      log("✅", label);
     } catch (e) {
       results.push({ name: label, ok: false, err: e });
       console.error("❌", label, "\n   ", e?.message || e);
@@ -603,7 +603,7 @@ async function run() {
       .eq("id", post.id)
       .single();
     if (eo) throw eo;
-    console.log("   DEBUG post owner:", ownerRow);
+    log("   DEBUG post owner:", ownerRow);
 
     // RLS deletes often return success with 0 rows; verify by reading as owner
     const { error: delErr } = await B.client
@@ -923,8 +923,8 @@ async function run() {
 
   // Summary
   const failed = results.filter((r) => !r.ok);
-  console.log("\n--- SUMMARY ---");
-  console.log(`Passed: ${results.length - failed.length}/${results.length}`);
+  log("\n--- SUMMARY ---");
+  log(`Passed: ${results.length - failed.length}/${results.length}`);
   if (failed.length) process.exitCode = 1;
 }
 

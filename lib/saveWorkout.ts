@@ -4,11 +4,13 @@ import type { LiveWorkoutDraft } from "@/app/features/workouts/live/state/types"
 import * as Sentry from "@sentry/react-native";
 import type { ReviewPayload } from "./sessionStore";
 
+import { log } from "@/lib/logger";
+
 const DEBUG_SAVE = __DEV__;
 
 function dlog(message: string, data?: Record<string, any>) {
   if (!DEBUG_SAVE) return;
-  console.log(`[saveWorkout] ${message}`, data ?? {});
+  log(`[saveWorkout] ${message}`, data ?? {});
 }
 
 function bc(message: string, data?: Record<string, any>) {

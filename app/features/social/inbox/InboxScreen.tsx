@@ -25,6 +25,8 @@ import type {
   WorkoutDetailsPayload,
 } from "@/app/features/social/feed/modals/types";
 
+import { log } from "@/lib/logger";
+
 type NotificationType =
   | "followed_you"
   | "follow_request_received"
@@ -318,7 +320,7 @@ export default function InboxScreen() {
       .in("id", actorIds);
 
     if (error) {
-      console.log("profiles fetch error:", error);
+      log("profiles fetch error:", error);
       setActorMap({});
       return;
     }
@@ -339,7 +341,7 @@ export default function InboxScreen() {
     });
 
     if (notificationsRes.error) {
-      console.log("get_my_notifications error:", notificationsRes.error);
+      log("get_my_notifications error:", notificationsRes.error);
       setRows([]);
       setActorMap({});
       setUnreadCount(0);
@@ -432,7 +434,7 @@ export default function InboxScreen() {
         .order("created_at", { ascending: false });
 
       if (error) {
-        console.log("fetchComments error:", error);
+        log("fetchComments error:", error);
         return [];
       }
 
@@ -466,7 +468,7 @@ export default function InboxScreen() {
       });
 
       if (error) {
-        console.log("addComment error:", error);
+        log("addComment error:", error);
         throw error;
       }
 
@@ -507,7 +509,7 @@ export default function InboxScreen() {
       .single();
 
     if (res.error) {
-      console.log("get_post_detail_v1 error:", res.error);
+      log("get_post_detail_v1 error:", res.error);
       Alert.alert("Could not open post", "Please try again.");
       return;
     }
@@ -565,7 +567,7 @@ export default function InboxScreen() {
         });
 
         if (markRes.error) {
-          console.log("mark_notification_read error:", markRes.error);
+          log("mark_notification_read error:", markRes.error);
         } else {
           setRows((prev) =>
             prev.map((row) =>
@@ -595,7 +597,7 @@ export default function InboxScreen() {
     const res = await supabase.rpc("mark_all_notifications_read");
 
     if (res.error) {
-      console.log("mark_all_notifications_read error:", res.error);
+      log("mark_all_notifications_read error:", res.error);
       Alert.alert("Could not update notifications", "Please try again.");
       setMarkingAll(false);
       return;

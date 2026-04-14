@@ -25,6 +25,8 @@ import { useAppTheme } from "../../lib/useAppTheme";
 import { useAuth } from "../../lib/authContext";
 import { supabase } from "../../lib/supabase";
 
+import { log } from "../../lib/logger";
+
 function CustomHeader({
   title,
   right,
@@ -85,10 +87,10 @@ export default function TabsLayout() {
   const loadUnreadCount = useCallback(async () => {
     const res = await supabase.rpc("get_unread_notifications_count_v1");
 
-    console.log("unread rpc raw:", res.data);
+    log("unread rpc raw:", res.data);
 
     if (res.error) {
-      console.log("unread count error:", res.error);
+      log("unread count error:", res.error);
       setUnreadCount(0);
       return;
     }
@@ -138,8 +140,8 @@ export default function TabsLayout() {
         const g = await supabase.rpc("get_onboarding_gate_v1").single();
 
         if (g.error) {
-          console.log("gate rpc error:", g.error);
-          console.log("gate rpc data:", g.data);
+          log("gate rpc error:", g.error);
+          log("gate rpc data:", g.data);
           setChecking(false);
           return;
         }

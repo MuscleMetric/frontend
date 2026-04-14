@@ -13,6 +13,8 @@ import {
 import { useAppTheme } from "@/lib/useAppTheme";
 import { supabase } from "@/lib/supabase";
 
+import { log } from "@/lib/logger";
+
 export function ConfirmDeleteAccountModal({
   open,
   onClose,
@@ -166,7 +168,7 @@ export function ConfirmDeleteAccountModal({
     setLoading(false);
 
     if (res.error) {
-      console.log("request_account_deletion_v1 error:", res.error);
+      log("request_account_deletion_v1 error:", res.error);
       return;
     }
 

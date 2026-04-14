@@ -4,6 +4,8 @@ import * as BackgroundFetch from "expo-background-fetch";
 import * as TaskManager from "expo-task-manager";
 import { supabase } from "../../../lib/supabase";
 
+import { log } from "@/lib/logger";
+
 const TASK_NAME = "steps-background-sync";
 
 /** YYYY-MM-DD in *local* time */
@@ -111,7 +113,7 @@ export async function onAppActiveSync() {
   yesterday.setDate(yesterday.getDate() - 1);
   const yesterdayISO = toISODateLocal(yesterday);
 
-  console.log("🔄 Step Sync Triggered", {
+  log("🔄 Step Sync Triggered", {
     now: now.toISOString(),
     todayISO,
     yesterdayISO,
@@ -123,43 +125,43 @@ export async function onAppActiveSync() {
   if (!last) {
     // If never synced, start from yesterday to ensure we fill at least yesterday + today
     last = new Date(yesterday);
-    console.log(
+    log(
       "⚠️ No last synced day found — assuming yesterday:",
       yesterdayISO
     );
   }
 
   const lastISO = toISODateLocal(last);
-  console.log("📅 Sync state before:", { lastISO, yesterdayISO, todayISO });
+  log("📅 Sync state before:", { lastISO, yesterdayISO, todayISO });
 
   // 2️⃣ If last < yesterday, backfill [last..yesterday]
   if (last < yesterday) {
-    console.log(`📦 Backfilling range ${lastISO} → ${yesterdayISO} ...`);
+    log(`📦 Backfilling range ${lastISO} → ${yesterdayISO} ...`);
     const lastBackfilled = await backfillRange(last, yesterday);
 
     if (lastBackfilled) {
       const finalDay = toISODateLocal(lastBackfilled);
       await setLastSyncedDay(lastBackfilled);
-      console.log(`✅ Backfill complete up to ${finalDay}`);
+      log(`✅ Backfill complete up to ${finalDay}`);
     } else {
-      console.log("⚠️ No days backfilled (possibly sensor returned 0s)");
+      log("⚠️ No days backfilled (possibly sensor returned 0s)");
     }
   } else {
-    console.log("⏭ No backfill needed (already up to date)");
+    log("⏭ No backfill needed (already up to date)");
   }
 
   // 3️⃣ Push today’s steps (so far)
   try {
     const stepsToday = await getStepsForDayLocal(now);
-    console.log(`🚶 Steps for today (${todayISO}):`, stepsToday);
+    log(`🚶 Steps for today (${todayISO}):`, stepsToday);
 
     await uploadStepsForDay(todayISO, stepsToday);
-    console.log("✅ Uploaded today's step count");
+    log("✅ Uploaded today's step count");
   } catch (err) {
     console.error("❌ Error uploading today's steps:", err);
   }
 
-  console.log("🟢 Step sync completed");
+  log("🟢 Step sync completed");
 }
 
 // Background task: push “today so far” silently

@@ -2,6 +2,8 @@
 import { Platform } from "react-native";
 import * as LiveActivity from "expo-live-activity"; // iOS Live Activities
 
+import { log } from "@/lib/logger";
+
 // Types from expo-live-activity
 type LiveActivityState = LiveActivity.LiveActivityState;
 type LiveActivityConfig = LiveActivity.LiveActivityConfig;
@@ -135,7 +137,7 @@ export async function startLiveWorkout(p: LivePayload) {
         // ⛔️ no imagePosition / imageAlign
       };
 
-      console.log("[liveWorkout] iOS startActivity", { state, config });
+      log("[liveWorkout] iOS startActivity", { state, config });
 
       if (!iOSActivityId) {
         const activityId = LiveActivity.startActivity(state, config);
@@ -185,7 +187,7 @@ export async function updateLiveWorkout(p: LivePayload) {
     try {
       const state = buildState(p);
 
-      console.log("[liveWorkout] iOS updateActivity", {
+      log("[liveWorkout] iOS updateActivity", {
         activityId: iOSActivityId,
         state,
       });
@@ -224,7 +226,7 @@ export async function stopLiveWorkout() {
         // ⛔️ no image fields
       } as LiveActivityState;
 
-      console.log("[liveWorkout] iOS stopActivity", {
+      log("[liveWorkout] iOS stopActivity", {
         activityId: iOSActivityId,
         finalState,
       });
