@@ -19,6 +19,7 @@ import RecentActivitySection from "../sections/RecentActivitySection";
 import { NewUserProgressCard } from "@/app/features/home/ui/cards/NewUserProgressCard";
 import { useAuth } from "@/lib/authContext";
 import PaywallModal from "@/app/features/paywall/components/PaywallModal";
+import { usePaywallActions } from "@/lib/billing/usePaywallActions";
 
 const UNLOCK_TARGET = 5;
 
@@ -26,6 +27,8 @@ export default function ProgressScreen() {
   const { data, loading, error, refresh } = useProgressOverview();
   const { capabilities } = useAuth();
   const [paywallOpen, setPaywallOpen] = useState(false);
+  const { annual, monthly, purchaseSelected, restore, busy } =
+    usePaywallActions(() => setPaywallOpen(false));
 
   const vm = useMemo(() => (data ? mapOverview(data) : null), [data]);
 
@@ -134,11 +137,13 @@ export default function ProgressScreen() {
             reason="deep_analytics"
             onClose={() => setPaywallOpen(false)}
             onStartTrial={() => {
-              console.log("[Paywall] Start trial tapped");
-              setPaywallOpen(false);
+              const pkg = annual ?? monthly;
+              if (!pkg || busy) return;
+              void purchaseSelected(pkg);
             }}
             onRestorePurchases={() => {
-              console.log("[Paywall] Restore purchases tapped");
+              if (busy) return;
+              void restore();
             }}
           />
         </>
