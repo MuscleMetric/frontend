@@ -12,6 +12,10 @@ import type { Session } from "@supabase/supabase-js";
 import { AppState } from "react-native";
 import { supabase } from "./supabase";
 import { syncPendingWorkouts } from "./pendingWorkoutSync";
+import {
+  configureRevenueCat,
+  logoutRevenueCat,
+} from "@/lib/billing/revenuecat";
 
 export type UserRole = "user" | "pt" | "admin";
 
@@ -37,7 +41,12 @@ export type EntitlementStatus =
   | "expired"
   | "revoked";
 
-export type EntitlementSource = "none" | "apple" | "google" | "stripe" | "manual";
+export type EntitlementSource =
+  | "none"
+  | "apple"
+  | "google"
+  | "stripe"
+  | "manual";
 
 export type Capabilities = {
   maxTemplates: number;
@@ -86,7 +95,8 @@ const FREE_CAPABILITIES: Capabilities = {
 const AuthContext = createContext<AuthValue | undefined>(undefined);
 
 function normaliseCapabilities(raw: unknown): Capabilities {
-  const obj = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const obj =
+    raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
 
   return {
     maxTemplates:
@@ -152,7 +162,9 @@ function normaliseEntitlementsRow(row: any): EntitlementSnapshot {
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
-  const [entitlements, setEntitlements] = useState<EntitlementSnapshot | null>(null);
+  const [entitlements, setEntitlements] = useState<EntitlementSnapshot | null>(
+    null,
+  );
   const [loading, setLoading] = useState(true);
   const [entitlementsLoading, setEntitlementsLoading] = useState(false);
 
@@ -271,6 +283,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } finally {
       syncRunning.current = false;
     }
+  }, [session?.user?.id]);
+
+  useEffect(() => {
+    const uid = session?.user?.id;
+
+    if (!uid) {
+      void logoutRevenueCat();
+      return;
+    }
+
+    void configureRevenueCat(uid);
   }, [session?.user?.id]);
 
   useEffect(() => {
