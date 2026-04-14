@@ -4,6 +4,8 @@ import { supabase } from "../../../../lib/supabase";
 import { useAuth } from "../../../../lib/authContext";
 import type { ProfileOverview } from "./profileTypes";
 
+import { log } from "@/lib/logger";
+
 type State = {
   data: ProfileOverview | null;
   loading: boolean;
@@ -34,7 +36,7 @@ export function useProfileOverview() {
       return;
     }
 
-    console.log("profile overview rpc raw:", JSON.stringify(data, null, 2));
+    log("profile overview rpc raw:", JSON.stringify(data, null, 2));
 
     setState({ data: (data as any) ?? null, loading: false, error: null });
   }, [userId]);

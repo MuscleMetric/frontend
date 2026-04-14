@@ -17,6 +17,8 @@ import { WorkoutPostCard } from "@/app/features/social/feed/posts/WorkoutPostCar
 import { PrPostCard } from "@/app/features/social/feed/posts/PrPostCard";
 import type { FeedRow } from "@/app/features/social/feed/types";
 
+import { log } from "@/lib/logger";
+
 type RecentPostPreview = {
   post_id: string;
   user_id: string;
@@ -297,7 +299,7 @@ export default function ProfileModalContent({
       .single();
 
     if (res.error) {
-      console.log("get_profile_overview_v1 error:", res.error);
+      log("get_profile_overview_v1 error:", res.error);
       setErr(res.error.message ?? "Failed to load profile");
       setCard(null);
       setLoading(false);
@@ -380,7 +382,7 @@ export default function ProfileModalContent({
 
       await load();
     } catch (e: any) {
-      console.log("follow action error:", e);
+      log("follow action error:", e);
       setErr(e?.message ?? "Action failed");
     } finally {
       setActing(false);

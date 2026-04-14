@@ -23,6 +23,8 @@ import type { FeedRow } from "./feed/types";
 import { PostModal } from "./feed/modals/PostModal";
 import type { CommentRow, WorkoutDetailsPayload } from "./feed/modals/types";
 
+import { log } from "@/lib/logger";
+
 export default function SocialScreen() {
   const { colors, typography, layout } = useAppTheme();
 
@@ -108,7 +110,7 @@ export default function SocialScreen() {
   }, [params.openCreate]);
 
   const openComments = useCallback((post: FeedRow) => {
-    console.log("openComments called", {
+    log("openComments called", {
       postId: post.post_id,
       commentCount: post.comment_count,
     });
@@ -128,14 +130,14 @@ export default function SocialScreen() {
         p_limit: 50,
       });
 
-      console.log("get_post_comments raw response", res);
+      log("get_post_comments raw response", res);
 
       if (res.error) {
-        console.log("get_post_comments error", res.error);
+        log("get_post_comments error", res.error);
         throw res.error;
       }
 
-      console.log("get_post_comments data", res.data);
+      log("get_post_comments data", res.data);
       return (res.data ?? []) as CommentRow[];
     },
     [],
@@ -184,7 +186,7 @@ export default function SocialScreen() {
       });
 
       if (res.error) {
-        console.log("get_post_workout_details error:", res.error);
+        log("get_post_workout_details error:", res.error);
         return null;
       }
 
@@ -218,7 +220,7 @@ export default function SocialScreen() {
       const res = await supabase.rpc("get_feed", { p_limit: PAGE_SIZE });
 
       if (res.error) {
-        console.log("get_feed error:", res.error);
+        log("get_feed error:", res.error);
         setErrorMsg(res.error.message ?? "Failed to load feed");
         setRows([]);
         setCursorCreatedAt(null);
@@ -230,7 +232,7 @@ export default function SocialScreen() {
       setRows(data);
       applyCursorFrom(data, null, null);
     } catch (e: any) {
-      console.log("get_feed exception:", e);
+      log("get_feed exception:", e);
       setErrorMsg(e?.message ?? "Failed to load feed");
       setRows([]);
       setCursorCreatedAt(null);
@@ -255,7 +257,7 @@ export default function SocialScreen() {
       });
 
       if (res.error) {
-        console.log("get_feed more error:", res.error);
+        log("get_feed more error:", res.error);
         setErrorMsg(res.error.message ?? "Failed to load more");
         return;
       }
@@ -271,7 +273,7 @@ export default function SocialScreen() {
 
       applyCursorFrom(data, cursorCreatedAt, cursorId);
     } catch (e: any) {
-      console.log("get_feed more exception:", e);
+      log("get_feed more exception:", e);
       setErrorMsg(e?.message ?? "Failed to load more");
     } finally {
       setLoadingMore(false);
@@ -337,10 +339,10 @@ export default function SocialScreen() {
       );
 
       const res = await supabase.rpc("toggle_post_like", { p_post_id: postId });
-      console.log("toggle_post_like result", res.data, res.error);
+      log("toggle_post_like result", res.data, res.error);
 
       if (res.error) {
-        console.log("toggle_post_like error:", res.error);
+        log("toggle_post_like error:", res.error);
 
         setRows((prev) =>
           prev.map((r) =>

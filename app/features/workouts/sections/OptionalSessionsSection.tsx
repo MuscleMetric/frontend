@@ -3,8 +3,11 @@
 import React from "react";
 import { View, Text } from "react-native";
 import { useAppTheme } from "@/lib/useAppTheme";
+import { useAuth } from "@/lib/authContext";
 import { ListRow, Button, WorkoutCover } from "@/ui";
 import { router } from "expo-router";
+
+import { log } from "@/lib/logger";
 
 type OptionalSessions = {
   title: string;
@@ -34,21 +37,32 @@ export function OptionalSessionsSection({
   onOpenCreate,
   onQuickStart,
   onPressWorkout,
+  onTemplateLimitReached,
 }: {
   optional: OptionalSessions;
   onOpenCreate: () => void;
   onQuickStart?: () => void;
   onPressWorkout?: (workoutId: string) => void;
+  onTemplateLimitReached?: () => void;
 }) {
   const { colors, typography, layout } = useAppTheme();
+  const { capabilities } = useAuth();
+
   const items = optional.items ?? [];
+  const maxTemplates = capabilities.maxTemplates;
+  const templateCount = items.length;
+  const isAtTemplateLimit = templateCount >= maxTemplates;
 
   if (items.length === 0 && !onQuickStart) return null;
 
   React.useEffect(() => {
     console.group("🟦 Optional Sessions — Rendered Workouts");
+    log("templateCount:", templateCount);
+    log("maxTemplates:", maxTemplates);
+    log("isAtTemplateLimit:", isAtTemplateLimit);
+
     optional.items.forEach((w, idx) => {
-      console.log({
+      log({
         index: idx,
         workoutId: w.workoutId,
         title: w.title,
@@ -59,11 +73,19 @@ export function OptionalSessionsSection({
       });
     });
     console.groupEnd();
-  }, [optional.items]);
+  }, [optional.items, templateCount, maxTemplates, isAtTemplateLimit]);
+
+  const handleCreatePress = () => {
+    if (isAtTemplateLimit) {
+      onTemplateLimitReached?.();
+      return;
+    }
+
+    onOpenCreate();
+  };
 
   return (
     <View style={{ gap: layout.space.sm }}>
-      {/* Header (same pattern as Plan Schedule) */}
       <View
         style={{
           flexDirection: "row",
@@ -90,12 +112,11 @@ export function OptionalSessionsSection({
             title="Create"
             variant="ghost"
             fullWidth={false}
-            onPress={() => router.push("/features/workouts/create")}
+            onPress={handleCreatePress}
           />
         ) : null}
       </View>
 
-      {/* Rows */}
       <View style={{ gap: layout.space.sm }}>
         {onQuickStart ? (
           <ListRow

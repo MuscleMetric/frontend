@@ -12,6 +12,8 @@ import {
 import { useAppTheme } from "@/lib/useAppTheme";
 import { supabase } from "@/lib/supabase";
 
+import { log } from "@/lib/logger";
+
 export function ConfirmLogoutModal({
   open,
   onClose,
@@ -138,7 +140,7 @@ export function ConfirmLogoutModal({
     setLoading(false);
 
     if (res.error) {
-      console.log("signOut error:", res.error);
+      log("signOut error:", res.error);
       return;
     }
 

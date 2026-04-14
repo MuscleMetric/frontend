@@ -12,6 +12,8 @@ import {
 import { useAppTheme } from "@/lib/useAppTheme";
 import { supabase } from "@/lib/supabase";
 
+import { log } from "@/lib/logger";
+
 type Level = "beginner" | "intermediate" | "advanced";
 
 export function ExperienceModal({
@@ -186,7 +188,7 @@ export function ExperienceModal({
     setSaving(false);
 
     if (res.error) {
-      console.log("set_profile_settings_v1(level) error:", res.error);
+      log("set_profile_settings_v1(level) error:", res.error);
       return;
     }
 

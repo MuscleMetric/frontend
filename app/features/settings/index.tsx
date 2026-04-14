@@ -30,6 +30,8 @@ import { PrimaryGoalModal } from "./modals/PrimaryGoalModal";
 import { ConfirmLogoutModal } from "./modals/ConfirmLogoutModal";
 import { ConfirmDeleteAccountModal } from "./modals/ConfirmDeleteAccountModal";
 
+import { log } from "@/lib/logger";
+
 type Visibility = "public" | "followers" | "private";
 
 type SettingsOverview = {
@@ -204,7 +206,7 @@ export default function SettingsScreen() {
     const res = await supabase.rpc("get_settings_overview");
 
     if (res.error) {
-      console.log("get_settings_overview error:", res.error);
+      log("get_settings_overview error:", res.error);
       setData(null);
       setLoadError("Could not load settings.");
       setLoading(false);
@@ -232,7 +234,7 @@ export default function SettingsScreen() {
       });
 
       if (res.error) {
-        console.log("set_profile_visibility_v1 error:", res.error);
+        log("set_profile_visibility_v1 error:", res.error);
         await load();
       }
     },
@@ -251,7 +253,7 @@ export default function SettingsScreen() {
       });
 
       if (res.error) {
-        console.log("set_notification_pref_v1 error:", res.error);
+        log("set_notification_pref_v1 error:", res.error);
         await load();
       }
     },

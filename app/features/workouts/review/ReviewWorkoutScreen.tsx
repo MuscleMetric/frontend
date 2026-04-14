@@ -23,6 +23,8 @@ import { useReviewData } from "./useReviewData";
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
+import { log } from "@/lib/logger";
+
 // ✅ Your save function (the one that calls save_completed_workout_v1)
 // Make sure the path matches where you placed it.
 import {
@@ -71,7 +73,7 @@ async function dumpLiveStorage(label: string, userId: string) {
 
     const pairs = await AsyncStorage.multiGet(interesting);
 
-    console.log(`[resume-debug] ${label}`, {
+    log(`[resume-debug] ${label}`, {
       totalKeys: keys.length,
       liveKeyCount: liveKeys.length,
       liveKeys,
@@ -82,7 +84,7 @@ async function dumpLiveStorage(label: string, userId: string) {
       })),
     });
   } catch (e) {
-    console.log(`[resume-debug] ${label} dump failed`, e);
+    log(`[resume-debug] ${label} dump failed`, e);
   }
 }
 
@@ -189,7 +191,7 @@ export default function ReviewWorkoutScreen() {
                   draft.planWorkoutId ?? planWorkoutId ?? undefined,
               });
               // ✅ only clear AFTER successful save
-              console.log("[resume-debug] save succeeded -> clearing…", {
+              log("[resume-debug] save succeeded -> clearing…", {
                 uid,
                 workoutId,
                 planWorkoutId,
@@ -199,25 +201,25 @@ export default function ReviewWorkoutScreen() {
 
               pauseLivePersist(); // ✅ stops LiveWorkoutScreen from rewriting drafts
               stopLiveWorkout(); // should stop any autosave loops
-              console.log("[resume-debug] stopLiveWorkout() done");
+              log("[resume-debug] stopLiveWorkout() done");
 
               try {
                 await clearLiveDraftForUser(uid);
-                console.log(
+                log(
                   "[resume-debug] cleared local draft key live_workout:<uid>",
                 );
               } catch (e) {
-                console.log("[resume-debug] clearLiveDraftForUser FAILED", e);
+                log("[resume-debug] clearLiveDraftForUser FAILED", e);
               }
 
               const removed = await clearAllMmLiveDraftKeysForUser(uid);
-              console.log("[resume-debug] cleared mm:liveDraft keys", removed);
+              log("[resume-debug] cleared mm:liveDraft keys", removed);
 
               try {
                 await clearServerDraft(uid);
-                console.log("[resume-debug] cleared server draft row");
+                log("[resume-debug] cleared server draft row");
               } catch (e) {
-                console.log("[resume-debug] clearServerDraft FAILED", e);
+                log("[resume-debug] clearServerDraft FAILED", e);
               }
 
               await dumpLiveStorage("AFTER stop/clear", uid);

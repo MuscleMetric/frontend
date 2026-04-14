@@ -7,17 +7,23 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Alert,
 } from "react-native";
 import { useRouter } from "expo-router";
-import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 
 import { supabase } from "../../../../lib/supabase";
 import { useAuth } from "../../../../lib/authContext";
 import { useAppTheme } from "../../../../lib/useAppTheme";
 import { ScreenHeader, Icon } from "@/ui";
 
+import PaywallModal from "@/app/features/paywall/components/PaywallModal";
 import { useEditPlan, type ExerciseRow, type GoalDraft } from "./store";
+
+import { log } from "@/lib/logger";
+import FeaturePaywallModal from "../../paywall/components/FeaturePaywallModal";
 
 /** Helpers for mode <-> unit */
 const MODE_UNIT: Record<GoalDraft["mode"], string> = {
@@ -101,9 +107,8 @@ function decreaseRange(start: number, weeks: number, mode: GoalDraft["mode"]) {
 function calcRangeForMode(
   mode: GoalDraft["mode"],
   start: number,
-  weeks: number
+  weeks: number,
 ) {
-  // time goals typically aim to decrease
   return mode === "time"
     ? decreaseRange(start, weeks, mode)
     : increaseRange(start, weeks, mode);
@@ -113,7 +118,9 @@ function pickStartForMode(mode: GoalDraft["mode"], last?: LastMetric) {
   if (!last) return null;
 
   if (mode === "exercise_weight") {
-    return typeof last.weight === "number" ? roundForMode(mode, last.weight) : null;
+    return typeof last.weight === "number"
+      ? roundForMode(mode, last.weight)
+      : null;
   }
   if (mode === "exercise_reps") {
     return typeof last.reps === "number" ? roundForMode(mode, last.reps) : null;
@@ -134,30 +141,33 @@ function pickStartForMode(mode: GoalDraft["mode"], last?: LastMetric) {
 export default function EditGoals() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { session } = useAuth();
+  const { session, capabilities, entitlements } = useAuth();
   const userId = session?.user?.id ?? null;
 
   const { colors, typography, layout } = useAppTheme() as any;
-  const s = useMemo(() => makeStyles(colors, typography, layout), [colors, typography, layout]);
+  const s = useMemo(
+    () => makeStyles(colors, typography, layout),
+    [colors, typography, layout],
+  );
 
   const { workouts, goals: storeGoals, setGoals, endDate } = useEditPlan();
 
-  // Local buffer so we can Cancel without mutating store
-  const [localGoals, setLocalGoals] = useState<GoalDraft[]>(storeGoals ?? []);
+  const maxGoals = capabilities.maxGoalsPerPlan;
+  const proGoalCap = 5;
 
-  // last metrics map for autofill
+  const [localGoals, setLocalGoals] = useState<GoalDraft[]>(storeGoals ?? []);
   const [lastMap, setLastMap] = useState<Record<string, LastMetric>>({});
+  const [paywallOpen, setPaywallOpen] = useState(false);
+  const [goalLimitMessage, setGoalLimitMessage] = useState<string | null>(null);
 
   useEffect(() => {
     setLocalGoals(storeGoals ?? []);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // only once on mount
+  }, []);
 
-  // Plan length (weeks)
   const todayIso = new Date().toISOString().slice(0, 10);
   const planWeeks = endDate ? getWeeksBetween(todayIso, endDate) : 0;
 
-  // Dedup exercises across workouts
   const deduped: DedupExercise[] = useMemo(() => {
     const map = new Map<string, DedupExercise>();
     for (const w of workouts ?? []) {
@@ -178,13 +188,13 @@ export default function EditGoals() {
       }
     }
     return Array.from(map.values()).sort((a, b) =>
-      a.exercise.name.localeCompare(b.exercise.name)
+      a.exercise.name.localeCompare(b.exercise.name),
     );
   }, [workouts]);
 
   const allExerciseIds = useMemo(
     () => deduped.map((d) => String(d.exercise.id)).filter(Boolean),
-    [deduped]
+    [deduped],
   );
 
   const fetchLastMetrics = useCallback(async () => {
@@ -192,11 +202,13 @@ export default function EditGoals() {
     if (!allExerciseIds.length) return;
 
     try {
-      // RPC returns rows per set; we reduce to "best last-known" values per exercise.
-      const { data, error } = await supabase.rpc("get_last_exercise_session_sets", {
-        p_user_id: userId,
-        p_exercise_ids: allExerciseIds,
-      });
+      const { data, error } = await supabase.rpc(
+        "get_last_exercise_session_sets",
+        {
+          p_user_id: userId,
+          p_exercise_ids: allExerciseIds,
+        },
+      );
 
       if (error) throw error;
 
@@ -206,32 +218,49 @@ export default function EditGoals() {
         const exId = String(r.exercise_id ?? "");
         if (!exId) return;
 
-        const w = typeof r.weight === "number" ? r.weight : r.weight != null ? Number(r.weight) : null;
-        const reps = typeof r.reps === "number" ? r.reps : r.reps != null ? Number(r.reps) : null;
+        const w =
+          typeof r.weight === "number"
+            ? r.weight
+            : r.weight != null
+              ? Number(r.weight)
+              : null;
+        const reps =
+          typeof r.reps === "number"
+            ? r.reps
+            : r.reps != null
+              ? Number(r.reps)
+              : null;
         const dist =
-          typeof r.distance === "number" ? r.distance : r.distance != null ? Number(r.distance) : null;
+          typeof r.distance === "number"
+            ? r.distance
+            : r.distance != null
+              ? Number(r.distance)
+              : null;
         const tsec =
           typeof r.time_seconds === "number"
             ? r.time_seconds
             : r.time_seconds != null
-            ? Number(r.time_seconds)
-            : null;
+              ? Number(r.time_seconds)
+              : null;
 
         if (!next[exId]) next[exId] = {};
 
-        // pick max values from last session sets
         if (w != null) next[exId].weight = Math.max(next[exId].weight ?? 0, w);
-        if (reps != null) next[exId].reps = Math.max(next[exId].reps ?? 0, reps);
-        if (dist != null) next[exId].distance = Math.max(next[exId].distance ?? 0, dist);
+        if (reps != null)
+          next[exId].reps = Math.max(next[exId].reps ?? 0, reps);
+        if (dist != null)
+          next[exId].distance = Math.max(next[exId].distance ?? 0, dist);
         if (tsec != null) {
           const minutes = tsec / 60;
-          next[exId].time_minutes = Math.max(next[exId].time_minutes ?? 0, minutes);
+          next[exId].time_minutes = Math.max(
+            next[exId].time_minutes ?? 0,
+            minutes,
+          );
         }
       });
 
       setLastMap(next);
     } catch (e: any) {
-      // Non-fatal: just skip autofill
       console.warn("get_last_exercise_session_sets failed:", e?.message ?? e);
     }
   }, [userId, allExerciseIds]);
@@ -251,7 +280,7 @@ export default function EditGoals() {
         unit: g.unit ?? null,
         start: g.start ?? null,
         target: Number(g.target ?? 0),
-      }))
+      })),
     );
     const b = JSON.stringify(
       (localGoals ?? []).map((g) => ({
@@ -260,30 +289,45 @@ export default function EditGoals() {
         unit: g.unit ?? null,
         start: g.start ?? null,
         target: Number(g.target ?? 0),
-      }))
+      })),
     );
     return a !== b;
   }, [storeGoals, localGoals]);
 
   const selectedGoals = useMemo(() => {
-    return (localGoals ?? []).slice().sort((a, b) =>
-      a.exercise.name.localeCompare(b.exercise.name)
-    );
+    return (localGoals ?? [])
+      .slice()
+      .sort((a, b) => a.exercise.name.localeCompare(b.exercise.name));
   }, [localGoals]);
 
   const unselected = useMemo(() => {
-    const selectedIds = new Set((localGoals ?? []).map((g) => String(g.exercise.id)));
+    const selectedIds = new Set(
+      (localGoals ?? []).map((g) => String(g.exercise.id)),
+    );
     return deduped.filter((d) => !selectedIds.has(String(d.exercise.id)));
   }, [deduped, localGoals]);
 
+  const isAtGoalLimit = localGoals.length >= maxGoals;
+
+  const showGoalLimit = useCallback(() => {
+    setGoalLimitMessage(
+      `You’ve reached your goal limit. Your current plan allows up to ${maxGoals} goal${
+        maxGoals === 1 ? "" : "s"
+      } per plan. Upgrade to MuscleMetric Pro to track up to ${proGoalCap}.`,
+    );
+  }, [maxGoals]);
+
   function toggleExercise(ex: ExerciseRow) {
     const exists = findGoal(ex.id);
+
     if (exists) {
       setLocalGoals(localGoals.filter((g) => g.exercise.id !== ex.id));
+      setGoalLimitMessage(null);
       return;
     }
-    if (localGoals.length >= 3) {
-      Alert.alert("Limit reached", "You can select up to 3 goals.");
+
+    if (localGoals.length >= maxGoals) {
+      showGoalLimit();
       return;
     }
 
@@ -306,20 +350,25 @@ export default function EditGoals() {
     };
 
     setLocalGoals([...localGoals, newGoal]);
+    setGoalLimitMessage(null);
   }
 
   function updateGoal(
     exerciseId: string,
-    patch: Partial<Pick<GoalDraft, "mode" | "unit" | "start" | "target">>
+    patch: Partial<Pick<GoalDraft, "mode" | "unit" | "start" | "target">>,
   ) {
     setLocalGoals(
       localGoals.map((g) =>
-        g.exercise.id === exerciseId ? { ...g, ...patch } : g
-      )
+        g.exercise.id === exerciseId ? { ...g, ...patch } : g,
+      ),
     );
   }
 
-  function onChangeMode(ex: ExerciseRow, goal: GoalDraft, nextMode: GoalDraft["mode"]) {
+  function onChangeMode(
+    ex: ExerciseRow,
+    goal: GoalDraft,
+    nextMode: GoalDraft["mode"],
+  ) {
     const last = lastMap[String(ex.id)];
     const autoStart = pickStartForMode(nextMode, last);
 
@@ -331,14 +380,14 @@ export default function EditGoals() {
     updateGoal(ex.id, {
       mode: nextMode,
       unit: MODE_UNIT[nextMode],
-      start: goal.start == null ? autoStart : goal.start, // only autofill if start is empty
-      target: goal.start == null && autoStart != null ? nextTarget : nextTarget,
+      start: goal.start == null ? autoStart : goal.start,
+      target: nextTarget,
     });
   }
 
   function onSave() {
-    if (localGoals.length > 3) {
-      Alert.alert("Too many goals", "You can select up to 3 goals.");
+    if (localGoals.length > maxGoals) {
+      showGoalLimit();
       return;
     }
 
@@ -356,7 +405,10 @@ export default function EditGoals() {
   const footerH = 92 + insets.bottom;
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }} edges={["bottom"]}>
+    <SafeAreaView
+      style={{ flex: 1, backgroundColor: colors.bg }}
+      edges={["bottom"]}
+    >
       <ScreenHeader
         title="Goals"
         showBack
@@ -384,19 +436,38 @@ export default function EditGoals() {
           gap: layout.space.lg,
         }}
       >
-        {/* Top copy */}
         <View style={{ gap: 6 }}>
-          <Text style={s.h1}>Track up to 3 goals</Text>
+          <Text style={s.h1}>Track up to {maxGoals} goals</Text>
           <Text style={s.sub}>
-            We’ll auto-fill the starting value from your last logged session where possible.
+            We’ll auto-fill the starting value from your last logged session
+            where possible.
           </Text>
         </View>
 
-        {/* Selected section */}
+        {goalLimitMessage ? (
+          <View style={s.limitCard}>
+            <View style={s.limitHeader}>
+              <Icon name="lock-closed" size={18} color={colors.primary} />
+              <Text style={s.limitTitle}>Goal limit reached</Text>
+            </View>
+
+            <Text style={s.limitBody}>{goalLimitMessage}</Text>
+
+            <Pressable
+              style={s.limitButton}
+              onPress={() => setPaywallOpen(true)}
+            >
+              <Text style={s.limitButtonText}>Unlock more goals</Text>
+            </Pressable>
+          </View>
+        ) : null}
+
         <View style={{ gap: layout.space.sm }}>
           <View style={s.sectionRow}>
             <Text style={s.sectionLabel}>SELECTED</Text>
-            <Text style={s.sectionMeta}>{selectedGoals.length}/3</Text>
+            <Text style={s.sectionMeta}>
+              {selectedGoals.length}/{maxGoals}
+            </Text>
           </View>
 
           {selectedGoals.length === 0 ? (
@@ -422,10 +493,10 @@ export default function EditGoals() {
                           {g.mode === "exercise_weight"
                             ? "Increase weight"
                             : g.mode === "exercise_reps"
-                            ? "Increase reps"
-                            : g.mode === "distance"
-                            ? "Increase distance"
-                            : "Reduce time"}
+                              ? "Increase reps"
+                              : g.mode === "distance"
+                                ? "Increase distance"
+                                : "Reduce time"}
                         </Text>
                       </View>
 
@@ -439,8 +510,13 @@ export default function EditGoals() {
                       </Pressable>
                     </View>
 
-                    {/* Mode chips */}
-                    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        flexWrap: "wrap",
+                        gap: 10,
+                      }}
+                    >
                       {modes.map((m) => {
                         const active = g.mode === m;
                         return (
@@ -451,7 +527,9 @@ export default function EditGoals() {
                           >
                             <Text
                               style={{
-                                color: active ? (colors.onPrimary ?? "#fff") : colors.text,
+                                color: active
+                                  ? (colors.onPrimary ?? "#fff")
+                                  : colors.text,
                                 fontFamily: typography.fontFamily.semibold,
                                 fontSize: 12,
                               }}
@@ -463,8 +541,13 @@ export default function EditGoals() {
                       })}
                     </View>
 
-                    {/* Start/Target */}
-                    <View style={{ flexDirection: "row", gap: 10, alignItems: "center" }}>
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        gap: 10,
+                        alignItems: "center",
+                      }}
+                    >
                       <View style={{ flex: 1 }}>
                         <Text style={s.fieldLabel}>Start</Text>
                         <TextInput
@@ -475,17 +558,25 @@ export default function EditGoals() {
                           value={g.start != null ? String(g.start) : ""}
                           onChangeText={(v) => {
                             const raw = v === "" ? null : Number(v);
-                            const val = raw == null ? null : roundForMode(g.mode, raw);
+                            const val =
+                              raw == null ? null : roundForMode(g.mode, raw);
 
                             if (val != null && planWeeks > 0) {
-                              const { suggested } = calcRangeForMode(g.mode, val, planWeeks);
+                              const { suggested } = calcRangeForMode(
+                                g.mode,
+                                val,
+                                planWeeks,
+                              );
                               updateGoal(g.exercise.id, {
                                 start: val,
                                 target: suggested,
                                 unit: MODE_UNIT[g.mode],
                               });
                             } else {
-                              updateGoal(g.exercise.id, { start: val, unit: MODE_UNIT[g.mode] });
+                              updateGoal(g.exercise.id, {
+                                start: val,
+                                unit: MODE_UNIT[g.mode],
+                              });
                             }
                           }}
                         />
@@ -506,26 +597,33 @@ export default function EditGoals() {
                           onChangeText={(v) => {
                             const raw = v === "" ? 0 : Number(v);
                             const val = roundForMode(g.mode, raw);
-                            updateGoal(g.exercise.id, { target: val, unit: MODE_UNIT[g.mode] });
+                            updateGoal(g.exercise.id, {
+                              target: val,
+                              unit: MODE_UNIT[g.mode],
+                            });
                           }}
                         />
                       </View>
                     </View>
 
-                    {/* Recommended */}
                     {g.start != null && planWeeks > 0 ? (
                       <Text style={s.recoText}>
                         {(() => {
-                          const { min, max } = calcRangeForMode(g.mode, g.start!, planWeeks);
+                          const { min, max } = calcRangeForMode(
+                            g.mode,
+                            g.start!,
+                            planWeeks,
+                          );
                           return `Recommended target: ${fmtForMode(g.mode, min)}–${fmtForMode(
                             g.mode,
-                            max
+                            max,
                           )} ${MODE_UNIT[g.mode]}`;
                         })()}
                       </Text>
                     ) : (
                       <Text style={s.recoMuted}>
-                        Tip: enter a start value to get an auto-recommended target.
+                        Tip: enter a start value to get an auto-recommended
+                        target.
                       </Text>
                     )}
                   </View>
@@ -535,7 +633,6 @@ export default function EditGoals() {
           )}
         </View>
 
-        {/* Available exercises */}
         <View style={{ gap: layout.space.sm }}>
           <View style={s.sectionRow}>
             <Text style={s.sectionLabel}>AVAILABLE EXERCISES</Text>
@@ -546,7 +643,8 @@ export default function EditGoals() {
             <View style={s.emptyCard}>
               <Text style={s.emptyTitle}>No exercises in this plan yet</Text>
               <Text style={s.emptySub}>
-                Add exercises to your workouts first, then come back to set goals.
+                Add exercises to your workouts first, then come back to set
+                goals.
               </Text>
             </View>
           ) : (
@@ -555,12 +653,14 @@ export default function EditGoals() {
                 const contextText =
                   workoutTitles.length > 0 ? workoutTitles.join(", ") : "—";
 
-                const disabled = selectedGoals.length >= 3;
+                const disabled = selectedGoals.length >= maxGoals;
 
                 return (
                   <Pressable
                     key={exercise.id}
-                    onPress={() => (!disabled ? toggleExercise(exercise) : null)}
+                    onPress={() =>
+                      !disabled ? toggleExercise(exercise) : showGoalLimit()
+                    }
                     style={({ pressed }) => [
                       s.pickRow,
                       pressed && !disabled ? { opacity: 0.9 } : null,
@@ -581,7 +681,11 @@ export default function EditGoals() {
                         <Icon name="add" size={16} color={colors.text} />
                         <Text style={s.addText}>Add</Text>
                       </View>
-                      <Icon name="chevron-forward" size={18} color={colors.textMuted} />
+                      <Icon
+                        name="chevron-forward"
+                        size={18}
+                        color={colors.textMuted}
+                      />
                     </View>
                   </Pressable>
                 );
@@ -591,19 +695,22 @@ export default function EditGoals() {
 
           {deduped.length > 0 ? (
             <Text style={s.hint}>
-              {selectedGoals.length}/3 goals selected
+              {selectedGoals.length}/{maxGoals} goals selected
               {isDirty ? " • Unsaved changes" : ""}
             </Text>
           ) : null}
         </View>
 
         {!userId ? (
-          <Text style={s.recoMuted}>You’re not signed in — start autofill is disabled.</Text>
+          <Text style={s.recoMuted}>
+            You’re not signed in — start autofill is disabled.
+          </Text>
         ) : null}
       </ScrollView>
 
-      {/* Sticky footer */}
-      <View style={[s.footer, { paddingBottom: insets.bottom + layout.space.md }]}>
+      <View
+        style={[s.footer, { paddingBottom: insets.bottom + layout.space.md }]}
+      >
         <View style={{ flexDirection: "row", gap: layout.space.sm }}>
           <Pressable style={s.footerBtnGhost} onPress={() => router.back()}>
             <Text style={s.footerGhostText}>Cancel</Text>
@@ -618,6 +725,12 @@ export default function EditGoals() {
           </Pressable>
         </View>
       </View>
+
+      <FeaturePaywallModal
+        visible={paywallOpen}
+        reason="goal_limit"
+        onClose={() => setPaywallOpen(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -657,8 +770,45 @@ const makeStyles = (colors: any, typography: any, layout: any) =>
       fontFamily: typography.fontFamily.semibold,
     },
 
+    limitCard: {
+      backgroundColor: colors.surface,
+      borderRadius: 16,
+      padding: layout.space.lg,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      gap: 10,
+    },
+    limitHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+    },
+    limitTitle: {
+      color: colors.text,
+      fontFamily: typography.fontFamily.bold,
+      fontSize: 15,
+    },
+    limitBody: {
+      color: colors.textMuted,
+      fontFamily: typography.fontFamily.medium,
+      fontSize: 13,
+      lineHeight: 18,
+    },
+    limitButton: {
+      alignSelf: "flex-start",
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+      borderRadius: 999,
+      backgroundColor: colors.primary,
+    },
+    limitButtonText: {
+      color: colors.onPrimary ?? "#fff",
+      fontFamily: typography.fontFamily.bold,
+      fontSize: 13,
+    },
+
     emptyCard: {
-      backgroundColor: colors.card,
+      backgroundColor: colors.surface,
       borderRadius: 16,
       padding: layout.space.lg,
       borderWidth: StyleSheet.hairlineWidth,
@@ -678,7 +828,7 @@ const makeStyles = (colors: any, typography: any, layout: any) =>
     },
 
     goalCard: {
-      backgroundColor: colors.card,
+      backgroundColor: colors.surface,
       borderRadius: 18,
       padding: layout.space.lg,
       borderWidth: StyleSheet.hairlineWidth,
@@ -709,7 +859,7 @@ const makeStyles = (colors: any, typography: any, layout: any) =>
       paddingHorizontal: 10,
       paddingVertical: 8,
       borderRadius: 999,
-      backgroundColor: colors.surface,
+      backgroundColor: colors.bg,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.border,
     },
@@ -720,7 +870,7 @@ const makeStyles = (colors: any, typography: any, layout: any) =>
     },
 
     chip: {
-      backgroundColor: colors.surface,
+      backgroundColor: colors.bg,
       paddingHorizontal: 12,
       paddingVertical: 10,
       borderRadius: 999,
@@ -740,7 +890,7 @@ const makeStyles = (colors: any, typography: any, layout: any) =>
     },
 
     input: {
-      backgroundColor: colors.surface,
+      backgroundColor: colors.bg,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.border,
       borderRadius: 14,
@@ -756,7 +906,7 @@ const makeStyles = (colors: any, typography: any, layout: any) =>
       paddingHorizontal: 12,
       paddingVertical: 10,
       borderRadius: 999,
-      backgroundColor: colors.surface,
+      backgroundColor: colors.bg,
       color: colors.text,
       fontFamily: typography.fontFamily.semibold,
       borderWidth: StyleSheet.hairlineWidth,
@@ -776,7 +926,7 @@ const makeStyles = (colors: any, typography: any, layout: any) =>
     },
 
     pickRow: {
-      backgroundColor: colors.card,
+      backgroundColor: colors.surface,
       borderRadius: 18,
       paddingHorizontal: layout.space.lg,
       paddingVertical: layout.space.lg,
@@ -809,7 +959,7 @@ const makeStyles = (colors: any, typography: any, layout: any) =>
       paddingHorizontal: 12,
       paddingVertical: 8,
       borderRadius: 999,
-      backgroundColor: colors.surface,
+      backgroundColor: colors.bg,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.border,
     },
@@ -871,13 +1021,13 @@ const makeStyles = (colors: any, typography: any, layout: any) =>
       paddingHorizontal: 12,
       paddingVertical: 8,
       borderRadius: 999,
-      backgroundColor: colors.primaryBg ?? colors.surface,
+      backgroundColor: colors.surface,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.border,
       flexShrink: 0,
     },
     dirtyPillText: {
-      color: colors.primaryText ?? colors.primary,
+      color: colors.primary,
       fontFamily: typography.fontFamily.semibold,
       fontSize: 12,
     },

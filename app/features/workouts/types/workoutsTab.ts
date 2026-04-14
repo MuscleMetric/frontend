@@ -45,42 +45,48 @@ export type WorkoutsTabPayload = {
     }>;
   };
 
-  activePlan?: {
-    planId: string;
-    title: string;
-
-    metaLine?: string | null; // "Week 3 of 12 • 4 Days Left"
-
-    progress: { completedCount: number; totalCount: number; pct: number };
-
-    coachTip?: {
-      text: string;
-    } | null;
-
-    nextWorkout: {
-      planWorkoutId: string;
-      workoutId: string;
+  activePlans?: Array<{
+    activePlan: {
+      planId: string;
       title: string;
-      imageKey: string | null;
-    } | null;
 
-    primaryCta: { label: string; action: "start_workout" };
-  };
+      metaLine?: string | null; // "Week 3 of 12 • 4 Days Left"
 
-  planSchedule?: {
-    title: string;
-    actions: { viewAll: boolean; edit: boolean };
-    items: Array<{
-      planWorkoutId: string;
-      workoutId: string;
+      progress: {
+        completedCount: number;
+        totalCount: number;
+        pct: number;
+      };
+
+      coachTip?: {
+        text: string;
+      } | null;
+
+      nextWorkout: {
+        planWorkoutId: string;
+        workoutId: string;
+        title: string;
+        imageKey: string | null;
+      } | null;
+
+      primaryCta: { label: string; action: "start_workout" };
+    };
+
+    planSchedule: {
       title: string;
-      orderIndex: number | null;
-      weeklyComplete: boolean;
-      imageKey: string | null;
-      previewText: string;
-      lastDoneAt: string | null; 
-    }>;
-  };
+      actions: { viewAll: boolean; edit: boolean };
+      items: Array<{
+        planWorkoutId: string;
+        workoutId: string;
+        title: string;
+        orderIndex: number | null;
+        weeklyComplete: boolean;
+        imageKey: string | null;
+        previewText: string;
+        lastDoneAt: string | null;
+      }>;
+    } | null;
+  }>;
 
   optionalSessions?: {
     title: string;

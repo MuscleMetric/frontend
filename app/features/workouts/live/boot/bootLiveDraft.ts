@@ -5,6 +5,8 @@ import { buildEmptyQuickStartDraft } from "../builders/buildEmptyQuickStartDraft
 import { loadLiveDraftForUser, saveLiveDraftForUser } from "../persist/local";
 import { fetchServerDraft } from "../persist/server";
 
+import { log } from "@/lib/logger";
+
 /**
  * Boot order:
  * 1) Server draft (if newer)
@@ -33,7 +35,7 @@ export async function bootLiveDraft(args: {
   const serverUpdated =
     hasServer && server?.updatedAt ? Date.parse(server.updatedAt) : 0;
 
-  console.log("bootLiveDraft", {
+  log("bootLiveDraft", {
     preferServer,
     hasLocal,
     localUpdated: local?.updatedAt ?? null,

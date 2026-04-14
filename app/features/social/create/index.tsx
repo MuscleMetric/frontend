@@ -18,9 +18,6 @@ const RPC_GET_WORKOUT_FOR_POST = "get_workout_for_post_v1";
 const RPC_CREATE_POST_V2 = "create_post_v2";
 const RPC_GET_PR_EXERCISES = "get_pr_exercises_v1";
 
-// you will create this next
-const RPC_GET_EXERCISE_PR_EVENTS = "get_exercise_pr_events_v1";
-
 type RouteParams = {
   type?: "workout" | "pr";
 };

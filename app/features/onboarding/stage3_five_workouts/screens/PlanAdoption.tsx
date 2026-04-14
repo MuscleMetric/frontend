@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, ScrollView } from "react-native";
 import { useAppTheme } from "@/lib/useAppTheme";
 import type { Stage3Payload, Stage3UiStrings } from "../types";
 import PlanPreviewCard from "../components/PlanPreviewCard";
+import { log } from "@/lib/logger";
 
 function roundNiceWeight(value: number, unit: string) {
   // kg -> nearest 2.5, lb -> nearest 5
@@ -48,7 +49,7 @@ export default function PlanAdoption({
   );
 
   useEffect(() => {
-    console.log("[stage3] PlanAdoption payload:", payload);
+    log("[stage3] PlanAdoption payload:", payload);
   }, [payload]);
 
   const unit = (payload?.unit_weight ?? "kg").toLowerCase();

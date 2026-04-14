@@ -18,6 +18,8 @@ import ConsistencyStreak from "./screens/ConsistencyStreak";
 import PlanAdoption from "./screens/PlanAdoption";
 import { supabase } from "@/lib/supabase";
 
+import { log } from "@/lib/logger";
+
 type Step = 0 | 1 | 2 | 3 | 4;
 const TOTAL_STEPS = 5;
 
@@ -80,7 +82,7 @@ export default function Stage3FiveWorkoutsIndex() {
       if (error) {
         console.error("[stage3] complete error:", error);
       } else {
-        console.log("[stage3] marked complete");
+        log("[stage3] marked complete");
       }
     } catch (e) {
       console.error("[stage3] unexpected error:", e);

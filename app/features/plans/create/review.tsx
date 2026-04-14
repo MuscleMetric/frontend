@@ -1,4 +1,3 @@
-// app/features/plans/create/review.tsx
 import { useEffect, useMemo, useState } from "react";
 import {
   View,
@@ -10,26 +9,36 @@ import {
   Alert,
 } from "react-native";
 import { useRouter } from "expo-router";
+import { SafeAreaView } from "react-native-safe-area-context";
+
 import { usePlanDraft } from "./store";
 import { supabase } from "../../../../lib/supabase";
 import { useAuth } from "../../../../lib/authContext";
 import { useAppTheme } from "../../../../lib/useAppTheme";
-import { SafeAreaView } from "react-native-safe-area-context";
+
+import PaywallModal from "@/app/features/paywall/components/PaywallModal";
+import { Icon } from "@/ui";
+
+import { log } from "@/lib/logger";
+import FeaturePaywallModal from "../../paywall/components/FeaturePaywallModal";
 
 function humanDate(iso?: string | null) {
   if (!iso) return "—";
   try {
     const d = new Date(iso);
-    return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+    return d.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
   } catch {
     return iso as string;
   }
 }
 
-/** Helper: returns the Sunday (local) that starts the week as YYYY-MM-DD */
 function weekKeySundayLocal(d: Date) {
   const copy = new Date(d);
-  const dow = copy.getDay(); // 0=Sun
+  const dow = copy.getDay();
   copy.setHours(0, 0, 0, 0);
   copy.setDate(copy.getDate() - dow);
   const y = copy.getFullYear();
@@ -38,23 +47,70 @@ function weekKeySundayLocal(d: Date) {
   return `${y}-${m}-${day}`;
 }
 
+type PaywallReason = "goal_limit" | "plan_limit";
+
+function isGoalLimitError(err: any) {
+  const code = String(err?.code ?? "").toUpperCase();
+  const message = String(err?.message ?? "").toLowerCase();
+  const details = String(err?.details ?? "").toLowerCase();
+
+  return (
+    code === "FREE_LIMIT_REACHED" ||
+    code === "PREMIUM_REQUIRED" ||
+    (message.includes("goal") && message.includes("limit")) ||
+    (details.includes("goal") && details.includes("limit")) ||
+    message.includes("maxgoalsperplan") ||
+    details.includes("maxgoalsperplan")
+  );
+}
+
+function isPlanLimitError(err: any) {
+  const code = String(err?.code ?? "").toUpperCase();
+  const message = String(err?.message ?? "").toLowerCase();
+  const details = String(err?.details ?? "").toLowerCase();
+
+  return (
+    code === "FREE_LIMIT_REACHED" ||
+    code === "PREMIUM_REQUIRED" ||
+    (message.includes("plan") && message.includes("limit")) ||
+    (details.includes("plan") && details.includes("limit")) ||
+    message.includes("maxactiveplans") ||
+    details.includes("maxactiveplans") ||
+    message.includes("active plan") ||
+    details.includes("active plan")
+  );
+}
+
 export default function Review() {
-  const { session, loading } = useAuth();
+  const { session, loading, capabilities } = useAuth();
   const userId = session?.user?.id ?? null;
 
   const { colors, typography, layout } = useAppTheme();
-  const s = useMemo(() => makeStyles(colors, typography, layout), [colors, typography, layout]);
+  const s = useMemo(
+    () => makeStyles(colors, typography, layout),
+    [colors, typography, layout],
+  );
 
   const { title, endDate, workoutsPerWeek, workouts, goals } = usePlanDraft();
 
-  const goalExerciseIds = useMemo(() => new Set(goals.map((g) => g.exercise.id)), [goals]);
+  const goalExerciseIds = useMemo(
+    () => new Set(goals.map((g) => g.exercise.id)),
+    [goals],
+  );
 
   const [saving, setSaving] = useState(false);
+  const [saveErrorMessage, setSaveErrorMessage] = useState<string | null>(null);
+  const [paywallOpen, setPaywallOpen] = useState(false);
+  const [paywallReason, setPaywallReason] =
+    useState<PaywallReason>("goal_limit");
+
   const router = useRouter();
 
-  // validate goals (min 1, max 3, all have start & target > 0)
   const goalsValid = useMemo(() => {
-    if (goals.length < 1 || goals.length > 3) return false;
+    if (goals.length < 1 || goals.length > capabilities.maxGoalsPerPlan) {
+      return false;
+    }
+
     return goals.every(
       (g) =>
         g.start != null &&
@@ -62,21 +118,21 @@ export default function Review() {
         g.start > 0 &&
         g.target != null &&
         !Number.isNaN(g.target) &&
-        g.target > 0
+        g.target > 0,
     );
-  }, [goals]);
+  }, [goals, capabilities.maxGoalsPerPlan]);
 
-  // overall canSave guard
   const canSave = useMemo(() => {
     if (!title?.trim()) return false;
     if (!endDate) return false;
     if (!workouts || workouts.length !== workoutsPerWeek) return false;
-    if (workouts.some((w) => !w.title?.trim() || w.exercises.length === 0)) return false;
+    if (workouts.some((w) => !w.title?.trim() || w.exercises.length === 0)) {
+      return false;
+    }
     if (!goalsValid) return false;
     return true;
   }, [title, endDate, workoutsPerWeek, workouts, goalsValid]);
 
-  // redirect to login if not authenticated
   useEffect(() => {
     if (loading) return;
     if (!userId) {
@@ -87,13 +143,18 @@ export default function Review() {
 
   async function handleCreate() {
     if (!userId) return;
+
     if (!canSave) {
-      Alert.alert("Incomplete", "Please complete all required fields and goals before creating the plan.");
+      Alert.alert(
+        "Incomplete",
+        "Please complete all required fields and goals before creating the plan.",
+      );
       return;
     }
 
     try {
       setSaving(true);
+      setSaveErrorMessage(null);
 
       const p_workouts = workouts.map((w) => ({
         title: w.title,
@@ -129,12 +190,36 @@ export default function Review() {
 
       if (rpcError) {
         console.error("create_plan_v1 RPC failed:", rpcError);
-        Alert.alert("Could not create plan", rpcError.message ?? "Unknown error");
+
+        if (isGoalLimitError(rpcError)) {
+          setPaywallReason("goal_limit");
+          setSaveErrorMessage(
+            `This plan has too many goals for your current limit. You can save up to ${
+              capabilities.maxGoalsPerPlan
+            } goal${capabilities.maxGoalsPerPlan === 1 ? "" : "s"} per plan on your current tier.`,
+          );
+          return;
+        }
+
+        if (isPlanLimitError(rpcError)) {
+          setPaywallReason("plan_limit");
+          setSaveErrorMessage(
+            `You’ve reached your active plan limit. Upgrade to MuscleMetric Pro to create more active plans.`,
+          );
+          return;
+        }
+
+        Alert.alert(
+          "Could not create plan",
+          rpcError.message ?? "Unknown error",
+        );
         return;
       }
 
-      // ------------------ Weekly goal + weekly stats ------------------
-      const weeklyTarget = Math.max(1, Math.min(14, Number(workoutsPerWeek) || p_workouts.length || 3));
+      const weeklyTarget = Math.max(
+        1,
+        Math.min(14, Number(workoutsPerWeek) || p_workouts.length || 3),
+      );
       const currentWeekKey = weekKeySundayLocal(new Date());
 
       const { data: profileRow, error: profileSelectErr } = await supabase
@@ -143,9 +228,12 @@ export default function Review() {
         .eq("id", userId)
         .maybeSingle();
 
-      if (profileSelectErr) console.warn("Failed to load profile settings:", profileSelectErr);
+      if (profileSelectErr) {
+        console.warn("Failed to load profile settings:", profileSelectErr);
+      }
 
-      const existingSettings = (profileRow?.settings as Record<string, any> | null) ?? {};
+      const existingSettings =
+        (profileRow?.settings as Record<string, any> | null) ?? {};
 
       const { error: profileUpdateErr } = await supabase
         .from("profiles")
@@ -158,28 +246,52 @@ export default function Review() {
         })
         .eq("id", userId);
 
-      if (profileUpdateErr) console.warn("Failed to update profile weekly goal:", profileUpdateErr);
+      if (profileUpdateErr) {
+        console.warn("Failed to update profile weekly goal:", profileUpdateErr);
+      }
 
-      const { error: weeklyErr } = await supabase.from("user_weekly_workout_stats").upsert(
-        {
-          user_id: userId,
-          week_key: currentWeekKey,
-          goal: weeklyTarget,
-          completed: 0,
-          met: false,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "user_id,week_key" }
-      );
+      const { error: weeklyErr } = await supabase
+        .from("user_weekly_workout_stats")
+        .upsert(
+          {
+            user_id: userId,
+            week_key: currentWeekKey,
+            goal: weeklyTarget,
+            completed: 0,
+            met: false,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "user_id,week_key" },
+        );
 
-      if (weeklyErr) console.warn("Failed to upsert weekly workout stats:", weeklyErr);
-      // ---------------------------------------------------------------
+      if (weeklyErr) {
+        console.warn("Failed to upsert weekly workout stats:", weeklyErr);
+      }
 
       Alert.alert("Plan created", "Your plan has been saved.", [
         { text: "OK", onPress: () => router.replace("/(tabs)/workout") },
       ]);
     } catch (e: any) {
       console.error("Unexpected error creating plan:", e);
+
+      if (isGoalLimitError(e)) {
+        setPaywallReason("goal_limit");
+        setSaveErrorMessage(
+          `This plan has too many goals for your current limit. You can save up to ${
+            capabilities.maxGoalsPerPlan
+          } goal${capabilities.maxGoalsPerPlan === 1 ? "" : "s"} per plan on your current tier.`,
+        );
+        return;
+      }
+
+      if (isPlanLimitError(e)) {
+        setPaywallReason("plan_limit");
+        setSaveErrorMessage(
+          "You’ve reached your active plan limit. Upgrade to MuscleMetric Pro to create more active plans.",
+        );
+        return;
+      }
+
       Alert.alert("Could not create plan", e?.message ?? String(e));
     } finally {
       setSaving(false);
@@ -188,10 +300,18 @@ export default function Review() {
 
   const blocked = loading || !userId;
 
-  const SUPERSET_COLORS = [colors.primary, "#16a34a", "#f59e0b", "#ef4444", "#8b5cf6"];
+  const SUPERSET_COLORS = [
+    colors.primary,
+    "#16a34a",
+    "#f59e0b",
+    "#ef4444",
+    "#8b5cf6",
+  ];
+
   function colorForGroupId(order: number) {
     return SUPERSET_COLORS[order % SUPERSET_COLORS.length];
   }
+
   function groupLabel(order: number) {
     return String.fromCharCode(65 + order);
   }
@@ -200,11 +320,16 @@ export default function Review() {
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }}>
       <ScrollView
         style={{ flex: 1, backgroundColor: colors.bg }}
-        contentContainerStyle={{ padding: layout.space.lg, gap: layout.space.md }}
+        contentContainerStyle={{
+          padding: layout.space.lg,
+          gap: layout.space.md,
+        }}
       >
         <View style={s.card}>
           <Text style={s.h2}>Review Plan</Text>
-          <Text style={s.muted}>Make sure everything looks right before creating your plan.</Text>
+          <Text style={s.muted}>
+            Make sure everything looks right before creating your plan.
+          </Text>
 
           <View style={s.divider} />
 
@@ -214,14 +339,36 @@ export default function Review() {
           </Text>
         </View>
 
+        {saveErrorMessage ? (
+          <View style={s.limitCard}>
+            <View style={s.limitHeader}>
+              <Icon name="lock-closed" size={18} color={colors.primary} />
+              <Text style={s.limitTitle}>Upgrade required</Text>
+            </View>
+
+            <Text style={s.limitBody}>{saveErrorMessage}</Text>
+
+            <Pressable
+              style={s.limitButton}
+              onPress={() => setPaywallOpen(true)}
+            >
+              <Text style={s.limitButtonText}>
+                {paywallReason === "plan_limit"
+                  ? "Unlock more plans"
+                  : "Unlock more goals"}
+              </Text>
+            </Pressable>
+          </View>
+        ) : null}
+
         <View style={s.card}>
           <Text style={s.h3}>Workouts</Text>
           <View style={{ height: 8 }} />
 
           {workouts.map((w, i) => {
-            // stable order of groups as they appear
             const groupsOrder: string[] = [];
             const seen = new Set<string>();
+
             w.exercises.forEach((ex) => {
               if (ex.supersetGroup && !seen.has(ex.supersetGroup)) {
                 groupsOrder.push(ex.supersetGroup);
@@ -237,7 +384,6 @@ export default function Review() {
 
               if (e.supersetGroup) {
                 const gid = e.supersetGroup;
-                // group rendering guard
                 if (rendered.has(gid)) return;
 
                 const members = w.exercises
@@ -250,8 +396,13 @@ export default function Review() {
                 const color = colorForGroupId(order);
 
                 rows.push(
-                  <View key={`group-${gid}`} style={[s.superset, { borderColor: color }]}>
-                    <Text style={[s.supersetTitle, { color }]}>Superset {groupLabel(order)}</Text>
+                  <View
+                    key={`group-${gid}`}
+                    style={[s.superset, { borderColor: color }]}
+                  >
+                    <Text style={[s.supersetTitle, { color }]}>
+                      Superset {groupLabel(order)}
+                    </Text>
 
                     {members.map(({ x, idx: memberIdx }) => {
                       const isGoal = goalExerciseIds.has(x.exercise.id);
@@ -266,16 +417,19 @@ export default function Review() {
                         </Text>
                       );
                     })}
-                  </View>
+                  </View>,
                 );
               } else {
                 const isGoal = goalExerciseIds.has(e.exercise.id);
                 rows.push(
-                  <Text key={key} style={[s.line, { marginTop: 6 }, isGoal && s.lineGoal]}>
+                  <Text
+                    key={key}
+                    style={[s.line, { marginTop: 6 }, isGoal && s.lineGoal]}
+                  >
                     • {e.exercise.name}
                     {e.isDropset ? "  • Dropset" : ""}
                     {isGoal ? "  🎯" : ""}
-                  </Text>
+                  </Text>,
                 );
               }
             });
@@ -285,7 +439,11 @@ export default function Review() {
                 <Text style={s.h4}>
                   {i + 1}. {w.title || "Untitled Workout"}
                 </Text>
-                {w.exercises.length === 0 ? <Text style={s.muted}>No exercises yet.</Text> : <View>{rows}</View>}
+                {w.exercises.length === 0 ? (
+                  <Text style={s.muted}>No exercises yet.</Text>
+                ) : (
+                  <View>{rows}</View>
+                )}
               </View>
             );
           })}
@@ -300,7 +458,8 @@ export default function Review() {
             <View style={{ gap: 6 }}>
               {goals.map((g, i) => (
                 <Text key={i} style={[s.line, s.lineGoal]}>
-                  • {g.exercise.name} — {g.mode.replaceAll("_", " ")} → {g.target}
+                  • {g.exercise.name} — {g.mode.replaceAll("_", " ")} →{" "}
+                  {g.target}
                   {g.unit ? ` ${g.unit}` : ""}
                   {g.start != null ? `  (start ${g.start}${g.unit ?? ""})` : ""}
                 </Text>
@@ -326,16 +485,23 @@ export default function Review() {
             {saving ? (
               <ActivityIndicator color={colors.onPrimary ?? "#fff"} />
             ) : (
-              <Text style={[s.btnText, { color: colors.onPrimary ?? "#fff" }]}>Create Plan</Text>
+              <Text style={[s.btnText, { color: colors.onPrimary ?? "#fff" }]}>
+                Create Plan
+              </Text>
             )}
           </Pressable>
         </View>
       </ScrollView>
+
+      <FeaturePaywallModal
+        visible={paywallOpen}
+        reason="goal_limit"
+        onClose={() => setPaywallOpen(false)}
+      />
     </SafeAreaView>
   );
 }
 
-/* ---- themed styles ---- */
 const makeStyles = (colors: any, typography: any, layout: any) =>
   StyleSheet.create({
     card: {
@@ -414,6 +580,43 @@ const makeStyles = (colors: any, typography: any, layout: any) =>
       marginBottom: 4,
     },
 
+    limitCard: {
+      backgroundColor: colors.surface,
+      borderRadius: layout.radius.lg,
+      padding: layout.space.md,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      gap: layout.space.sm,
+    },
+    limitHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+    },
+    limitTitle: {
+      color: colors.text,
+      fontFamily: typography.fontFamily.bold,
+      fontSize: typography.size.sub,
+    },
+    limitBody: {
+      color: colors.textMuted,
+      fontFamily: typography.fontFamily.medium,
+      fontSize: typography.size.meta,
+      lineHeight: typography.lineHeight.meta + 2,
+    },
+    limitButton: {
+      alignSelf: "flex-start",
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+      borderRadius: layout.radius.pill,
+      backgroundColor: colors.primary,
+    },
+    limitButtonText: {
+      color: colors.onPrimary,
+      fontFamily: typography.fontFamily.bold,
+      fontSize: typography.size.meta,
+    },
+
     btn: {
       backgroundColor: colors.surface,
       paddingVertical: 12,
@@ -428,5 +631,8 @@ const makeStyles = (colors: any, typography: any, layout: any) =>
       fontSize: typography.size.sub,
       color: colors.text,
     },
-    primary: { backgroundColor: colors.primary, borderColor: colors.primary },
+    primary: {
+      backgroundColor: colors.primary,
+      borderColor: colors.primary,
+    },
   });

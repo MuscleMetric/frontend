@@ -1,7 +1,7 @@
 // lib/pendingWorkoutSync.ts
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { supabase } from "./supabase";
-import { saveCompletedWorkout } from "./saveWorkout";
+import { saveCompletedWorkoutFromReviewPayload } from "./saveWorkout";
 import type { ReviewPayload } from "./sessionStore";
 import { v4 as uuidv4 } from "uuid";
 import * as Sentry from "@sentry/react-native";
@@ -171,7 +171,7 @@ export async function syncPendingWorkouts(): Promise<{
         planWorkoutIdToComplete: job.planWorkoutIdToComplete,
       });
 
-      await saveCompletedWorkout({
+      await saveCompletedWorkoutFromReviewPayload({
         clientSaveId: job.clientSaveId,
         payload: job.payload,
         totalDurationSec: job.totalDurationSec,

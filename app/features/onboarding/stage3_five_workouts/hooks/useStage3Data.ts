@@ -9,6 +9,8 @@ import type {
   Stage3RpcPoint,
 } from "../types";
 
+import { log } from "@/lib/logger";
+
 function safeNum(n: any): number | null {
   const v = Number(n);
   return Number.isFinite(v) ? v : null;
@@ -81,7 +83,7 @@ export function useStage3Data(): Stage3DataState {
 
         const p = res.data as Stage3Payload;
 
-        console.log("[stage3] rpc payload:", res.data);
+        log("[stage3] rpc payload:", res.data);
 
         const unit = (p.unit_weight ?? "kg") as Stage3UiStrings["unitWeight"];
         const name = firstName(p.user_name) ?? "there";

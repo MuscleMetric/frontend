@@ -2,12 +2,15 @@
 import { supabase } from "./supabase";
 import type { LiveWorkoutDraft } from "@/app/features/workouts/live/state/types";
 import * as Sentry from "@sentry/react-native";
+import type { ReviewPayload } from "./sessionStore";
+
+import { log } from "@/lib/logger";
 
 const DEBUG_SAVE = __DEV__;
 
 function dlog(message: string, data?: Record<string, any>) {
   if (!DEBUG_SAVE) return;
-  console.log(`[saveWorkout] ${message}`, data ?? {});
+  log(`[saveWorkout] ${message}`, data ?? {});
 }
 
 function bc(message: string, data?: Record<string, any>) {
@@ -353,6 +356,204 @@ export async function saveCompletedWorkoutFromLiveDraft(
     bc("rpc success", { ...summary, workoutHistoryId: String(data) });
     dlog("rpc success", { workoutHistoryId: String(data) });
 
+    return { workoutHistoryId: String(data) };
+  } catch (e: any) {
+    bc("rpc exception", { ...summary, message: String(e?.message ?? e) });
+
+    if (!(e && (e as any).name === "PostgrestError")) {
+      Sentry.captureException(e, {
+        tags: { area: "save_rpc", stage: "unexpected" },
+        extra: summary,
+      });
+    }
+
+    throw e;
+  }
+}
+
+export type SaveFromReviewArgs = {
+  clientSaveId: string;
+  payload: ReviewPayload;
+  completedAt?: Date;
+  totalDurationSec: number;
+  planWorkoutIdToComplete?: string;
+};
+
+export function buildRpcPayloadFromReview(
+  args: SaveFromReviewArgs,
+): RpcWorkout {
+  const {
+    clientSaveId,
+    payload,
+    completedAt = new Date(),
+    totalDurationSec,
+    planWorkoutIdToComplete,
+  } = args;
+
+  const workout = payload.workout;
+  const state = payload.state;
+  const supersets = payload.supersets;
+
+  const exercise_history: RpcWorkout["exercise_history"] = [];
+
+  const sortedExercises = [...(workout.workout_exercises ?? [])].sort(
+    (a, b) => (a.order_index ?? 0) - (b.order_index ?? 0),
+  );
+
+  for (const we of sortedExercises) {
+    const exState = state.byWeId[we.id];
+    if (!exState) continue;
+
+    const exerciseId = String(we.exercise_id ?? "");
+    if (!exerciseId) continue;
+
+    const sets: RpcWorkout["exercise_history"][number]["sets"] = [];
+
+    if (exState.kind === "strength") {
+      let logicalSetNumber = 0;
+
+      for (const set of exState.sets ?? []) {
+        const reps =
+          set.reps === "" || set.reps == null ? null : Number(set.reps);
+        const weight =
+          set.weight === "" || set.weight == null ? 0 : Number(set.weight);
+
+        if (reps == null || !Number.isFinite(reps)) continue;
+
+        logicalSetNumber += 1;
+
+        sets.push({
+          set_number: logicalSetNumber,
+          drop_index: 0,
+          reps,
+          weight: Number.isFinite(weight) ? weight : 0,
+          time_seconds: null,
+          distance: null,
+          notes: null,
+        });
+
+        for (let i = 0; i < (set.drops ?? []).length; i++) {
+          const drop = set.drops?.[i];
+          const dropReps =
+            drop?.reps === "" || drop?.reps == null ? null : Number(drop.reps);
+          const dropWeight =
+            drop?.weight === "" || drop?.weight == null
+              ? 0
+              : Number(drop.weight);
+
+          if (dropReps == null || !Number.isFinite(dropReps)) continue;
+
+          sets.push({
+            set_number: logicalSetNumber,
+            drop_index: i + 1,
+            reps: dropReps,
+            weight: Number.isFinite(dropWeight) ? dropWeight : 0,
+            time_seconds: null,
+            distance: null,
+            notes: null,
+          });
+        }
+      }
+    } else {
+      let logicalSetNumber = 0;
+
+      for (const set of exState.sets ?? []) {
+        const time_seconds =
+          set.timeSec === "" || set.timeSec == null
+            ? null
+            : Number(set.timeSec);
+        const distance =
+          set.distance === "" || set.distance == null
+            ? null
+            : Number(set.distance);
+
+        const hasTime = time_seconds != null && Number.isFinite(time_seconds);
+        const hasDistance = distance != null && Number.isFinite(distance);
+
+        if (!hasTime && !hasDistance) continue;
+
+        logicalSetNumber += 1;
+
+        sets.push({
+          set_number: logicalSetNumber,
+          drop_index: 0,
+          reps: null,
+          weight: null,
+          time_seconds: hasTime ? time_seconds : null,
+          distance: hasDistance ? distance : null,
+          notes: null,
+        });
+      }
+    }
+
+    if (!sets.length) continue;
+
+    const supersetGroup = we.superset_group ?? "";
+    const supersetIndex =
+      we.superset_index == null ? "" : String(we.superset_index);
+
+    exercise_history.push({
+      exercise_id: exerciseId,
+      order_index: we.order_index ?? 0,
+      notes: exState.notes ?? we.notes ?? "",
+      workout_exercise_id: we.id ?? "",
+      is_dropset: Boolean(we.is_dropset),
+      superset_group: supersetGroup,
+      superset_index: supersetIndex,
+      sets,
+    });
+  }
+
+  return {
+    client_save_id: clientSaveId,
+    workout_id: workout.id ?? null,
+    completed_at: completedAt.toISOString(),
+    duration_seconds: Math.max(0, Math.floor(totalDurationSec)),
+    notes: state.workoutNotes ?? "",
+    plan_workout_id: planWorkoutIdToComplete ?? "",
+    exercise_history,
+    workout_exercise_updates: [],
+  };
+}
+
+export async function saveCompletedWorkoutFromReviewPayload(
+  args: SaveFromReviewArgs,
+): Promise<SaveResult> {
+  const payload = buildRpcPayloadFromReview(args);
+  const summary = summarizeRpcPayload(payload);
+
+  dlog("review payload summary", summary);
+  bc("rpc start", summary);
+
+  try {
+    const { data, error } = await supabase.rpc("save_completed_workout_v1", {
+      p_workout: payload,
+    });
+
+    if (error) {
+      bc("rpc error", {
+        ...summary,
+        code: (error as any).code,
+        details: (error as any).details,
+        hint: (error as any).hint,
+        message: error.message,
+      });
+
+      Sentry.captureException(error, {
+        tags: { area: "save_rpc", fn: "save_completed_workout_v1" },
+        extra: {
+          ...summary,
+          code: (error as any).code,
+          details: (error as any).details,
+          hint: (error as any).hint,
+          message: error.message,
+        },
+      });
+
+      throw new Error(error.message);
+    }
+
+    bc("rpc success", { ...summary, workoutHistoryId: String(data) });
     return { workoutHistoryId: String(data) };
   } catch (e: any) {
     bc("rpc exception", { ...summary, message: String(e?.message ?? e) });

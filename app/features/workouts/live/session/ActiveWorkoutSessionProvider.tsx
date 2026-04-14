@@ -52,17 +52,7 @@ export function ActiveWorkoutSessionProvider({ children }: Props) {
       setActiveDraft(nextDraft);
 
       if (nextDraft) {
-        const secs = timerSecondsFromSnapshot({
-          draftId: nextDraft.draftId,
-          userId: nextDraft.userId,
-          workoutId: nextDraft.workoutId ?? null,
-          planWorkoutId: nextDraft.planWorkoutId ?? null,
-          title: nextDraft.title ?? null,
-          startedAt: nextDraft.startedAt ?? null,
-          updatedAt: nextDraft.updatedAt ?? null,
-          timerElapsedSeconds: nextDraft.timerElapsedSeconds ?? 0,
-          timerLastActiveAt: nextDraft.timerLastActiveAt ?? null,
-        });
+        const secs = timerSecondsFromSnapshot(nextDraft);
         setElapsedSeconds(secs);
         setTimerText(timerTextFromSeconds(secs));
       } else {
@@ -159,17 +149,7 @@ export function ActiveWorkoutSessionProvider({ children }: Props) {
     if (!activeDraft) return;
 
     const sync = () => {
-      const secs = timerSecondsFromSnapshot({
-        draftId: activeDraft.draftId,
-        userId: activeDraft.userId,
-        workoutId: activeDraft.workoutId ?? null,
-        planWorkoutId: activeDraft.planWorkoutId ?? null,
-        title: activeDraft.title ?? null,
-        startedAt: activeDraft.startedAt ?? null,
-        updatedAt: activeDraft.updatedAt ?? null,
-        timerElapsedSeconds: activeDraft.timerElapsedSeconds ?? 0,
-        timerLastActiveAt: activeDraft.timerLastActiveAt ?? null,
-      });
+      const secs = timerSecondsFromSnapshot(activeDraft);
       setElapsedSeconds(secs);
       setTimerText(timerTextFromSeconds(secs));
     };

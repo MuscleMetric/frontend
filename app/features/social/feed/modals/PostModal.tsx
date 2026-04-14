@@ -24,6 +24,8 @@ import { PrPostCard } from "../posts/PrPostCard";
 import { WorkoutPostCard } from "../posts/WorkoutPostCard";
 import { WorkoutDetails } from "./WorkoutDetails";
 
+import { log } from "@/lib/logger";
+
 type Props = {
   visible: boolean;
   post: FeedRow | null;
@@ -194,10 +196,10 @@ export function PostModal({
     setLoadingComments(true);
     try {
       const data = await fetchComments(post.post_id);
-      console.log("loaded comments", data);
+      log("loaded comments", data);
       setComments(data);
     } catch (e) {
-      console.log("loadComments error", e);
+      log("loadComments error", e);
     } finally {
       setLoadingComments(false);
     }
@@ -215,7 +217,7 @@ export function PostModal({
       const data = await fetchWorkoutDetails(post.post_id);
       setWorkoutDetails(data);
     } catch (e) {
-      console.log("loadWorkoutDetails error", e);
+      log("loadWorkoutDetails error", e);
       setWorkoutDetails(null);
     } finally {
       setLoadingWorkoutDetails(false);
@@ -235,7 +237,7 @@ export function PostModal({
     }
   }, [visible, post, loadComments, loadWorkoutDetails]);
 
-  console.log("PostModal render", {
+  log("PostModal render", {
     visible,
     postId: post?.post_id ?? null,
     commentsLength: comments.length,

@@ -105,9 +105,7 @@ function RootNavigator() {
           platform: Platform.OS === "ios" ? "ios" : "android",
         });
 
-        console.log("Push token saved successfully");
       } catch (error) {
-        console.log("push registration error:", error);
         Sentry.captureException(error, {
           tags: { area: "notifications", action: "register_push_token" },
         });

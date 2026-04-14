@@ -11,6 +11,8 @@ import { PrimaryCTA } from "../shared/components/PrimaryCTA";
 // ✅ Global UI
 import { WorkoutCover } from "@/ui/media/WorkoutCover";
 
+import { log } from "@/lib/logger";
+
 type WorkoutSavedProps = {
   workoutTitle: string;
   durationLabel: string; // "42:15"
@@ -33,7 +35,7 @@ export default function WorkoutSaved(props: WorkoutSavedProps) {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    console.log("Stage2 WorkoutSaved props:", props);
+    log("Stage2 WorkoutSaved props:", props);
   }, [props]);
 
   async function onPrimary() {

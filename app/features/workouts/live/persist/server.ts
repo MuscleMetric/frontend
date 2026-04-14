@@ -2,6 +2,8 @@
 import { supabase } from "@/lib/supabase";
 import type { LiveWorkoutDraft } from "../state/types";
 
+import { log } from "@/lib/logger";
+
 /**
  * Server storage is optional but recommended.
  * Uses table: public.live_workout_drafts (see SQL below).
@@ -51,7 +53,7 @@ export async function upsertServerDraft(
   );
 
   if (error) {
-    console.log("upsertServerDraft error", error);
+    log("upsertServerDraft error", error);
     throw error;
   }
 }

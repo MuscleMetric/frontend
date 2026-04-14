@@ -2,6 +2,8 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import type { LiveWorkoutDraft } from "./liveWorkoutTypes";
 
+import { log } from "@/lib/logger";
+
 // liveWorkoutStorage.ts
 export const liveWorkoutDraftKeyFor = (userId: string) =>
   `live_workout:${userId}`;
@@ -39,7 +41,7 @@ export async function saveLiveDraftForUser(
   // ✅ DEBUG: who is writing this key?
   if (__DEV__) {
     const err = new Error("saveLiveDraftForUser called");
-    console.log("[resume-debug] WRITE live_workout", {
+    log("[resume-debug] WRITE live_workout", {
       key: keyFor(userId),
       workoutId: (safe as any).workoutId,
       planWorkoutId: (safe as any).planWorkoutId,

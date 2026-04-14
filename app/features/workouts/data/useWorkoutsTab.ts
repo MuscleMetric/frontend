@@ -29,12 +29,14 @@ export function useWorkoutsTab(userId: string | null): UseWorkoutsTabResult {
 
     try {
       const { data: payload, error: rpcError } = await supabase.rpc(
-        "get_workouts_tab_payload"
+        "get_workouts_tab_payload",
       );
 
       if (rpcError) throw rpcError;
 
-      setData((payload ?? null) as WorkoutsTabPayload | null);
+      const safePayload = (payload ?? null) as WorkoutsTabPayload | null;
+
+      setData(safePayload);
     } catch (e: any) {
       setData(null);
       setError(e?.message ?? "Failed to load workouts.");

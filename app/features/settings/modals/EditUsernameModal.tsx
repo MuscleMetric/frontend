@@ -14,6 +14,8 @@ import {
 import { useAppTheme } from "@/lib/useAppTheme";
 import { supabase } from "@/lib/supabase";
 
+import { log } from "@/lib/logger";
+
 type UsernameCheckRow = {
   normalized: string;
   is_valid: boolean;
@@ -216,7 +218,7 @@ export function EditUsernameModal({
       setChecking(false);
 
       if (res.error) {
-        console.log("check username error:", res.error);
+        log("check username error:", res.error);
         setCheck(null);
         return;
       }
@@ -293,7 +295,7 @@ export function EditUsernameModal({
     setSaving(false);
 
     if (res.error) {
-      console.log("set username error:", res.error);
+      log("set username error:", res.error);
       Alert.alert("Couldn’t save username", res.error.message ?? "Try again.");
       return;
     }

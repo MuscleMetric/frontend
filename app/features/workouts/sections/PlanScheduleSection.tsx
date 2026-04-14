@@ -1,10 +1,11 @@
 // app/features/workouts/sections/PlanScheduleSection.tsx
+
 import React from "react";
 import { View, Text } from "react-native";
 import { useAppTheme } from "@/lib/useAppTheme";
 import { ListRow, Button, WorkoutCover, Icon } from "@/ui";
 
-type PlanSchedule = {
+export type PlanSchedule = {
   title: string;
   actions: { viewAll: boolean; edit: boolean };
   items: Array<{
@@ -24,11 +25,15 @@ export function PlanScheduleSection({
   onPressWorkout,
   onViewAll,
   onEdit,
+  showCreate = false,
+  onCreate,
 }: {
   schedule: PlanSchedule;
   onPressWorkout?: (args: { workoutId: string; planWorkoutId: string }) => void;
   onViewAll?: () => void;
   onEdit?: () => void;
+  showCreate?: boolean;
+  onCreate?: () => void;
 }) {
   const { colors, typography, layout } = useAppTheme();
 
@@ -39,7 +44,6 @@ export function PlanScheduleSection({
 
   return (
     <View style={{ gap: layout.space.sm }}>
-      {/* Header (NOT a card) */}
       <View
         style={{
           flexDirection: "row",
@@ -61,7 +65,22 @@ export function PlanScheduleSection({
           {schedule.title}
         </Text>
 
-        <View style={{ flexDirection: "row", gap: layout.space.sm }}>
+        <View
+          style={{
+            flexDirection: "row",
+            gap: layout.space.sm,
+            alignItems: "center",
+          }}
+        >
+          {showCreate && onCreate ? (
+            <Button
+              title="Create"
+              variant="ghost"
+              fullWidth={false}
+              onPress={onCreate}
+            />
+          ) : null}
+
           {schedule.actions.viewAll && onViewAll ? (
             <Button
               title="View"
@@ -82,7 +101,6 @@ export function PlanScheduleSection({
         </View>
       </View>
 
-      {/* Rows */}
       <View style={{ gap: layout.space.sm }}>
         {items.map((pw, idx) => {
           const isNext = idx === firstIncompleteIndex && !pw.weeklyComplete;
@@ -94,6 +112,7 @@ export function PlanScheduleSection({
               style={{
                 fontFamily: typography.fontFamily.semibold,
                 fontSize: typography.size.sub,
+                lineHeight: typography.lineHeight.sub,
                 color: colors.textMuted,
               }}
             >
@@ -109,15 +128,15 @@ export function PlanScheduleSection({
               left={
                 <WorkoutCover
                   imageKey={pw.imageKey}
-                  variant="tile" // ✅ IMPORTANT
+                  variant="tile"
                   tileSize={68}
                   radius={14}
-                  zoom={1} // or 1.08 if your tiles still feel wide
+                  zoom={1}
                 />
               }
               rightNode={rightNode ?? undefined}
               tone={pw.weeklyComplete ? "success" : "default"}
-              disabled={pw.weeklyComplete} 
+              disabled={pw.weeklyComplete}
               showChevron={!pw.weeklyComplete}
               onPress={
                 !pw.weeklyComplete && onPressWorkout
