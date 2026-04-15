@@ -5,8 +5,8 @@ import {
   purchaseRevenueCatPackage,
   restoreRevenueCatPurchases,
 } from "./revenuecat";
-import { useRevenueCatOffering } from "./useRevenueCatOffering";
 import { useAuth } from "@/lib/authContext";
+import { useBilling } from "./BillingProvider";
 
 type PurchaseUnavailableReason =
   | "loading"
@@ -16,7 +16,7 @@ type PurchaseUnavailableReason =
 
 export function usePaywallActions(onClose?: () => void) {
   const { refreshEntitlements } = useAuth();
-  const { offering, loading, error, refresh } = useRevenueCatOffering();
+  const { offering, loading, error, refresh } = useBilling();
   const [busy, setBusy] = useState(false);
 
   const monthly = useMemo(
@@ -24,7 +24,7 @@ export function usePaywallActions(onClose?: () => void) {
       offering?.monthly ??
       offering?.availablePackages.find((p) => p.packageType === "MONTHLY") ??
       null,
-    [offering]
+    [offering],
   );
 
   const annual = useMemo(
@@ -32,10 +32,13 @@ export function usePaywallActions(onClose?: () => void) {
       offering?.annual ??
       offering?.availablePackages.find((p) => p.packageType === "ANNUAL") ??
       null,
-    [offering]
+    [offering],
   );
 
-  const defaultPackage = useMemo(() => annual ?? monthly ?? null, [annual, monthly]);
+  const defaultPackage = useMemo(
+    () => annual ?? monthly ?? null,
+    [annual, monthly],
+  );
 
   const hasPackages = !!defaultPackage;
 
@@ -67,17 +70,14 @@ export function usePaywallActions(onClose?: () => void) {
     if (busy) return;
 
     if (loading) {
-      Alert.alert(
-        "Please wait",
-        "We’re still loading purchase options."
-      );
+      Alert.alert("Please wait", "We’re still loading purchase options.");
       return;
     }
 
     if (error) {
       Alert.alert(
         "Purchases unavailable",
-        "We couldn’t load purchase options right now. Please try again."
+        "We couldn’t load purchase options right now. Please try again.",
       );
       return;
     }
@@ -85,7 +85,7 @@ export function usePaywallActions(onClose?: () => void) {
     if (!defaultPackage) {
       Alert.alert(
         "Purchases unavailable",
-        "Purchase options are not available right now."
+        "Purchase options are not available right now.",
       );
       return;
     }
