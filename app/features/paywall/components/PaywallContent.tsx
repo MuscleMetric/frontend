@@ -56,7 +56,7 @@ function getContent(reason: PaywallReason): PaywallContentModel {
         metricLabel: "Template limit",
         metricValue: "5 → 15",
         primaryCta: "Start Free Trial",
-        pricingLine: "£2.99/month or £31.99/year (Save 10%)",
+        pricingLine: "£2.99/month or £29.99/year (Save 10%)",
         benefits: [
           {
             icon: CalendarPlus,
@@ -94,7 +94,7 @@ function getContent(reason: PaywallReason): PaywallContentModel {
         metricLabel: "Goals per plan",
         metricValue: "2 → 5",
         primaryCta: "Start Free Trial",
-        pricingLine: "£2.99/month or £31.99/year (Save 10%)",
+        pricingLine: "£2.99/month or £29.99/year (Save 10%)",
         benefits: [
           {
             icon: Target,
@@ -132,7 +132,7 @@ function getContent(reason: PaywallReason): PaywallContentModel {
         metricLabel: "Active plans",
         metricValue: "1 → 3",
         primaryCta: "Start Free Trial",
-        pricingLine: "£2.99/month or £31.99/year (Save 10%)",
+        pricingLine: "£2.99/month or £29.99/year (Save 10%)",
         benefits: [
           {
             icon: CalendarPlus,
@@ -170,7 +170,7 @@ function getContent(reason: PaywallReason): PaywallContentModel {
         metricLabel: "Volume (kgs)",
         metricValue: "14,250",
         primaryCta: "Start Free Trial",
-        pricingLine: "£2.99/month or £31.99/year (Save 10%)",
+        pricingLine: "£2.99/month or £29.99/year (Save 10%)",
         benefits: [
           {
             icon: TrendingUp,
@@ -209,7 +209,7 @@ function getContent(reason: PaywallReason): PaywallContentModel {
         metricLabel: "Pro unlock",
         metricValue: "Active",
         primaryCta: "Start Free Trial",
-        pricingLine: "£2.99/month or £31.99/year (Save 10%)",
+        pricingLine: "£2.99/month or £29.99/year (Save 10%)",
         benefits: [
           {
             icon: TrendingUp,
