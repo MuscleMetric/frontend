@@ -1,24 +1,24 @@
-// app/features/paywall/components/PaywallModal.tsx
-import React from "react";
-import {
-  Modal,
-  View,
-  StyleSheet,
-  Pressable,
-} from "react-native";
+import React, { useState } from "react";
+import { Modal, View, StyleSheet, Pressable } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { X } from "lucide-react-native";
-import PaywallContent, { PaywallReason } from "./PaywallContent";
+import PaywallContent, {
+  PaywallReason,
+  PaywallPlan,
+} from "./PaywallContent";
 import { useAppTheme } from "@/lib/useAppTheme";
 
 type PaywallModalProps = {
   visible: boolean;
   reason?: PaywallReason;
   onClose: () => void;
-  onStartTrial: () => void;
+  onStartTrial: (plan: PaywallPlan) => void;
   onRestorePurchases?: () => void;
+  onOpenPrivacyPolicy: () => void;
+  onOpenTerms: () => void;
   purchaseDisabled?: boolean;
   purchaseStatusText?: string | null;
+  initialPlan?: PaywallPlan;
 };
 
 export default function PaywallModal({
@@ -27,10 +27,16 @@ export default function PaywallModal({
   onClose,
   onStartTrial,
   onRestorePurchases,
+  onOpenPrivacyPolicy,
+  onOpenTerms,
   purchaseDisabled = false,
   purchaseStatusText = null,
+  initialPlan = "yearly",
 }: PaywallModalProps) {
   const { colors, layout } = useAppTheme();
+  const [selectedPlan, setSelectedPlan] = useState<PaywallPlan>(initialPlan);
+
+  
 
   return (
     <Modal
@@ -65,8 +71,12 @@ export default function PaywallModal({
 
         <PaywallContent
           reason={reason}
-          onStartTrial={onStartTrial}
+          selectedPlan={selectedPlan}
+          onSelectPlan={setSelectedPlan}
+          onStartTrial={() => onStartTrial(selectedPlan)}
           onRestorePurchases={onRestorePurchases}
+          onOpenPrivacyPolicy={onOpenPrivacyPolicy}
+          onOpenTerms={onOpenTerms}
           onClose={onClose}
           purchaseDisabled={purchaseDisabled}
           purchaseStatusText={purchaseStatusText}

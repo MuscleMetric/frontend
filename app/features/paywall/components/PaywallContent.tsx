@@ -1,5 +1,11 @@
 import React, { useMemo } from "react";
-import { View, Text, StyleSheet, Pressable, ScrollView } from "react-native";
+import {
+  View,
+  Text,
+  StyleSheet,
+  Pressable,
+  ScrollView,
+} from "react-native";
 import {
   TrendingUp,
   LineChart,
@@ -8,6 +14,7 @@ import {
   ShieldCheck,
   CalendarCheck2,
   Sparkles,
+  Check,
 } from "lucide-react-native";
 import PaywallBenefitItem from "./PaywallBenefitItem";
 import { useAppTheme } from "@/lib/useAppTheme";
@@ -18,6 +25,8 @@ export type PaywallReason =
   | "goal_limit"
   | "plan_limit"
   | "generic";
+
+export type PaywallPlan = "monthly" | "yearly";
 
 type Benefit = {
   icon: any;
@@ -31,15 +40,27 @@ type PaywallContentModel = {
   subtitle: string;
   metricLabel: string;
   metricValue: string;
-  primaryCta: string;
-  pricingLine: string;
   benefits: Benefit[];
+};
+
+type PlanCopy = {
+  id: PaywallPlan;
+  displayName: string;
+  title: string;
+  duration: string;
+  price: string;
+  renewalLine: string;
+  badge?: string;
 };
 
 type PaywallContentProps = {
   reason: PaywallReason;
+  selectedPlan: PaywallPlan;
+  onSelectPlan: (plan: PaywallPlan) => void;
   onStartTrial: () => void;
   onRestorePurchases?: () => void;
+  onOpenPrivacyPolicy: () => void;
+  onOpenTerms: () => void;
   onClose: () => void;
   purchaseDisabled?: boolean;
   purchaseStatusText?: string | null;
@@ -55,8 +76,6 @@ function getContent(reason: PaywallReason): PaywallContentModel {
           "Save more workouts, build a bigger training library, and keep your programming organised.",
         metricLabel: "Template limit",
         metricValue: "5 → 15",
-        primaryCta: "Start Free Trial",
-        pricingLine: "£2.99/month or £29.99/year (Save 10%)",
         benefits: [
           {
             icon: CalendarPlus,
@@ -93,8 +112,6 @@ function getContent(reason: PaywallReason): PaywallContentModel {
           "Set more goals inside each plan so your progress is clearer and your training stays focused.",
         metricLabel: "Goals per plan",
         metricValue: "2 → 5",
-        primaryCta: "Start Free Trial",
-        pricingLine: "£2.99/month or £29.99/year (Save 10%)",
         benefits: [
           {
             icon: Target,
@@ -131,8 +148,6 @@ function getContent(reason: PaywallReason): PaywallContentModel {
           "Run more plans at once for different goals, phases, or training styles.",
         metricLabel: "Active plans",
         metricValue: "1 → 3",
-        primaryCta: "Start Free Trial",
-        pricingLine: "£2.99/month or £29.99/year (Save 10%)",
         benefits: [
           {
             icon: CalendarPlus,
@@ -167,10 +182,8 @@ function getContent(reason: PaywallReason): PaywallContentModel {
         title: "Unlock Advanced Analytics",
         subtitle:
           "Track your progress, improve faster, and train smarter with premium insights.",
-        metricLabel: "Volume (kgs)",
+        metricLabel: "Volume (kg)",
         metricValue: "14,250",
-        primaryCta: "Start Free Trial",
-        pricingLine: "£2.99/month or £29.99/year (Save 10%)",
         benefits: [
           {
             icon: TrendingUp,
@@ -208,8 +221,6 @@ function getContent(reason: PaywallReason): PaywallContentModel {
           "Get deeper insights, advanced planning, and expanded limits as your training grows.",
         metricLabel: "Pro unlock",
         metricValue: "Active",
-        primaryCta: "Start Free Trial",
-        pricingLine: "£2.99/month or £29.99/year (Save 10%)",
         benefits: [
           {
             icon: TrendingUp,
@@ -234,16 +245,43 @@ function getContent(reason: PaywallReason): PaywallContentModel {
   }
 }
 
+const PLANS: PlanCopy[] = [
+  {
+    id: "monthly",
+    displayName: "Monthly",
+    title: "MuscleMetric Pro Monthly",
+    duration: "1 month",
+    price: "£2.99/month",
+    renewalLine: "Auto-renewing monthly",
+  },
+  {
+    id: "yearly",
+    displayName: "Yearly",
+    title: "MuscleMetric Pro Yearly",
+    duration: "1 year",
+    price: "£29.99/year",
+    renewalLine: "Auto-renewing yearly",
+    badge: "Best value",
+  },
+];
+
 export default function PaywallContent({
   reason,
+  selectedPlan,
+  onSelectPlan,
   onStartTrial,
   onRestorePurchases,
+  onOpenPrivacyPolicy,
+  onOpenTerms,
   onClose,
   purchaseDisabled = false,
   purchaseStatusText = null,
 }: PaywallContentProps) {
   const { scheme, colors, typography, layout } = useAppTheme();
   const content = useMemo(() => getContent(reason), [reason]);
+
+  const selectedPlanCopy =
+    PLANS.find((plan) => plan.id === selectedPlan) ?? PLANS[1];
 
   return (
     <ScrollView
@@ -258,14 +296,7 @@ export default function PaywallContent({
       ]}
       showsVerticalScrollIndicator={false}
     >
-      <View
-        style={[
-          styles.header,
-          {
-            marginBottom: layout.space.lg,
-          },
-        ]}
-      >
+      <View style={[styles.header, { marginBottom: layout.space.lg }]}>
         <Text
           style={[
             styles.brand,
@@ -281,14 +312,7 @@ export default function PaywallContent({
         </Text>
       </View>
 
-      <View
-        style={[
-          styles.hero,
-          {
-            marginBottom: layout.space.xl,
-          },
-        ]}
-      >
+      <View style={[styles.hero, { marginBottom: layout.space.xl }]}>
         {!!content.eyebrow && (
           <Text
             style={[
@@ -449,14 +473,151 @@ export default function PaywallContent({
         ))}
       </View>
 
-      <View
-        style={[
-          styles.pricingWrap,
-          {
-            marginTop: layout.space.xs,
-          },
-        ]}
-      >
+      <View style={{ marginBottom: layout.space.xl }}>
+        <Text
+          style={[
+            styles.sectionLabel,
+            {
+              color: colors.text,
+              fontSize: typography.size.h3,
+              lineHeight: typography.lineHeight.h3,
+              fontFamily: typography.fontFamily.bold,
+              marginBottom: layout.space.md,
+            },
+          ]}
+        >
+          Choose your plan
+        </Text>
+
+        <View style={{ gap: layout.space.md }}>
+          {PLANS.map((plan) => {
+            const isSelected = plan.id === selectedPlan;
+
+            return (
+              <Pressable
+                key={plan.id}
+                onPress={() => onSelectPlan(plan.id)}
+                style={[
+                  styles.planCard,
+                  {
+                    backgroundColor: colors.surface,
+                    borderColor: isSelected ? colors.primary : colors.border,
+                    borderRadius: layout.radius.xl,
+                    padding: layout.space.lg,
+                  },
+                ]}
+              >
+                <View style={styles.planTopRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text
+                      style={[
+                        styles.planName,
+                        {
+                          color: colors.text,
+                          fontSize: typography.size.h3,
+                          lineHeight: typography.lineHeight.h3,
+                          fontFamily: typography.fontFamily.bold,
+                        },
+                      ]}
+                    >
+                      {plan.displayName}
+                    </Text>
+
+                    <Text
+                      style={[
+                        styles.planTitle,
+                        {
+                          color: colors.textMuted,
+                          fontSize: typography.size.sub,
+                          lineHeight: typography.lineHeight.sub,
+                          fontFamily: typography.fontFamily.medium,
+                          marginTop: 2,
+                        },
+                      ]}
+                    >
+                      {plan.title}
+                    </Text>
+                  </View>
+
+                  {plan.badge ? (
+                    <View
+                      style={[
+                        styles.planBadge,
+                        {
+                          backgroundColor: colors.cardPressed,
+                          borderRadius: layout.radius.pill,
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.planBadgeText,
+                          {
+                            color: colors.primary,
+                            fontSize: typography.size.meta,
+                            lineHeight: typography.lineHeight.meta,
+                            fontFamily: typography.fontFamily.bold,
+                          },
+                        ]}
+                      >
+                        {plan.badge}
+                      </Text>
+                    </View>
+                  ) : null}
+                </View>
+
+                <View style={[styles.planBottomRow, { marginTop: layout.space.md }]}>
+                  <View>
+                    <Text
+                      style={[
+                        styles.planPrice,
+                        {
+                          color: colors.text,
+                          fontSize: typography.size.h2,
+                          lineHeight: typography.lineHeight.h2,
+                          fontFamily: typography.fontFamily.bold,
+                        },
+                      ]}
+                    >
+                      {plan.price}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.planMeta,
+                        {
+                          color: colors.textMuted,
+                          fontSize: typography.size.meta,
+                          lineHeight: typography.lineHeight.meta,
+                          fontFamily: typography.fontFamily.medium,
+                          marginTop: 4,
+                        },
+                      ]}
+                    >
+                      {plan.duration} • {plan.renewalLine}
+                    </Text>
+                  </View>
+
+                  <View
+                    style={[
+                      styles.radioOuter,
+                      {
+                        borderColor: isSelected ? colors.primary : colors.border,
+                        backgroundColor: isSelected
+                          ? colors.cardPressed
+                          : "transparent",
+                      },
+                    ]}
+                  >
+                    {isSelected ? <Check size={16} color={colors.primary} /> : null}
+                  </View>
+                </View>
+              </Pressable>
+            );
+          })}
+        </View>
+      </View>
+
+      <View style={[styles.pricingWrap, { marginTop: layout.space.xs }]}>
         <View
           style={[
             styles.trialPill,
@@ -492,11 +653,27 @@ export default function PaywallContent({
               fontSize: typography.size.body + 1,
               lineHeight: typography.lineHeight.body,
               fontFamily: typography.fontFamily.medium,
+              marginBottom: 6,
+            },
+          ]}
+        >
+          {selectedPlanCopy.title}
+        </Text>
+
+        <Text
+          style={[
+            styles.subPriceLine,
+            {
+              color: colors.textMuted,
+              fontSize: typography.size.sub,
+              lineHeight: typography.lineHeight.sub,
+              fontFamily: typography.fontFamily.medium,
               marginBottom: layout.space.lg,
             },
           ]}
         >
-          {content.pricingLine}
+          14-day free trial for eligible users, then {selectedPlanCopy.price},
+          auto-renewing until cancelled.
         </Text>
 
         {purchaseStatusText ? (
@@ -541,18 +718,11 @@ export default function PaywallContent({
               purchaseDisabled ? styles.primaryButtonTextDisabled : null,
             ]}
           >
-            {content.primaryCta}
+            Start 14-Day Free Trial
           </Text>
         </Pressable>
 
-        <View
-          style={[
-            styles.secondaryActions,
-            {
-              gap: layout.space.xl,
-            },
-          ]}
-        >
+        <View style={[styles.secondaryActions, { gap: layout.space.xl }]}>
           <Pressable onPress={onRestorePurchases}>
             <Text
               style={[
@@ -645,10 +815,51 @@ export default function PaywallContent({
           },
         ]}
       >
-        Subscription automatically renews unless turned off in your account
-        settings at least 24 hours before the current period ends. By tapping
-        “Start Free Trial”, you agree to the applicable terms.
+        Subscriptions renew automatically unless cancelled at least 24 hours
+        before the end of the current billing period.
       </Text>
+
+      <View
+        style={[
+          styles.legalLinksRow,
+          {
+            marginTop: layout.space.md,
+            gap: layout.space.lg,
+          },
+        ]}
+      >
+        <Pressable onPress={onOpenPrivacyPolicy}>
+          <Text
+            style={[
+              styles.legalLinkText,
+              {
+                color: colors.primary,
+                fontSize: typography.size.sub,
+                lineHeight: typography.lineHeight.sub,
+                fontFamily: typography.fontFamily.bold,
+              },
+            ]}
+          >
+            Privacy Policy
+          </Text>
+        </Pressable>
+
+        <Pressable onPress={onOpenTerms}>
+          <Text
+            style={[
+              styles.legalLinkText,
+              {
+                color: colors.primary,
+                fontSize: typography.size.sub,
+                lineHeight: typography.lineHeight.sub,
+                fontFamily: typography.fontFamily.bold,
+              },
+            ]}
+          >
+            Terms of Use
+          </Text>
+        </Pressable>
+      </View>
     </ScrollView>
   );
 }
@@ -721,6 +932,39 @@ const styles = StyleSheet.create({
     letterSpacing: 1.2,
   },
   benefits: {},
+  sectionLabel: {},
+  planCard: {
+    borderWidth: 1.5,
+  },
+  planTopRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  planBottomRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  planName: {},
+  planTitle: {},
+  planPrice: {},
+  planMeta: {},
+  planBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  planBadgeText: {},
+  radioOuter: {
+    width: 28,
+    height: 28,
+    borderRadius: 999,
+    borderWidth: 1.5,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   pricingWrap: {
     alignItems: "center",
   },
@@ -729,6 +973,9 @@ const styles = StyleSheet.create({
     letterSpacing: 1.1,
   },
   priceLine: {
+    textAlign: "center",
+  },
+  subPriceLine: {
     textAlign: "center",
   },
   statusText: {
@@ -774,5 +1021,13 @@ const styles = StyleSheet.create({
   },
   legalText: {
     textAlign: "center",
+  },
+  legalLinksRow: {
+    flexDirection: "row",
+    justifyContent: "center",
+    flexWrap: "wrap",
+  },
+  legalLinkText: {
+    textDecorationLine: "underline",
   },
 });

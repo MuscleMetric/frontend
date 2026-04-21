@@ -24,6 +24,7 @@ export default function PaywallBenefitItem({
         styles.card,
         {
           backgroundColor: colors.surface,
+          borderColor: colors.border,
           borderRadius: layout.radius.xl,
           padding: layout.space.lg,
         },
@@ -35,7 +36,7 @@ export default function PaywallBenefitItem({
           styles.iconWrap,
           {
             borderRadius: layout.radius.md,
-            backgroundColor: colors.cardPressed, // subtle tinted background
+            backgroundColor: colors.cardPressed,
           },
         ]}
       >
@@ -82,6 +83,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "flex-start",
     gap: 14,
+    borderWidth: 1,
   },
   compactCard: {
     minHeight: 112,
@@ -91,6 +93,7 @@ const styles = StyleSheet.create({
     height: 40,
     alignItems: "center",
     justifyContent: "center",
+    flexShrink: 0,
   },
   textWrap: {
     flex: 1,
