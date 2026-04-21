@@ -1,4 +1,4 @@
-// app//_layout.tsx
+// app/(tabs)/_layout.tsx
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Tabs, router, usePathname } from "expo-router";
 import {
@@ -107,8 +107,6 @@ export default function TabsLayout() {
     if (!session) return;
     loadUnreadCount();
   }, [session, pathname, loadUnreadCount]);
-
-  const isAdmin = profile?.role === "admin";
 
   useEffect(() => {
     if (authLoading) return;
