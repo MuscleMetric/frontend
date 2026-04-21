@@ -137,7 +137,7 @@ export default function Review() {
     if (loading) return;
     if (!userId) {
       Alert.alert("Please log in", "You must be signed in to create a plan.");
-      router.replace("/(auth)/login");
+      router.replace("/(auth)");
     }
   }, [loading, userId, router]);
 

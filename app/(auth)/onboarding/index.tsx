@@ -56,7 +56,7 @@ export default function OnboardingIndex() {
   useEffect(() => {
     if (!authLoading && !session) {
       Alert.alert("Not signed in", "Please log in again.");
-      router.replace("/(auth)/login");
+      router.replace("/(auth)");
     }
   }, [authLoading, session]);
 
@@ -179,7 +179,7 @@ export default function OnboardingIndex() {
 
     if (!session) {
       Alert.alert("No account connected", "Please sign in again.");
-      router.replace("/(auth)/login");
+      router.replace("/(auth)");
       return;
     }
 

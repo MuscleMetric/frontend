@@ -19,7 +19,7 @@ export default function AuthCallback() {
       const user = userData.user;
 
       if (!session || !user) {
-        router.replace("/(auth)/login");
+        router.replace("/");
         return;
       }
 

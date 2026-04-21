@@ -114,7 +114,7 @@ export default function TabsLayout() {
     if (authLoading) return;
 
     if (!session) {
-      router.replace("/(auth)/login");
+      router.replace("/");
       return;
     }
 

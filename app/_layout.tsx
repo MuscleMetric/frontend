@@ -155,7 +155,7 @@ function RootNavigator() {
     const sub = segs[1] as string | undefined;
 
     if (!session && !inAuth) {
-      router.replace("/(auth)/login");
+      router.replace("/");
       return;
     }
 
