@@ -7,9 +7,9 @@ export default function Index() {
   if (loading) return null;
 
   if (session) {
-    return <Redirect href="/(tabs)" />;
+    return <Redirect href="/" />;
   }
 
   // not logged in → auth
-  return <Redirect href="/(auth)/login" />;
+  return <Redirect href="/" />;
 }

@@ -88,7 +88,7 @@ export default function Stage3FiveWorkoutsIndex() {
       console.error("[stage3] unexpected error:", e);
     }
 
-    router.replace("/(tabs)/workout");
+    router.replace("/workout");
   }
 
   function onPrimary() {

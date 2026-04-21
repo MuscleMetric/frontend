@@ -151,7 +151,8 @@ function RootNavigator() {
     if (!navReady || loading) return;
 
     const segs = segments as string[];
-    const inAuth = segs[0] === "(auth)";
+    const inAuth =
+      segs[0] === "(auth)" || segs[0] === "callback" || segs[0] === "onboarding";
     const sub = segs[1] as string | undefined;
 
     if (!session && !inAuth) {
@@ -161,7 +162,7 @@ function RootNavigator() {
 
     const allowWhileAuthed = sub === "onboarding" || sub === "callback";
     if (session && inAuth && !allowWhileAuthed) {
-      router.replace("/(tabs)");
+      router.replace("/");
     }
   }, [navReady, loading, session, segments, router]);
 

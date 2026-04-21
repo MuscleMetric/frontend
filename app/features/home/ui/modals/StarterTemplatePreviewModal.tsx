@@ -175,7 +175,7 @@ export function StarterTemplatePreviewModal({
       const workoutId = typeof data === "string" ? data : String(data);
 
       router.push({
-        pathname: "/(tabs)/workout",
+        pathname: "/workout",
         params: { workoutId, start: "1" },
       });
 

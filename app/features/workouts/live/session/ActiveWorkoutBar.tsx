@@ -26,8 +26,8 @@ export function ActiveWorkoutBar() {
     return (
       pathname.startsWith("/features/workouts/live") ||
       pathname.startsWith("/features/workouts/review") ||
-      pathname.startsWith("/(auth)") ||
-      pathname.startsWith("/onboarding")
+      pathname.startsWith("/onboarding") ||
+      pathname.startsWith("/callback")
     );
   }, [hasActiveWorkout, loading, pathname]);
 

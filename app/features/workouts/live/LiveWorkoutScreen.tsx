@@ -490,7 +490,7 @@ export default function LiveWorkoutScreen() {
       clearSnapshot();
       await refresh();
 
-      router.replace("/(tabs)/workout");
+      router.replace("/workout");
     } catch (e) {
       console.warn("discardSessionConfirmed failed", e);
     }
@@ -512,7 +512,7 @@ export default function LiveWorkoutScreen() {
   }
 
   function minimizeWorkout() {
-    router.replace("/(tabs)/workout");
+    router.replace("/workout");
   }
 
   function openMoreMenu() {

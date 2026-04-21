@@ -37,7 +37,7 @@ export default function UnlockingInsights(props: UnlockingInsightsProps) {
       console.warn("mark stage2 complete failed", e);
     } finally {
       setLoading(false);
-      router.replace("/(tabs)/workout");
+      router.replace("/workout");
     }
   }
 

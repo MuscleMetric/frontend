@@ -92,7 +92,7 @@ export default function RecentHistoryCard({ data }: { data: ProfileOverview }) {
             Your fitness journey starts here. Complete a workout to see it show up
             here.
           </Text>
-          <Button title="Find a workout" onPress={() => router.push("/(tabs)/workout")} />
+          <Button title="Find a workout" onPress={() => router.push("/workout")} />
         </View>
       ) : (
         <>
