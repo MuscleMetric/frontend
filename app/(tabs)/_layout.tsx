@@ -1,4 +1,4 @@
-// app/(tabs)/_layout.tsx
+// app//_layout.tsx
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Tabs, router, usePathname } from "expo-router";
 import {
@@ -126,14 +126,14 @@ export default function TabsLayout() {
         if (cancelled) return;
 
         if (s1.error) {
-          router.replace("/(auth)/onboarding");
+          router.replace("/onboarding");
           return;
         }
 
         const stage1 = s1.data as unknown as Stage1Status;
 
         if (!stage1?.is_complete) {
-          router.replace("/(auth)/onboarding");
+          router.replace("/onboarding");
           return;
         }
 
@@ -310,7 +310,7 @@ export default function TabsLayout() {
               <Pressable
                 onPress={() =>
                   router.push({
-                    pathname: "/(tabs)/social",
+                    pathname: "/social",
                     params: { openCreate: "1" },
                   })
                 }

@@ -145,7 +145,7 @@ export default function WorkoutHistoryListScreen() {
 
         {!hasAny ? (
           <HistoryEmptyState
-            onStartWorkout={() => router.push("/(tabs)/workout")}
+            onStartWorkout={() => router.push("/workout")}
           />
         ) : (
           groups.map((g) => (

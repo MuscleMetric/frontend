@@ -59,7 +59,7 @@ export default function AuthIndex() {
   useEffect(() => {
     if (!loading && session) {
       // If auth state is already ready, let callback/profile logic decide the next route.
-      router.replace("/(auth)/callback");
+      router.replace("/callback");
     }
   }, [loading, session]);
 
@@ -91,7 +91,7 @@ export default function AuthIndex() {
       }
 
       // Deep link should already open /callback, but this keeps the flow deterministic.
-      router.replace("/(auth)/callback");
+      router.replace("/callback");
     } catch (e: any) {
       console.warn("Google sign-in failed:", e);
       Alert.alert(
@@ -151,7 +151,7 @@ export default function AuthIndex() {
         }
       }
 
-      router.replace("/(auth)/callback");
+      router.replace("/callback");
     } catch (e: any) {
       if (e?.code === "ERR_REQUEST_CANCELED") {
         return;

@@ -225,7 +225,7 @@ export default function ReviewWorkoutScreen() {
               await dumpLiveStorage("AFTER stop/clear", uid);
 
               // Leave review screen + live screen
-              router.replace("/(tabs)");
+              router.replace("/");
             } catch (e: any) {
               Alert.alert(
                 "Save failed",

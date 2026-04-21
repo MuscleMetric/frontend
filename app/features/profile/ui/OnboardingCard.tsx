@@ -22,14 +22,14 @@ function stepCopy(key: StepKey) {
         title: "Complete your first workout",
         desc: "Log a workout to unlock progress tracking.",
         cta: "Find workout",
-        onPress: () => router.push("/(tabs)/workout"),
+        onPress: () => router.push("/workout"),
       };
     case "follow_official":
       return {
         title: "Follow MuscleMetric",
         desc: "Get updates and featured challenges.",
         cta: "Open Social",
-        onPress: () => router.push("/(tabs)/social"),
+        onPress: () => router.push("/social"),
       };
     default: {
       const _exhaustive: never = key;

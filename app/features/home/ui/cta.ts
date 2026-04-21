@@ -6,12 +6,12 @@ export function performCTA(cta: any) {
 
   switch (cta.action) {
     case "open_workouts_tab":
-      router.push("/(tabs)/workout");
+      router.push("/workout");
       return;
 
     case "start_workout": {
       if (!cta.workout_id) {
-        router.push("/(tabs)/workout");
+        router.push("/workout");
         return;
       }
 
@@ -35,7 +35,7 @@ export function performCTA(cta: any) {
       return;
 
     case "quick_log_workout":
-      router.push("/(tabs)/workout"); // or your "start workout" entry
+      router.push("/workout"); // or your "start workout" entry
       return;
 
     case "set_goal":

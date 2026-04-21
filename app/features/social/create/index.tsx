@@ -204,7 +204,7 @@ export default function CreatePostFlow() {
           workouts={workouts}
           selectedWorkoutId={state.workout?.workoutHistoryId ?? null}
           onSelect={(w) => actions.selectWorkout(w)}
-          onBack={() => router.replace("/(tabs)/social")}
+          onBack={() => router.replace("/social")}
           onNext={async () => {
             const id = state.workout?.workoutHistoryId;
             if (!id) return;
@@ -276,7 +276,7 @@ export default function CreatePostFlow() {
           loadingExercises={loadingPrExercises}
           onBack={
             state.step === "select_pr_exercise"
-              ? () => router.replace("/(tabs)/social")
+              ? () => router.replace("/social")
               : actions.back
           }
           onChangeAudience={actions.setAudience}
@@ -313,8 +313,8 @@ export default function CreatePostFlow() {
 
       <PostSuccessSheet
         visible={state.step === "success"}
-        onClose={() => router.replace("/(tabs)/social")}
-        onViewFeed={() => router.replace("/(tabs)/social")}
+        onClose={() => router.replace("/social")}
+        onViewFeed={() => router.replace("/social")}
         onShareExternally={() => {}}
         postType={state.postType}
         workout={state.workout}
