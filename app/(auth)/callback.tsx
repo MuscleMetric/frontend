@@ -34,7 +34,7 @@ export default function AuthCallback() {
       }
 
       if (profile) {
-        router.replace("/");
+        router.replace("/(tabs)");
       } else {
         router.replace("/onboarding");
       }
