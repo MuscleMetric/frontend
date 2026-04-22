@@ -14,6 +14,7 @@ import * as WebBrowser from "expo-web-browser";
 import * as AppleAuthentication from "expo-apple-authentication";
 import * as Crypto from "expo-crypto";
 import { router } from "expo-router";
+import Svg, { Path } from "react-native-svg";
 
 import { supabase } from "../../lib/supabase";
 import { useAppTheme } from "../../lib/useAppTheme";
@@ -58,11 +59,11 @@ export default function AuthIndex() {
 
   useEffect(() => {
     if (!loading && session) {
-      // If auth state is already ready, let callback/profile logic decide the next route.
       router.replace("/callback");
     }
   }, [loading, session]);
 
+  // ✅ FIXED GOOGLE FLOW
   async function signInWithGoogle() {
     try {
       setLoadingProvider("google");
@@ -85,20 +86,35 @@ export default function AuthIndex() {
         redirectTo,
       );
 
-      if (result.type === "cancel" || result.type === "dismiss") {
-        return;
-      }
+      if (result.type === "cancel" || result.type === "dismiss") return;
 
-      if (result.type !== "success") {
+      if (result.type !== "success" || !result.url) {
         throw new Error("Google sign-in did not complete.");
       }
 
-      // Deep link should already open /callback, but this keeps the flow deterministic.
+      const url = new URL(result.url);
+      const code = url.searchParams.get("code");
+      const errorCode = url.searchParams.get("error_code");
+      const errorDescription = url.searchParams.get("error_description");
+
+      if (errorCode) {
+        throw new Error(errorDescription ?? errorCode);
+      }
+
+      if (!code) {
+        throw new Error("Google callback did not include auth code.");
+      }
+
+      const { error: exchangeError } =
+        await supabase.auth.exchangeCodeForSession(code);
+
+      if (exchangeError) throw exchangeError;
+
       router.replace("/callback");
     } catch (e: any) {
-      console.warn("Google sign-in failed:", e);
+      console.warn("[Google] sign-in failed", e);
       Alert.alert(
-        "Sign in failed",
+        "Google sign-in failed",
         e?.message ?? "Could not continue with Google.",
       );
     } finally {
@@ -116,113 +132,34 @@ export default function AuthIndex() {
         rawNonce,
       );
 
-      console.log("[Apple] starting native sign-in", {
-        appleAvailable,
-        platform: Platform.OS,
-      });
-
-      let credential;
-      try {
-        credential = await AppleAuthentication.signInAsync({
-          requestedScopes: [
-            AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
-            AppleAuthentication.AppleAuthenticationScope.EMAIL,
-          ],
-          nonce: hashedNonce,
-        });
-      } catch (nativeErr: any) {
-        console.warn("[Apple] native signInAsync failed", {
-          code: nativeErr?.code ?? null,
-          message: nativeErr?.message ?? null,
-          name: nativeErr?.name ?? null,
-          domain: nativeErr?.domain ?? null,
-          nativeError:
-            nativeErr?.nativeError ??
-            nativeErr?.userInfo ??
-            nativeErr?.cause ??
-            null,
-          fullError: nativeErr,
-        });
-        throw nativeErr;
-      }
-
-      console.log("[Apple] native credential received", {
-        user: credential.user,
-        email: credential.email,
-        hasIdentityToken: !!credential.identityToken,
-        hasAuthorizationCode: !!credential.authorizationCode,
-        realUserStatus: credential.realUserStatus,
-        fullName: credential.fullName,
+      let credential = await AppleAuthentication.signInAsync({
+        requestedScopes: [
+          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+          AppleAuthentication.AppleAuthenticationScope.EMAIL,
+        ],
+        nonce: hashedNonce,
       });
 
       if (!credential.identityToken) {
         throw new Error("Apple did not return an identity token.");
       }
 
-      const { data, error } = await supabase.auth.signInWithIdToken({
+      const { error } = await supabase.auth.signInWithIdToken({
         provider: "apple",
         token: credential.identityToken,
         nonce: rawNonce,
       });
 
-      console.log("[Apple] Supabase signInWithIdToken result", {
-        hasSession: !!data?.session,
-        hasUser: !!data?.user,
-        errorCode: error?.code,
-        errorMessage: error?.message,
-        errorName: error?.name,
-        errorStatus: (error as any)?.status,
-      });
-
       if (error) throw error;
-
-      if (credential.fullName) {
-        const fullName = [
-          credential.fullName.givenName,
-          credential.fullName.middleName,
-          credential.fullName.familyName,
-        ]
-          .filter(Boolean)
-          .join(" ")
-          .trim();
-
-        if (fullName) {
-          const { error: updateError } = await supabase.auth.updateUser({
-            data: {
-              full_name: fullName,
-              given_name: credential.fullName.givenName ?? null,
-              family_name: credential.fullName.familyName ?? null,
-            },
-          });
-
-          if (updateError) {
-            console.warn("[Apple] updateUser failed", {
-              code: updateError.code,
-              message: updateError.message,
-              name: updateError.name,
-              status: (updateError as any)?.status,
-            });
-          }
-        }
-      }
 
       router.replace("/callback");
     } catch (e: any) {
-      const code = e?.code ?? "UNKNOWN";
-      const message = e?.message ?? "Could not continue with Apple.";
+      if (e?.code === "ERR_REQUEST_CANCELED") return;
 
-      console.warn("[Apple] sign-in failed", {
-        code,
-        message,
-        name: e?.name ?? null,
-        domain: e?.domain ?? null,
-        nativeError: e?.nativeError ?? e?.userInfo ?? e?.cause ?? null,
-        fullError: e,
-      });
-
-      if (code === "ERR_REQUEST_CANCELED") return;
-
-      Alert.alert("Apple sign-in failed", `${code}: ${message}`);
+      Alert.alert(
+        "Apple sign-in failed",
+        e?.message ?? "Could not continue with Apple.",
+      );
     } finally {
       setLoadingProvider(null);
     }
@@ -235,14 +172,14 @@ export default function AuthIndex() {
         Continue with Apple or Google to create or access your account.
       </Text>
 
-      {Platform.OS === "ios" && appleAvailable ? (
-        <View style={styles.appleButtonWrap}>
+      {Platform.OS === "ios" && appleAvailable && (
+        <View style={styles.appleWrap}>
           <AppleAuthentication.AppleAuthenticationButton
             buttonType={
               AppleAuthentication.AppleAuthenticationButtonType.CONTINUE
             }
             buttonStyle={
-              colors.bg === "#000" || colors.text === "#fff"
+              colors.bg === "#000"
                 ? AppleAuthentication.AppleAuthenticationButtonStyle.WHITE
                 : AppleAuthentication.AppleAuthenticationButtonStyle.BLACK
             }
@@ -250,39 +187,24 @@ export default function AuthIndex() {
             style={styles.appleButton}
             onPress={signInWithApple}
           />
-          {loadingProvider === "apple" && (
-            <View style={styles.inlineLoadingRow}>
-              <ActivityIndicator />
-              <Text style={styles.inlineLoadingText}>
-                Connecting with Apple…
-              </Text>
-            </View>
-          )}
         </View>
-      ) : null}
+      )}
 
+      {/* ✅ GOOGLE BUTTON (AUTHENTIC STYLE) */}
       <Pressable
         onPress={signInWithGoogle}
-        style={[
-          styles.button,
-          loadingProvider ? styles.buttonDisabled : undefined,
-        ]}
+        style={styles.googleButton}
         disabled={!!loadingProvider}
       >
         {loadingProvider === "google" ? (
           <ActivityIndicator />
         ) : (
-          <Text style={styles.buttonText}>Continue with Google</Text>
+          <View style={styles.googleContent}>
+            <GoogleLogo />
+            <Text style={styles.googleText}>Continue with Google</Text>
+          </View>
         )}
       </Pressable>
-
-      <View style={styles.infoCard}>
-        <Text style={styles.infoTitle}>One account flow</Text>
-        <Text style={styles.infoText}>
-          New users will continue to onboarding. Returning users will go
-          straight back into the app.
-        </Text>
-      </View>
 
       <Text style={styles.footer}>
         By continuing, you agree to MuscleMetric’s Terms and Privacy Policy.
@@ -291,6 +213,19 @@ export default function AuthIndex() {
   );
 }
 
+/* ---------------- GOOGLE LOGO ---------------- */
+function GoogleLogo() {
+  return (
+    <Svg width={18} height={18} viewBox="0 0 48 48">
+      <Path fill="#EA4335" d="M24 9.5c3.2 0 6 1.1 8.2 3.2l6.1-6.1C34.6 2.5 29.7 0 24 0 14.7 0 6.7 5.4 2.9 13.3l7.1 5.5C12.2 13.2 17.6 9.5 24 9.5z"/>
+      <Path fill="#4285F4" d="M46.1 24.5c0-1.6-.1-3.1-.4-4.5H24v8.5h12.4c-.5 2.7-2 5-4.2 6.6l6.5 5c3.8-3.5 6.4-8.6 6.4-15.6z"/>
+      <Path fill="#FBBC05" d="M10 28.8c-1-2.7-1-5.6 0-8.3l-7.1-5.5C1 18.2 0 21 0 24s1 5.8 2.9 8.9l7.1-4.1z"/>
+      <Path fill="#34A853" d="M24 48c6.5 0 12-2.1 16-5.8l-6.5-5c-2 1.4-4.6 2.2-9.5 2.2-6.4 0-11.8-3.7-13.8-9.3l-7.1 4.1C6.7 42.6 14.7 48 24 48z"/>
+    </Svg>
+  );
+}
+
+/* ---------------- STYLES ---------------- */
 const makeStyles = (colors: any) =>
   StyleSheet.create({
     container: {
@@ -311,66 +246,39 @@ const makeStyles = (colors: any) =>
       color: colors.subtle,
       textAlign: "center",
       marginBottom: 28,
-      lineHeight: 22,
     },
-    appleButtonWrap: {
+
+    appleWrap: {
       marginBottom: 12,
     },
     appleButton: {
       width: "100%",
       height: 50,
     },
-    button: {
-      backgroundColor: colors.primary,
-      paddingVertical: 14,
+
+    googleButton: {
+      backgroundColor: "#fff",
       borderRadius: 12,
+      paddingVertical: 14,
       alignItems: "center",
-      justifyContent: "center",
-      marginBottom: 12,
+      borderWidth: 1,
+      borderColor: "#ddd",
     },
-    buttonDisabled: {
-      opacity: 0.7,
-    },
-    buttonText: {
-      color: colors.onPrimary ?? "#fff",
-      fontWeight: "700",
-      fontSize: 16,
-    },
-    inlineLoadingRow: {
+    googleContent: {
       flexDirection: "row",
       alignItems: "center",
-      justifyContent: "center",
-      gap: 8,
-      marginTop: 10,
+      gap: 10,
     },
-    inlineLoadingText: {
-      color: colors.subtle,
-      fontSize: 13,
+    googleText: {
+      fontSize: 16,
+      fontWeight: "600",
+      color: "#000",
     },
-    infoCard: {
-      marginTop: 10,
-      padding: 14,
-      borderRadius: 12,
-      backgroundColor: colors.surface,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: colors.border,
-    },
-    infoTitle: {
-      color: colors.text,
-      fontSize: 14,
-      fontWeight: "700",
-      marginBottom: 4,
-    },
-    infoText: {
-      color: colors.text,
-      fontSize: 13,
-      lineHeight: 19,
-    },
+
     footer: {
       marginTop: 20,
       textAlign: "center",
       color: colors.subtle,
       fontSize: 12,
-      lineHeight: 18,
     },
   });
