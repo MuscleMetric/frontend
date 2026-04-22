@@ -80,7 +80,10 @@ export default function AuthIndex() {
       if (error) throw error;
       if (!data?.url) throw new Error("No Google auth URL returned.");
 
-      const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
+      const result = await WebBrowser.openAuthSessionAsync(
+        data.url,
+        redirectTo,
+      );
 
       if (result.type === "cancel" || result.type === "dismiss") {
         return;
@@ -96,7 +99,7 @@ export default function AuthIndex() {
       console.warn("Google sign-in failed:", e);
       Alert.alert(
         "Sign in failed",
-        e?.message ?? "Could not continue with Google."
+        e?.message ?? "Could not continue with Google.",
       );
     } finally {
       setLoadingProvider(null);
@@ -107,29 +110,72 @@ export default function AuthIndex() {
     try {
       setLoadingProvider("apple");
 
-      const nonce = Crypto.randomUUID();
+      const rawNonce = Crypto.randomUUID();
+      const hashedNonce = await Crypto.digestStringAsync(
+        Crypto.CryptoDigestAlgorithm.SHA256,
+        rawNonce,
+      );
 
-      const credential = await AppleAuthentication.signInAsync({
-        requestedScopes: [
-          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
-          AppleAuthentication.AppleAuthenticationScope.EMAIL,
-        ],
-        nonce,
+      console.log("[Apple] starting native sign-in", {
+        appleAvailable,
+        platform: Platform.OS,
+      });
+
+      let credential;
+      try {
+        credential = await AppleAuthentication.signInAsync({
+          requestedScopes: [
+            AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+            AppleAuthentication.AppleAuthenticationScope.EMAIL,
+          ],
+          nonce: hashedNonce,
+        });
+      } catch (nativeErr: any) {
+        console.warn("[Apple] native signInAsync failed", {
+          code: nativeErr?.code ?? null,
+          message: nativeErr?.message ?? null,
+          name: nativeErr?.name ?? null,
+          domain: nativeErr?.domain ?? null,
+          nativeError:
+            nativeErr?.nativeError ??
+            nativeErr?.userInfo ??
+            nativeErr?.cause ??
+            null,
+          fullError: nativeErr,
+        });
+        throw nativeErr;
+      }
+
+      console.log("[Apple] native credential received", {
+        user: credential.user,
+        email: credential.email,
+        hasIdentityToken: !!credential.identityToken,
+        hasAuthorizationCode: !!credential.authorizationCode,
+        realUserStatus: credential.realUserStatus,
+        fullName: credential.fullName,
       });
 
       if (!credential.identityToken) {
         throw new Error("Apple did not return an identity token.");
       }
 
-      const { error } = await supabase.auth.signInWithIdToken({
+      const { data, error } = await supabase.auth.signInWithIdToken({
         provider: "apple",
         token: credential.identityToken,
-        nonce,
+        nonce: rawNonce,
+      });
+
+      console.log("[Apple] Supabase signInWithIdToken result", {
+        hasSession: !!data?.session,
+        hasUser: !!data?.user,
+        errorCode: error?.code,
+        errorMessage: error?.message,
+        errorName: error?.name,
+        errorStatus: (error as any)?.status,
       });
 
       if (error) throw error;
 
-      // Apple only gives name on first sign-in. Save it while we have it.
       if (credential.fullName) {
         const fullName = [
           credential.fullName.givenName,
@@ -141,27 +187,42 @@ export default function AuthIndex() {
           .trim();
 
         if (fullName) {
-          await supabase.auth.updateUser({
+          const { error: updateError } = await supabase.auth.updateUser({
             data: {
               full_name: fullName,
               given_name: credential.fullName.givenName ?? null,
               family_name: credential.fullName.familyName ?? null,
             },
           });
+
+          if (updateError) {
+            console.warn("[Apple] updateUser failed", {
+              code: updateError.code,
+              message: updateError.message,
+              name: updateError.name,
+              status: (updateError as any)?.status,
+            });
+          }
         }
       }
 
       router.replace("/callback");
     } catch (e: any) {
-      if (e?.code === "ERR_REQUEST_CANCELED") {
-        return;
-      }
+      const code = e?.code ?? "UNKNOWN";
+      const message = e?.message ?? "Could not continue with Apple.";
 
-      console.warn("Apple sign-in failed:", e);
-      Alert.alert(
-        "Sign in failed",
-        e?.message ?? "Could not continue with Apple."
-      );
+      console.warn("[Apple] sign-in failed", {
+        code,
+        message,
+        name: e?.name ?? null,
+        domain: e?.domain ?? null,
+        nativeError: e?.nativeError ?? e?.userInfo ?? e?.cause ?? null,
+        fullError: e,
+      });
+
+      if (code === "ERR_REQUEST_CANCELED") return;
+
+      Alert.alert("Apple sign-in failed", `${code}: ${message}`);
     } finally {
       setLoadingProvider(null);
     }
@@ -177,10 +238,11 @@ export default function AuthIndex() {
       {Platform.OS === "ios" && appleAvailable ? (
         <View style={styles.appleButtonWrap}>
           <AppleAuthentication.AppleAuthenticationButton
-            buttonType={AppleAuthentication.AppleAuthenticationButtonType.CONTINUE}
+            buttonType={
+              AppleAuthentication.AppleAuthenticationButtonType.CONTINUE
+            }
             buttonStyle={
-              colors.bg === "#000" ||
-              colors.text === "#fff"
+              colors.bg === "#000" || colors.text === "#fff"
                 ? AppleAuthentication.AppleAuthenticationButtonStyle.WHITE
                 : AppleAuthentication.AppleAuthenticationButtonStyle.BLACK
             }
@@ -217,8 +279,8 @@ export default function AuthIndex() {
       <View style={styles.infoCard}>
         <Text style={styles.infoTitle}>One account flow</Text>
         <Text style={styles.infoText}>
-          New users will continue to onboarding. Returning users will go straight
-          back into the app.
+          New users will continue to onboarding. Returning users will go
+          straight back into the app.
         </Text>
       </View>
 
