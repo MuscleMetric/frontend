@@ -201,7 +201,7 @@ export default function WorkoutOverviewScreen() {
 
         <Button
           title="Back to Workouts"
-          onPress={() => router.push("/(tabs)/workout")}
+          onPress={() => router.push("/workout")}
         />
       </View>
     );

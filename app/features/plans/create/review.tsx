@@ -137,7 +137,7 @@ export default function Review() {
     if (loading) return;
     if (!userId) {
       Alert.alert("Please log in", "You must be signed in to create a plan.");
-      router.replace("/(auth)/login");
+      router.replace("/");
     }
   }, [loading, userId, router]);
 
@@ -269,7 +269,7 @@ export default function Review() {
       }
 
       Alert.alert("Plan created", "Your plan has been saved.", [
-        { text: "OK", onPress: () => router.replace("/(tabs)/workout") },
+        { text: "OK", onPress: () => router.replace("/workout") },
       ]);
     } catch (e: any) {
       console.error("Unexpected error creating plan:", e);

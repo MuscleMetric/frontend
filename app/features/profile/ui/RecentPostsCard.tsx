@@ -72,7 +72,7 @@ export default function RecentPostsCard({ data }: { data: ProfileOverview }) {
           <Text style={styles.emptyText}>
             Share your first workout to see it in your feed.
           </Text>
-          <Button title="Go to Social" onPress={() => router.push("/(tabs)/social")} />
+          <Button title="Go to Social" onPress={() => router.push("/social")} />
         </View>
       ) : (
         <>
@@ -91,7 +91,7 @@ export default function RecentPostsCard({ data }: { data: ProfileOverview }) {
                   rightText={right}
                   onPress={() =>
                     router.push({
-                      pathname: "/(tabs)/social",
+                      pathname: "/social",
                       params: { focusPostId: p.post_id },
                     })
                   }
@@ -104,7 +104,7 @@ export default function RecentPostsCard({ data }: { data: ProfileOverview }) {
             <Button
               variant="secondary"
               title="View social feed"
-              onPress={() => router.push("/(tabs)/social")}
+              onPress={() => router.push("/social")}
             />
           </View>
         </>

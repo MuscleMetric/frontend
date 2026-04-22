@@ -6,6 +6,7 @@ import {
   useRouter,
   useSegments,
   useRootNavigationState,
+  usePathname,
 } from "expo-router";
 import * as Linking from "expo-linking";
 import { ThemeProvider } from "@react-navigation/native";
@@ -64,6 +65,8 @@ function RootNavigator() {
 
   const navState = useRootNavigationState();
   const navReady = !!navState?.key;
+
+  const pathname = usePathname();
 
   // Route breadcrumbs
   useEffect(() => {
@@ -150,20 +153,26 @@ function RootNavigator() {
   useEffect(() => {
     if (!navReady || loading) return;
 
-    const segs = segments as string[];
-    const inAuth = segs[0] === "(auth)";
-    const sub = segs[1] as string | undefined;
+    const isPublicAuthPath =
+      pathname === "/" ||
+      pathname === "/callback" ||
+      pathname.startsWith("/onboarding");
 
-    if (!session && !inAuth) {
-      router.replace("/(auth)/login");
+    if (!session) {
+      if (!isPublicAuthPath) {
+        router.replace("/");
+      }
       return;
     }
 
-    const allowWhileAuthed = sub === "onboarding" || sub === "callback";
-    if (session && inAuth && !allowWhileAuthed) {
-      router.replace("/(tabs)");
+    // Let callback and onboarding finish naturally
+    if (pathname === "/callback" || pathname.startsWith("/onboarding")) {
+      return;
     }
-  }, [navReady, loading, session, segments, router]);
+
+    // Do NOT redirect authed users away from "/"
+    // The tabs/index route can own "/"
+  }, [navReady, loading, session, pathname, router]);
 
   const showSplash = !navReady || loading;
 

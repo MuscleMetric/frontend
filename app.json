@@ -4,7 +4,8 @@
     "slug": "musclemetric",
     "scheme": "musclemetric",
     "ios": {
-      "bundleIdentifier": "com.musclemetric.app"
+      "bundleIdentifier": "com.musclemetric.app",
+      "usesAppleSignIn": true
     },
     "version": "1.0.4",
     "newArchEnabled": true,
@@ -33,7 +34,11 @@
       },
       "router": {}
     },
-    "plugins": ["expo-notifications"],
+    "plugins": [
+      "expo-notifications",
+      "expo-apple-authentication",
+      "expo-web-browser"
+    ],
     "android": {
       "package": "com.musclemetric.app"
     }

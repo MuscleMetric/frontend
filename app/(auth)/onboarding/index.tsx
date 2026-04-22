@@ -56,7 +56,7 @@ export default function OnboardingIndex() {
   useEffect(() => {
     if (!authLoading && !session) {
       Alert.alert("Not signed in", "Please log in again.");
-      router.replace("/(auth)/login");
+      router.replace("/");
     }
   }, [authLoading, session]);
 
@@ -148,7 +148,7 @@ export default function OnboardingIndex() {
     }
     if (step === 4) {
       // if user is on ready screen, don't go back into form
-      router.replace("/(tabs)");
+      router.replace("/");
       return;
     }
     setErrors({});
@@ -179,7 +179,7 @@ export default function OnboardingIndex() {
 
     if (!session) {
       Alert.alert("No account connected", "Please sign in again.");
-      router.replace("/(auth)/login");
+      router.replace("/");
       return;
     }
 
@@ -272,7 +272,7 @@ export default function OnboardingIndex() {
   }
 
   function start() {
-    router.replace("/(tabs)");
+    router.replace("/");
   }
 
   if (authLoading) {

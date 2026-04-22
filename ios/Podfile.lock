@@ -204,6 +204,8 @@ PODS:
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
     - Yoga
+  - ExpoAppleAuthentication (8.0.8):
+    - ExpoModulesCore
   - ExpoAsset (12.0.12):
     - ExpoModulesCore
   - ExpoBackgroundFetch (14.0.9):
@@ -211,6 +213,8 @@ PODS:
   - ExpoBlur (15.0.8):
     - ExpoModulesCore
   - ExpoClipboard (8.0.8):
+    - ExpoModulesCore
+  - ExpoCrypto (15.0.8):
     - ExpoModulesCore
   - ExpoDevice (8.0.10):
     - ExpoModulesCore
@@ -272,6 +276,8 @@ PODS:
     - ExpoModulesCore
   - ExpoSplashScreen (31.0.13):
     - ExpoModulesCore
+  - ExpoWebBrowser (15.0.10):
+    - ExpoModulesCore
   - EXTaskManager (14.0.9):
     - ExpoModulesCore
     - UMAppLoader
@@ -281,8 +287,8 @@ PODS:
   - hermes-engine (0.81.5):
     - hermes-engine/Pre-built (= 0.81.5)
   - hermes-engine/Pre-built (0.81.5)
-  - libavif/core (0.11.1)
-  - libavif/libdav1d (0.11.1):
+  - libavif/core (1.0.0)
+  - libavif/libdav1d (1.0.0):
     - libavif/core
     - libdav1d (>= 0.6.0)
   - libdav1d (1.2.0)
@@ -2375,9 +2381,9 @@ PODS:
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
     - Yoga
-  - SDWebImage (5.21.5):
-    - SDWebImage/Core (= 5.21.5)
-  - SDWebImage/Core (5.21.5)
+  - SDWebImage (5.21.7):
+    - SDWebImage/Core (= 5.21.7)
+  - SDWebImage/Core (5.21.7)
   - SDWebImageAVIFCoder (0.11.1):
     - libavif/core (>= 0.11.0)
     - SDWebImage (~> 5.10)
@@ -2401,10 +2407,12 @@ DEPENDENCIES:
   - expo-dev-launcher (from `../node_modules/expo-dev-launcher`)
   - expo-dev-menu (from `../node_modules/expo-dev-menu`)
   - expo-dev-menu-interface (from `../node_modules/expo-dev-menu-interface/ios`)
+  - ExpoAppleAuthentication (from `../node_modules/expo-apple-authentication/ios`)
   - ExpoAsset (from `../node_modules/expo-asset/ios`)
   - ExpoBackgroundFetch (from `../node_modules/expo-background-fetch/ios`)
   - ExpoBlur (from `../node_modules/expo-blur/ios`)
   - ExpoClipboard (from `../node_modules/expo-clipboard/ios`)
+  - ExpoCrypto (from `../node_modules/expo-crypto/ios`)
   - ExpoDevice (from `../node_modules/expo-device/ios`)
   - ExpoFileSystem (from `../node_modules/expo-file-system/ios`)
   - ExpoFont (from `../node_modules/expo-font/ios`)
@@ -2421,6 +2429,7 @@ DEPENDENCIES:
   - ExpoSharing (from `../node_modules/expo-sharing/ios`)
   - ExpoSMS (from `../node_modules/expo-sms/ios`)
   - ExpoSplashScreen (from `../node_modules/expo-splash-screen/ios`)
+  - ExpoWebBrowser (from `../node_modules/expo-web-browser/ios`)
   - EXTaskManager (from `../node_modules/expo-task-manager/ios`)
   - EXUpdatesInterface (from `../node_modules/expo-updates-interface/ios`)
   - FBLazyVector (from `../node_modules/react-native/Libraries/FBLazyVector`)
@@ -2540,6 +2549,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/expo-dev-menu"
   expo-dev-menu-interface:
     :path: "../node_modules/expo-dev-menu-interface/ios"
+  ExpoAppleAuthentication:
+    :path: "../node_modules/expo-apple-authentication/ios"
   ExpoAsset:
     :path: "../node_modules/expo-asset/ios"
   ExpoBackgroundFetch:
@@ -2548,6 +2559,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/expo-blur/ios"
   ExpoClipboard:
     :path: "../node_modules/expo-clipboard/ios"
+  ExpoCrypto:
+    :path: "../node_modules/expo-crypto/ios"
   ExpoDevice:
     :path: "../node_modules/expo-device/ios"
   ExpoFileSystem:
@@ -2580,6 +2593,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/expo-sms/ios"
   ExpoSplashScreen:
     :path: "../node_modules/expo-splash-screen/ios"
+  ExpoWebBrowser:
+    :path: "../node_modules/expo-web-browser/ios"
   EXTaskManager:
     :path: "../node_modules/expo-task-manager/ios"
   EXUpdatesInterface:
@@ -2759,10 +2774,12 @@ SPEC CHECKSUMS:
   expo-dev-launcher: a4f4cdef064ab1fb8621e5b8c7c457cd6e9568c3
   expo-dev-menu: 05b18812110c175814c6af0d09dd658abcc5e00d
   expo-dev-menu-interface: 600df12ea01efecdd822daaf13cc0ac091775533
+  ExpoAppleAuthentication: 9413ae9a5e631a424cc04c1b13b0694dbab7d594
   ExpoAsset: f867e55ceb428aab99e1e8c082b5aee7c159ea18
   ExpoBackgroundFetch: 1631d1fbf59e6ad98ca83b6780ae3a35f678f632
   ExpoBlur: b90747a3f22a8b6ceffd9cb0dc41a4184efdc656
   ExpoClipboard: b36b287d8356887844bb08ed5c84b5979bb4dd1e
+  ExpoCrypto: b6105ebaa15d6b38a811e71e43b52cd934945322
   ExpoDevice: 6327c3c200816795708885adf540d26ecab83d1a
   ExpoFileSystem: 858a44267a3e6e9057e0888ad7c7cfbf55d52063
   ExpoFont: f543ce20a228dd702813668b1a07b46f51878d47
@@ -2779,11 +2796,12 @@ SPEC CHECKSUMS:
   ExpoSharing: 0d983394ed4a80334bab5a0d5384f75710feb7e8
   ExpoSMS: 34f6c0d30e6f87c53fd3ab137bb862b61a58d44e
   ExpoSplashScreen: bc3cffefca2716e5f22350ca109badd7e50ec14d
+  ExpoWebBrowser: 17b064c621789e41d4816c95c93f429b84971f52
   EXTaskManager: 6f1a66e4c8cc6df6e24c3d90928704bc3013eae5
   EXUpdatesInterface: 5adf50cb41e079c861da6d9b4b954c3db9a50734
   FBLazyVector: e95a291ad2dadb88e42b06e0c5fb8262de53ec12
   hermes-engine: 9f4dfe93326146a1c99eb535b1cb0b857a3cd172
-  libavif: 84bbb62fb232c3018d6f1bab79beea87e35de7b7
+  libavif: 5f8e715bea24debec477006f21ef9e95432e254d
   libdav1d: 23581a4d8ec811ff171ed5e2e05cd27bad64c39f
   libwebp: 02b23773aedb6ff1fd38cec7a77b81414c6842a8
   PurchasesHybridCommon: ecd9d7c586287625f1225b8de5e24c1021502270
@@ -2865,7 +2883,7 @@ SPEC CHECKSUMS:
   RNSentry: 41979b419908128847ef662cc130a400b7576fa9
   RNSVG: 31d6639663c249b7d5abc9728dde2041eb2a3c34
   RNWorklets: 76fce72926e28e304afb44f0da23b2d24f2c1fa0
-  SDWebImage: e9c98383c7572d713c1a0d7dd2783b10599b9838
+  SDWebImage: e9fc87c1aab89a8ab1bbd74eba378c6f53be8abf
   SDWebImageAVIFCoder: afe194a084e851f70228e4be35ef651df0fc5c57
   SDWebImageSVGCoder: 15a300a97ec1c8ac958f009c02220ac0402e936c
   SDWebImageWebPCoder: e38c0a70396191361d60c092933e22c20d5b1380
@@ -2873,6 +2891,6 @@ SPEC CHECKSUMS:
   UMAppLoader: 145337733539f9af9b3dd97eeaa7f3bd97cacb23
   Yoga: 5934998fbeaef7845dbf698f698518695ab4cd1a
 
-PODFILE CHECKSUM: 31b3910e2d4557078c102fbaba48ac045b85b608
+PODFILE CHECKSUM: d18417ffa8635af0fdf823f579df5454401e3ade
 
 COCOAPODS: 1.16.2

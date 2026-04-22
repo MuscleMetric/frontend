@@ -21,7 +21,7 @@ export function AuthRequiredState({
         title={title}
         message={message}
         ctaLabel={ctaLabel}
-        onCta={onCta ?? (() => router.replace("/(auth)/login"))}
+        onCta={onCta ?? (() => router.replace("/(auth)"))}
       />
     </View>
   );

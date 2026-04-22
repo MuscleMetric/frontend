@@ -19,7 +19,7 @@ export default function AuthCallback() {
       const user = userData.user;
 
       if (!session || !user) {
-        router.replace("/(auth)/login");
+        router.replace("/");
         return;
       }
 
@@ -36,7 +36,7 @@ export default function AuthCallback() {
       if (profile) {
         router.replace("/(tabs)");
       } else {
-        router.replace("/(auth)/onboarding");
+        router.replace("/onboarding");
       }
     }
 

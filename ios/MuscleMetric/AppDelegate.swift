@@ -1,4 +1,3 @@
-import UIKit
 import Expo
 import React
 import ReactAppDependencyProvider
@@ -9,22 +8,6 @@ public class AppDelegate: ExpoAppDelegate {
 
   var reactNativeDelegate: ExpoReactNativeFactoryDelegate?
   var reactNativeFactory: RCTReactNativeFactory?
-
-  // 🔹 Helper to choose the correct icon based on light / dark mode
-  private func updateAppIconForCurrentAppearance() {
-    guard UIApplication.shared.supportsAlternateIcons else { return }
-
-    let style = UIScreen.main.traitCollection.userInterfaceStyle
-    let targetName: String? = (style == .dark) ? "AppIconDark" : nil  // nil = primary "AppIcon"
-
-    if UIApplication.shared.alternateIconName != targetName {
-      UIApplication.shared.setAlternateIconName(targetName) { error in
-        if let error = error {
-          NSLog("Failed to change app icon: \(error.localizedDescription)")
-        }
-      }
-    }
-  }
 
   public override func application(
     _ application: UIApplication,
@@ -46,10 +29,7 @@ public class AppDelegate: ExpoAppDelegate {
       launchOptions: launchOptions)
 #endif
 
-    // 🔥 Call AFTER RN setup but BEFORE returning
-    let result = super.application(application, didFinishLaunchingWithOptions: launchOptions)
-    updateAppIconForCurrentAppearance()
-    return result
+    return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 
   // Linking API
