@@ -207,7 +207,28 @@ export default function AuthIndex() {
       </Pressable>
 
       <Text style={styles.footer}>
-        By continuing, you agree to MuscleMetric’s Terms and Privacy Policy.
+        By continuing, you agree to{" "}
+        <Text
+          style={{ textDecorationLine: "underline" }}
+          onPress={() =>
+            Linking.openURL(
+              "https://musclemetric.github.io/musclemetric-legal/terms.html",
+            )
+          }
+        >
+          Terms of Use
+        </Text>{" "}
+        and{" "}
+        <Text
+          style={{ textDecorationLine: "underline" }}
+          onPress={() =>
+            Linking.openURL(
+              "https://musclemetric.github.io/musclemetric-legal/privacy.html",
+            )
+          }
+        >
+          Privacy Policy
+        </Text>
       </Text>
     </View>
   );
@@ -217,10 +238,22 @@ export default function AuthIndex() {
 function GoogleLogo() {
   return (
     <Svg width={18} height={18} viewBox="0 0 48 48">
-      <Path fill="#EA4335" d="M24 9.5c3.2 0 6 1.1 8.2 3.2l6.1-6.1C34.6 2.5 29.7 0 24 0 14.7 0 6.7 5.4 2.9 13.3l7.1 5.5C12.2 13.2 17.6 9.5 24 9.5z"/>
-      <Path fill="#4285F4" d="M46.1 24.5c0-1.6-.1-3.1-.4-4.5H24v8.5h12.4c-.5 2.7-2 5-4.2 6.6l6.5 5c3.8-3.5 6.4-8.6 6.4-15.6z"/>
-      <Path fill="#FBBC05" d="M10 28.8c-1-2.7-1-5.6 0-8.3l-7.1-5.5C1 18.2 0 21 0 24s1 5.8 2.9 8.9l7.1-4.1z"/>
-      <Path fill="#34A853" d="M24 48c6.5 0 12-2.1 16-5.8l-6.5-5c-2 1.4-4.6 2.2-9.5 2.2-6.4 0-11.8-3.7-13.8-9.3l-7.1 4.1C6.7 42.6 14.7 48 24 48z"/>
+      <Path
+        fill="#EA4335"
+        d="M24 9.5c3.2 0 6 1.1 8.2 3.2l6.1-6.1C34.6 2.5 29.7 0 24 0 14.7 0 6.7 5.4 2.9 13.3l7.1 5.5C12.2 13.2 17.6 9.5 24 9.5z"
+      />
+      <Path
+        fill="#4285F4"
+        d="M46.1 24.5c0-1.6-.1-3.1-.4-4.5H24v8.5h12.4c-.5 2.7-2 5-4.2 6.6l6.5 5c3.8-3.5 6.4-8.6 6.4-15.6z"
+      />
+      <Path
+        fill="#FBBC05"
+        d="M10 28.8c-1-2.7-1-5.6 0-8.3l-7.1-5.5C1 18.2 0 21 0 24s1 5.8 2.9 8.9l7.1-4.1z"
+      />
+      <Path
+        fill="#34A853"
+        d="M24 48c6.5 0 12-2.1 16-5.8l-6.5-5c-2 1.4-4.6 2.2-9.5 2.2-6.4 0-11.8-3.7-13.8-9.3l-7.1 4.1C6.7 42.6 14.7 48 24 48z"
+      />
     </Svg>
   );
 }
