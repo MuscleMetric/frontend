@@ -117,6 +117,7 @@ type RpcResult<T> = {
 export default function TabsLayout() {
   const { colors, typography } = useAppTheme();
   const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const { session, loading: authLoading } = useAuth();
 
   const isWide = width >= 768;
@@ -224,7 +225,9 @@ export default function TabsLayout() {
 
         setChecking(false);
       } catch {
-        if (!cancelled) setChecking(false);
+        if (!cancelled) {
+          setChecking(false);
+        }
       }
     }
 
@@ -279,14 +282,12 @@ export default function TabsLayout() {
           backgroundColor: colors.surface,
           borderTopWidth: StyleSheet.hairlineWidth,
           borderTopColor: colors.border,
-          height: isWide ? 72 : undefined,
-          paddingBottom: isWide ? 12 : undefined,
-          paddingTop: isWide ? 8 : undefined,
+          paddingBottom: insets.bottom > 0 ? insets.bottom : undefined,
         },
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.textMuted,
         tabBarLabelStyle: {
-          fontSize: isWide ? typography.size.meta : typography.size.meta,
+          fontSize: typography.size.meta,
           fontFamily: typography.fontFamily.semibold,
         },
         sceneStyle: { backgroundColor: colors.bg },
