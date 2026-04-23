@@ -328,18 +328,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const sess = error ? null : (data.session ?? null);
         setSession(sess);
 
+        if (!mounted) return;
+        setLoading(false);
+
         if (sess?.user?.id) {
-          await Promise.all([
-            fetchProfile(sess.user.id),
-            fetchEntitlements(sess.user.id),
-          ]);
+          const uid = sess.user.id;
+
+          setTimeout(() => {
+            if (!mounted) return;
+            void fetchProfile(uid);
+            void fetchEntitlements(uid);
+          }, 500);
         } else {
           setProfile(null);
           setEntitlements(null);
         }
-
-        if (!mounted) return;
-        setLoading(false);
       } catch {
         if (!mounted) return;
         setSession(null);
@@ -356,12 +359,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (!mounted) return;
 
         setSession(sess ?? null);
+        setLoading(false);
 
         if (sess?.user?.id) {
-          await Promise.all([
-            fetchProfile(sess.user.id),
-            fetchEntitlements(sess.user.id),
-          ]);
+          const uid = sess.user.id;
+
+          setTimeout(() => {
+            if (!mounted) return;
+            void fetchProfile(uid);
+            void fetchEntitlements(uid);
+          }, 500);
         } else {
           setProfile(null);
           setEntitlements(null);

@@ -8,7 +8,6 @@ import {
   NativeScrollEvent,
   View,
 } from "react-native";
-import { useFocusEffect } from "@react-navigation/native";
 import { router } from "expo-router";
 
 import { useAuth } from "@/lib/authContext";
@@ -50,12 +49,6 @@ export default function WorkoutsHome() {
 
   const { loading, error, data, refetch } = useWorkoutsTab(userId);
   const [createOpen, setCreateOpen] = useState(false);
-
-  useFocusEffect(
-    useCallback(() => {
-      refetch();
-    }, [refetch]),
-  );
 
   if (!userId) return <AuthRequiredState />;
   if (loading) return <LoadingScreen />;

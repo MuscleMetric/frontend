@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Tabs, router, usePathname } from "expo-router";
+import { Tabs, router } from "expo-router";
 import {
   View,
   Text,
@@ -24,6 +24,28 @@ import { useAppTheme } from "../../lib/useAppTheme";
 import { useAuth } from "../../lib/authContext";
 import { supabase } from "../../lib/supabase";
 import { log } from "../../lib/logger";
+
+function withTimeout<T>(
+  promise: PromiseLike<T>,
+  ms: number,
+  label: string,
+): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`${label} timed out after ${ms}ms`));
+    }, ms);
+
+    Promise.resolve(promise)
+      .then((value) => {
+        clearTimeout(timer);
+        resolve(value);
+      })
+      .catch((err) => {
+        clearTimeout(timer);
+        reject(err);
+      });
+  });
+}
 
 function CustomHeader({
   title,
@@ -72,57 +94,85 @@ type OnboardingGateRow = {
   stage3_completed_at: string | null;
 };
 
+type RpcResult<T> = {
+  data: T | null;
+  error: any;
+};
+
 export default function TabsLayout() {
   const { colors, typography } = useAppTheme();
   const { session, loading: authLoading } = useAuth();
-  const pathname = usePathname();
 
   const [checking, setChecking] = useState(true);
   const [unreadCount, setUnreadCount] = useState<number>(0);
 
+  const sessionUserId = session?.user?.id ?? null;
+
   const loadUnreadCount = useCallback(async () => {
-    const res = await supabase.rpc("get_unread_notifications_count_v1");
-
-    log("unread rpc raw:", res.data);
-
-    if (res.error) {
-      log("unread count error:", res.error);
+    if (!sessionUserId) {
       setUnreadCount(0);
       return;
     }
 
-    const raw = res.data;
-    const n = Array.isArray(raw)
-      ? Number(raw[0]?.unread_count ?? 0)
-      : Number((raw as any)?.unread_count ?? 0);
+    try {
+      const res = await supabase.rpc("get_unread_notifications_count_v1");
 
-    setUnreadCount(Number.isFinite(n) ? n : 0);
-  }, []);
+      log("unread rpc raw:", res.data);
+
+      if (res.error) {
+        log("unread count error:", res.error);
+        setUnreadCount(0);
+        return;
+      }
+
+      const raw = res.data;
+      const n = Array.isArray(raw)
+        ? Number(raw[0]?.unread_count ?? 0)
+        : Number((raw as any)?.unread_count ?? 0);
+
+      setUnreadCount(Number.isFinite(n) ? n : 0);
+    } catch (err) {
+      console.warn("[tabs] unread count crash", err);
+      setUnreadCount(0);
+    }
+  }, [sessionUserId]);
 
   useEffect(() => {
-    if (!session) return;
+    if (!sessionUserId) return;
     void loadUnreadCount();
-  }, [session, pathname, loadUnreadCount]);
+  }, [sessionUserId, loadUnreadCount]);
 
   useEffect(() => {
-    if (authLoading) return;
+    console.log("[tabs] gate effect fired", {
+      authLoading,
+      hasSession: !!session,
+      sessionUserId,
+    });
+
+    if (authLoading) {
+      return;
+    }
 
     if (!session) {
+      console.log("[tabs] no session -> go login");
+      setChecking(false);
       router.replace("/login");
       return;
     }
 
     let cancelled = false;
+    setChecking(true);
 
     async function runGates() {
       try {
-        console.log("[tabs] gate effect start", {
-          authLoading,
-          hasSession: !!session,
-          pathname,
-        });
+        console.log("[tabs] gate start");
 
-        const s1 = await supabase.rpc("get_onboarding_status_v1").single();
+        const s1 = (await withTimeout(
+          supabase.rpc("get_onboarding_status_v1").single(),
+          6000,
+          "get_onboarding_status_v1",
+        )) as RpcResult<Stage1Status>;
+
         if (cancelled) return;
 
         console.log("[tabs] stage1 result", {
@@ -130,59 +180,83 @@ export default function TabsLayout() {
           data: s1.data,
         });
 
+        // Fail open on stage1 RPC error instead of blocking the app
         if (s1.error) {
-          router.replace("/onboarding");
+          console.warn("[tabs] stage1 rpc error -> allow app");
+          setChecking(false);
           return;
         }
 
-        const stage1 = s1.data as unknown as Stage1Status;
+        const stage1 = s1.data;
 
         if (!stage1?.is_complete) {
+          console.log("[tabs] stage1 incomplete -> onboarding");
+          setChecking(false);
           router.replace("/onboarding");
           return;
         }
 
-        const g = await supabase.rpc("get_onboarding_gate_v1").single();
+        const g = (await withTimeout(
+          supabase.rpc("get_onboarding_gate_v1").single(),
+          6000,
+          "get_onboarding_gate_v1",
+        )) as RpcResult<OnboardingGateRow>;
+
         if (cancelled) return;
 
-        console.log("[tabs] stage gate result", {
+        console.log("[tabs] stage2/3 gate result", {
           error: g.error,
           data: g.data,
         });
 
         if (g.error) {
-          log("gate rpc error:", g.error);
-          log("gate rpc data:", g.data);
+          console.warn("[tabs] stage2/3 gate error -> allow app");
           setChecking(false);
           return;
         }
 
-        const gate = g.data as unknown as OnboardingGateRow;
+        const gate = g.data;
 
-        if (gate?.required_stage === "stage2" && pathname !== "/onboarding/stage2") {
+        if (gate?.required_stage === "stage2") {
+          console.log("[tabs] required_stage=stage2 -> redirect");
+          setChecking(false);
           router.replace("/onboarding/stage2");
           return;
         }
 
-        if (gate?.required_stage === "stage3" && pathname !== "/onboarding/stage3") {
+        if (gate?.required_stage === "stage3") {
+          console.log("[tabs] required_stage=stage3 -> redirect");
+          setChecking(false);
           router.replace("/onboarding/stage3");
           return;
         }
 
-        console.log("[tabs] finished checking");
+        console.log("[tabs] gates complete -> allow app");
         setChecking(false);
       } catch (err) {
-        console.warn("[tabs] gate exception", err);
-        setChecking(false);
+        console.warn("[tabs] gate crash -> allow app", err);
+        if (!cancelled) {
+          setChecking(false);
+        }
       }
     }
 
-    void runGates();
+    const timer = setTimeout(() => {
+      void runGates();
+    }, 750);
 
     return () => {
       cancelled = true;
+      clearTimeout(timer);
     };
-  }, [authLoading, session]);
+  }, [authLoading, sessionUserId, !!session]);
+
+  console.log("[tabs] render", {
+    authLoading,
+    checking,
+    hasSession: !!session,
+    sessionUserId,
+  });
 
   if (authLoading || checking) {
     return (
@@ -264,7 +338,9 @@ export default function TabsLayout() {
             <MessageCircle color={color} size={size} />
           ),
           headerRight: () => (
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 20 }}>
+            <View
+              style={{ flexDirection: "row", alignItems: "center", gap: 20 }}
+            >
               <Pressable
                 onPress={() => router.push("/features/social/search")}
                 hitSlop={10}

@@ -28,8 +28,6 @@ export default function AuthIndex() {
   const { colors } = useAppTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
-  const { session, loading } = useAuth();
-
   const [loadingProvider, setLoadingProvider] = useState<LoadingProvider>(null);
   const [appleAvailable, setAppleAvailable] = useState(false);
 
@@ -56,12 +54,6 @@ export default function AuthIndex() {
       mounted = false;
     };
   }, []);
-
-  useEffect(() => {
-    if (!loading && session) {
-      router.replace("/callback");
-    }
-  }, [loading, session]);
 
   // ✅ FIXED GOOGLE FLOW
   async function signInWithGoogle() {
