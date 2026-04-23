@@ -27,6 +27,11 @@
                   "targetName": "LiveActivity",
                   "bundleIdentifier": "com.musclemetric.app.LiveActivity",
                   "entitlements": {}
+                },
+                {
+                  "targetName": "MuscleMetricWidgetsExtension",
+                  "bundleIdentifier": "com.musclemetric.app.MuscleMetricWidgetsExtension",
+                  "entitlements": {}
                 }
               ]
             }

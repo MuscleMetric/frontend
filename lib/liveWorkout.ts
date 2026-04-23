@@ -34,7 +34,7 @@ let iOSActivityId: string | null = null;
 async function ensureAndroidChannel() {
   if (!notifee) {
     console.warn(
-      "[liveWorkout] Notifee not available. Did you prebuild and run a dev build?"
+      "[liveWorkout] Notifee not available. Did you prebuild and run a dev build?",
     );
     return;
   }
@@ -96,7 +96,7 @@ export async function startLiveWorkout(p: LivePayload) {
   if (Platform.OS === "android") {
     if (!notifee) {
       console.warn(
-        "[liveWorkout] Notifee not available. Build with `npx expo run:android`."
+        "[liveWorkout] Notifee not available. Build with `npx expo run:android`.",
       );
       return;
     }
@@ -123,13 +123,24 @@ export async function startLiveWorkout(p: LivePayload) {
   }
 
   // ---- iOS: Live Activity via expo-live-activity ----
-  if (Platform.OS === "ios" && typeof LiveActivity.startActivity === "function") {
+  if (
+    Platform.OS === "ios" &&
+    typeof LiveActivity.startActivity === "function"
+  ) {
+    console.log("[liveWorkout] iOS availability", {
+      platform: Platform.OS,
+      hasStartActivity: typeof LiveActivity.startActivity === "function",
+      hasUpdateActivity: typeof LiveActivity.updateActivity === "function",
+      hasStopActivity: typeof LiveActivity.stopActivity === "function",
+      currentActivityId: iOSActivityId,
+    });
+
     try {
       const state = buildState(p);
 
       const config: LiveActivityConfig = {
         backgroundColor: "#000000",
-        titleColor: "#0c9effff",      // blue for "MuscleMetric"
+        titleColor: "#0c9effff", // blue for "MuscleMetric"
         subtitleColor: "#FFFFFF",
         progressViewTint: "#22c55e",
         progressViewLabelColor: "#FFFFFF",
@@ -140,17 +151,26 @@ export async function startLiveWorkout(p: LivePayload) {
       log("[liveWorkout] iOS startActivity", { state, config });
 
       if (!iOSActivityId) {
-        const activityId = LiveActivity.startActivity(state, config);
+        const activityId = await LiveActivity.startActivity(state, config);
         iOSActivityId = activityId ?? null;
+
+        console.log("[liveWorkout] Live Activity started", {
+          activityId,
+          savedActivityId: iOSActivityId,
+        });
       } else {
-        LiveActivity.updateActivity(iOSActivityId, state);
+        await LiveActivity.updateActivity(iOSActivityId, state);
+
+        console.log("[liveWorkout] Live Activity updated existing", {
+          activityId: iOSActivityId,
+        });
       }
     } catch (e) {
       console.warn("[liveWorkout] Live Activity start failed:", e);
     }
   } else if (Platform.OS === "ios") {
     console.warn(
-      "[liveWorkout] expo-live-activity not available or not configured."
+      "[liveWorkout] expo-live-activity not available or not configured.",
     );
   }
 }
@@ -192,7 +212,7 @@ export async function updateLiveWorkout(p: LivePayload) {
         state,
       });
 
-      LiveActivity.updateActivity(iOSActivityId, state);
+      await LiveActivity.updateActivity(iOSActivityId, state);
     } catch (e) {
       console.warn("[liveWorkout] Live Activity update failed:", e);
     }
@@ -231,7 +251,7 @@ export async function stopLiveWorkout() {
         finalState,
       });
 
-      LiveActivity.stopActivity(iOSActivityId, finalState);
+      await LiveActivity.stopActivity(iOSActivityId, finalState);
     } catch (e) {
       console.warn("[liveWorkout] Live Activity stop failed:", e);
     } finally {
