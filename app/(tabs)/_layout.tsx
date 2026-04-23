@@ -143,18 +143,9 @@ export default function TabsLayout() {
   }, [sessionUserId, loadUnreadCount]);
 
   useEffect(() => {
-    console.log("[tabs] gate effect fired", {
-      authLoading,
-      hasSession: !!session,
-      sessionUserId,
-    });
-
-    if (authLoading) {
-      return;
-    }
+    if (authLoading) return;
 
     if (!session) {
-      console.log("[tabs] no session -> go login");
       setChecking(false);
       router.replace("/login");
       return;
@@ -165,8 +156,6 @@ export default function TabsLayout() {
 
     async function runGates() {
       try {
-        console.log("[tabs] gate start");
-
         const s1 = (await withTimeout(
           supabase.rpc("get_onboarding_status_v1").single(),
           6000,
@@ -175,14 +164,8 @@ export default function TabsLayout() {
 
         if (cancelled) return;
 
-        console.log("[tabs] stage1 result", {
-          error: s1.error,
-          data: s1.data,
-        });
-
-        // Fail open on stage1 RPC error instead of blocking the app
+        // Fail open
         if (s1.error) {
-          console.warn("[tabs] stage1 rpc error -> allow app");
           setChecking(false);
           return;
         }
@@ -190,7 +173,6 @@ export default function TabsLayout() {
         const stage1 = s1.data;
 
         if (!stage1?.is_complete) {
-          console.log("[tabs] stage1 incomplete -> onboarding");
           setChecking(false);
           router.replace("/onboarding");
           return;
@@ -204,13 +186,7 @@ export default function TabsLayout() {
 
         if (cancelled) return;
 
-        console.log("[tabs] stage2/3 gate result", {
-          error: g.error,
-          data: g.data,
-        });
-
         if (g.error) {
-          console.warn("[tabs] stage2/3 gate error -> allow app");
           setChecking(false);
           return;
         }
@@ -218,25 +194,21 @@ export default function TabsLayout() {
         const gate = g.data;
 
         if (gate?.required_stage === "stage2") {
-          console.log("[tabs] required_stage=stage2 -> redirect");
           setChecking(false);
           router.replace("/onboarding/stage2");
           return;
         }
 
         if (gate?.required_stage === "stage3") {
-          console.log("[tabs] required_stage=stage3 -> redirect");
           setChecking(false);
           router.replace("/onboarding/stage3");
           return;
         }
 
-        console.log("[tabs] gates complete -> allow app");
         setChecking(false);
-      } catch (err) {
-        console.warn("[tabs] gate crash -> allow app", err);
+      } catch {
         if (!cancelled) {
-          setChecking(false);
+          setChecking(false); // fail open
         }
       }
     }
@@ -250,13 +222,6 @@ export default function TabsLayout() {
       clearTimeout(timer);
     };
   }, [authLoading, sessionUserId, !!session]);
-
-  console.log("[tabs] render", {
-    authLoading,
-    checking,
-    hasSession: !!session,
-    sessionUserId,
-  });
 
   if (authLoading || checking) {
     return (

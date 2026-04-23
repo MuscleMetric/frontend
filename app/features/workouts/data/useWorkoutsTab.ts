@@ -37,8 +37,6 @@ export function useWorkoutsTab(userId: string | null): UseWorkoutsTabResult {
   const [data, setData] = useState<WorkoutsTabPayload | null>(null);
 
   const refetch = useCallback(async () => {
-    console.log("[useWorkoutsTab] refetch start", { userId });
-
     if (!userId) {
       setLoading(false);
       setError(null);
@@ -50,29 +48,19 @@ export function useWorkoutsTab(userId: string | null): UseWorkoutsTabResult {
     setError(null);
 
     try {
-      const startedAt = Date.now();
-
       const result = await withTimeout(
         supabase.rpc("get_workouts_tab_payload"),
         15000,
         "get_workouts_tab_payload",
       );
 
-      console.log("[useWorkoutsTab] rpc finished", {
-        elapsed: Date.now() - startedAt,
-        data: result.data,
-        error: result.error,
-      });
-
       if (result.error) throw result.error;
 
       setData((result.data ?? null) as WorkoutsTabPayload | null);
     } catch (e: any) {
-      console.warn("[useWorkoutsTab] error", e);
       setData(null);
       setError(e?.message ?? "Failed to load workouts.");
     } finally {
-      console.log("[useWorkoutsTab] finally -> setLoading(false)");
       setLoading(false);
     }
   }, [userId]);
