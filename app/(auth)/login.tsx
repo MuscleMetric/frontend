@@ -1,4 +1,4 @@
-// app/(auth)/index.tsx
+// app/(auth)/login.tsx
 import React, { useEffect, useMemo, useState } from "react";
 import {
   View,
@@ -166,70 +166,71 @@ export default function AuthIndex() {
   }
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Welcome to MuscleMetric</Text>
-      <Text style={styles.subtitle}>
-        Continue with Apple or Google to create or access your account.
-      </Text>
+    <View style={styles.screen}>
+      <View style={styles.container}>
+        <Text style={styles.title}>Welcome to MuscleMetric</Text>
+        <Text style={styles.subtitle}>
+          Continue with Apple or Google to create or access your account.
+        </Text>
 
-      {Platform.OS === "ios" && appleAvailable && (
-        <View style={styles.appleWrap}>
-          <AppleAuthentication.AppleAuthenticationButton
-            buttonType={
-              AppleAuthentication.AppleAuthenticationButtonType.CONTINUE
-            }
-            buttonStyle={
-              colors.bg === "#000"
-                ? AppleAuthentication.AppleAuthenticationButtonStyle.WHITE
-                : AppleAuthentication.AppleAuthenticationButtonStyle.BLACK
-            }
-            cornerRadius={12}
-            style={styles.appleButton}
-            onPress={signInWithApple}
-          />
-        </View>
-      )}
-
-      {/* ✅ GOOGLE BUTTON (AUTHENTIC STYLE) */}
-      <Pressable
-        onPress={signInWithGoogle}
-        style={styles.googleButton}
-        disabled={!!loadingProvider}
-      >
-        {loadingProvider === "google" ? (
-          <ActivityIndicator />
-        ) : (
-          <View style={styles.googleContent}>
-            <GoogleLogo />
-            <Text style={styles.googleText}>Continue with Google</Text>
+        {Platform.OS === "ios" && appleAvailable && (
+          <View style={styles.appleWrap}>
+            <AppleAuthentication.AppleAuthenticationButton
+              buttonType={
+                AppleAuthentication.AppleAuthenticationButtonType.CONTINUE
+              }
+              buttonStyle={
+                colors.bg === "#000"
+                  ? AppleAuthentication.AppleAuthenticationButtonStyle.WHITE
+                  : AppleAuthentication.AppleAuthenticationButtonStyle.BLACK
+              }
+              cornerRadius={12}
+              style={styles.appleButton}
+              onPress={signInWithApple}
+            />
           </View>
         )}
-      </Pressable>
 
-      <Text style={styles.footer}>
-        By continuing, you agree to{" "}
-        <Text
-          style={{ textDecorationLine: "underline" }}
-          onPress={() =>
-            Linking.openURL(
-              "https://musclemetric.github.io/musclemetric-legal/terms.html",
-            )
-          }
+        <Pressable
+          onPress={signInWithGoogle}
+          style={styles.googleButton}
+          disabled={!!loadingProvider}
         >
-          Terms of Use
-        </Text>{" "}
-        and{" "}
-        <Text
-          style={{ textDecorationLine: "underline" }}
-          onPress={() =>
-            Linking.openURL(
-              "https://musclemetric.github.io/musclemetric-legal/privacy.html",
-            )
-          }
-        >
-          Privacy Policy
+          {loadingProvider === "google" ? (
+            <ActivityIndicator />
+          ) : (
+            <View style={styles.googleContent}>
+              <GoogleLogo />
+              <Text style={styles.googleText}>Continue with Google</Text>
+            </View>
+          )}
+        </Pressable>
+
+        <Text style={styles.footer}>
+          By continuing, you agree to{" "}
+          <Text
+            style={{ textDecorationLine: "underline" }}
+            onPress={() =>
+              Linking.openURL(
+                "https://musclemetric.github.io/musclemetric-legal/terms.html",
+              )
+            }
+          >
+            Terms of Use
+          </Text>{" "}
+          and{" "}
+          <Text
+            style={{ textDecorationLine: "underline" }}
+            onPress={() =>
+              Linking.openURL(
+                "https://musclemetric.github.io/musclemetric-legal/privacy.html",
+              )
+            }
+          >
+            Privacy Policy
+          </Text>
         </Text>
-      </Text>
+      </View>
     </View>
   );
 }
@@ -261,11 +262,17 @@ function GoogleLogo() {
 /* ---------------- STYLES ---------------- */
 const makeStyles = (colors: any) =>
   StyleSheet.create({
-    container: {
+    screen: {
       flex: 1,
+      alignItems: "center",
       justifyContent: "center",
-      padding: 24,
       backgroundColor: colors.background,
+      paddingHorizontal: 24,
+    },
+
+    container: {
+      width: "100%",
+      maxWidth: 420,
     },
     title: {
       fontSize: 30,

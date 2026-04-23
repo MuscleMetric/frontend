@@ -1,46 +1,95 @@
-// app/(auth)/callback.tsx
 import { useEffect } from "react";
-import { ActivityIndicator, View, Text } from "react-native";
+import { ActivityIndicator, View, Text, Alert } from "react-native";
 import { router } from "expo-router";
 import { supabase } from "../../lib/supabase";
 
+async function waitForSession(maxAttempts = 10, delayMs = 300) {
+  for (let i = 0; i < maxAttempts; i++) {
+    const [{ data: sessionData }, { data: userData }] = await Promise.all([
+      supabase.auth.getSession(),
+      supabase.auth.getUser(),
+    ]);
+
+    const session = sessionData.session;
+    const user = userData.user;
+
+    if (session && user) {
+      return { session, user };
+    }
+
+    await new Promise((r) => setTimeout(r, delayMs));
+  }
+
+  return { session: null, user: null };
+}
+
 export default function AuthCallback() {
   useEffect(() => {
+    let alive = true;
+
     async function handleRedirect() {
-      // tiny delay so Supabase can persist the session
-      await new Promise((r) => setTimeout(r, 200));
+      try {
+        console.log("[callback] mounted");
 
-      const [{ data: sessionData }, { data: userData }] = await Promise.all([
-        supabase.auth.getSession(),
-        supabase.auth.getUser(),
-      ]);
+        const { session, user } = await waitForSession();
 
-      const session = sessionData.session;
-      const user = userData.user;
+        if (!alive) return;
 
-      if (!session || !user) {
-        router.replace("/");
-        return;
-      }
+        console.log("[callback] waitForSession result", {
+          hasSession: !!session,
+          hasUser: !!user,
+        });
 
-      const { data: profile, error } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("id", user.id)
-        .maybeSingle();
+        if (!session || !user) {
+          console.warn("[callback] no session/user after waiting");
+          router.replace("/login");
+          return;
+        }
 
-      if (error) {
-        console.warn("profiles lookup error:", error);
-      }
+        const { data: profile, error } = await supabase
+          .from("profiles")
+          .select("id")
+          .eq("id", user.id)
+          .maybeSingle();
 
-      if (profile) {
-        router.replace("/(tabs)");
-      } else {
-        router.replace("/onboarding");
+        if (!alive) return;
+
+        console.log("[callback] profile lookup result", {
+          hasProfile: !!profile,
+          error,
+        });
+
+        if (error) {
+          console.warn("[callback] profiles lookup error:", error);
+          router.replace("/login");
+          return;
+        }
+
+        if (profile) {
+          console.log("[callback] routing to /");
+          router.replace("/");
+        } else {
+          console.log("[callback] routing to /onboarding");
+          router.replace("/onboarding");
+        }
+      } catch (err) {
+        console.warn("[callback] unexpected error:", err);
+
+        if (!alive) return;
+
+        Alert.alert(
+          "Sign in issue",
+          "We couldn't finish signing you in. Please try again.",
+        );
+        router.replace("/login");
       }
     }
 
-    handleRedirect();
+    void handleRedirect();
+
+    return () => {
+      alive = false;
+    };
   }, []);
 
   return (
@@ -49,6 +98,7 @@ export default function AuthCallback() {
         flex: 1,
         alignItems: "center",
         justifyContent: "center",
+        paddingHorizontal: 24,
       }}
     >
       <ActivityIndicator />

@@ -1,4 +1,3 @@
-// app/(tabs)/_layout.tsx
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Tabs, router, usePathname } from "expo-router";
 import {
@@ -24,7 +23,6 @@ import {
 import { useAppTheme } from "../../lib/useAppTheme";
 import { useAuth } from "../../lib/authContext";
 import { supabase } from "../../lib/supabase";
-
 import { log } from "../../lib/logger";
 
 function CustomHeader({
@@ -55,7 +53,6 @@ function CustomHeader({
   );
 }
 
-/** Stage 1 gate response (your existing RPC) */
 type Stage1Status = {
   user_id: string;
   is_complete: boolean;
@@ -65,7 +62,6 @@ type Stage1Status = {
   missing_fields: string[];
 };
 
-/** Stage 2/3 gate response (new RPC) */
 type OnboardingGateRow = {
   user_id: string;
   required_stage: "stage2" | "stage3" | null;
@@ -78,7 +74,7 @@ type OnboardingGateRow = {
 
 export default function TabsLayout() {
   const { colors, typography } = useAppTheme();
-  const { session, profile, loading: authLoading } = useAuth();
+  const { session, loading: authLoading } = useAuth();
   const pathname = usePathname();
 
   const [checking, setChecking] = useState(true);
@@ -105,14 +101,14 @@ export default function TabsLayout() {
 
   useEffect(() => {
     if (!session) return;
-    loadUnreadCount();
+    void loadUnreadCount();
   }, [session, pathname, loadUnreadCount]);
 
   useEffect(() => {
     if (authLoading) return;
 
     if (!session) {
-      router.replace("/");
+      router.replace("/login");
       return;
     }
 
@@ -120,8 +116,19 @@ export default function TabsLayout() {
 
     async function runGates() {
       try {
+        console.log("[tabs] gate effect start", {
+          authLoading,
+          hasSession: !!session,
+          pathname,
+        });
+
         const s1 = await supabase.rpc("get_onboarding_status_v1").single();
         if (cancelled) return;
+
+        console.log("[tabs] stage1 result", {
+          error: s1.error,
+          data: s1.data,
+        });
 
         if (s1.error) {
           router.replace("/onboarding");
@@ -136,6 +143,12 @@ export default function TabsLayout() {
         }
 
         const g = await supabase.rpc("get_onboarding_gate_v1").single();
+        if (cancelled) return;
+
+        console.log("[tabs] stage gate result", {
+          error: g.error,
+          data: g.data,
+        });
 
         if (g.error) {
           log("gate rpc error:", g.error);
@@ -146,32 +159,30 @@ export default function TabsLayout() {
 
         const gate = g.data as unknown as OnboardingGateRow;
 
-        if (gate?.required_stage === "stage2") {
-          if (pathname !== "/onboarding/stage2") {
-            router.replace("/onboarding/stage2");
-            return;
-          }
+        if (gate?.required_stage === "stage2" && pathname !== "/onboarding/stage2") {
+          router.replace("/onboarding/stage2");
+          return;
         }
 
-        if (gate?.required_stage === "stage3") {
-          if (pathname !== "/onboarding/stage3") {
-            router.replace("/onboarding/stage3");
-            return;
-          }
+        if (gate?.required_stage === "stage3" && pathname !== "/onboarding/stage3") {
+          router.replace("/onboarding/stage3");
+          return;
         }
 
+        console.log("[tabs] finished checking");
         setChecking(false);
-      } catch {
+      } catch (err) {
+        console.warn("[tabs] gate exception", err);
         setChecking(false);
       }
     }
 
-    runGates();
+    void runGates();
 
     return () => {
       cancelled = true;
     };
-  }, [authLoading, session, pathname]);
+  }, [authLoading, session]);
 
   if (authLoading || checking) {
     return (
@@ -253,9 +264,7 @@ export default function TabsLayout() {
             <MessageCircle color={color} size={size} />
           ),
           headerRight: () => (
-            <View
-              style={{ flexDirection: "row", alignItems: "center", gap: 20 }}
-            >
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 20 }}>
               <Pressable
                 onPress={() => router.push("/features/social/search")}
                 hitSlop={10}
@@ -271,7 +280,6 @@ export default function TabsLayout() {
               >
                 <View style={{ position: "relative" }}>
                   <Bell size={20} color={colors.text} />
-
                   {unreadCount > 0 ? (
                     <View
                       style={{

@@ -1,4 +1,3 @@
-// app/_layout.tsx
 import "react-native-url-polyfill/auto";
 import { useEffect } from "react";
 import {
@@ -8,12 +7,10 @@ import {
   useRootNavigationState,
   usePathname,
 } from "expo-router";
-import * as Linking from "expo-linking";
 import { ThemeProvider } from "@react-navigation/native";
 import { useColorScheme, View, StyleSheet, Platform } from "react-native";
 import { LightTheme, DarkTheme } from "./theme";
 import { StatusBar } from "expo-status-bar";
-import { supabase } from "../lib/supabase";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { AuthProvider, useAuth } from "../lib/authContext";
 import { SplashScreen } from "./_components/splashScreen";
@@ -65,10 +62,8 @@ function RootNavigator() {
 
   const navState = useRootNavigationState();
   const navReady = !!navState?.key;
-
   const pathname = usePathname();
 
-  // Route breadcrumbs
   useEffect(() => {
     if (!navReady) return;
 
@@ -90,7 +85,6 @@ function RootNavigator() {
     }
   }, [session?.user?.id]);
 
-  // Push registration
   useEffect(() => {
     let cancelled = false;
 
@@ -101,9 +95,7 @@ function RootNavigator() {
       try {
         const result = await registerForPushNotificationsAsync();
 
-        if (!result.granted || !result.expoPushToken || cancelled) {
-          return;
-        }
+        if (!result.granted || !result.expoPushToken || cancelled) return;
 
         await saveDeviceToken({
           userId,
@@ -118,7 +110,7 @@ function RootNavigator() {
     };
 
     if (navReady && !loading && session?.user?.id) {
-      registerPush();
+      void registerPush();
     }
 
     return () => {
@@ -126,52 +118,29 @@ function RootNavigator() {
     };
   }, [navReady, loading, session?.user?.id]);
 
-  // Deep links + exchangeCodeForSession
-  useEffect(() => {
-    const handleUrl = async (url: string | null) => {
-      if (!url) return;
-
-      const parsed = new URL(url);
-      const code = parsed.searchParams.get("code");
-      if (!code) return;
-
-      try {
-        await supabase.auth.exchangeCodeForSession(code);
-      } catch (err) {
-        Sentry.captureException(err, {
-          tags: { area: "auth", action: "exchangeCodeForSession" },
-        });
-      }
-    };
-
-    const sub = Linking.addEventListener("url", ({ url }) => handleUrl(url));
-    Linking.getInitialURL().then(handleUrl);
-    return () => sub.remove();
-  }, []);
-
-  // Auth redirects
   useEffect(() => {
     if (!navReady || loading) return;
 
     const isPublicAuthPath =
-      pathname === "/" ||
+      pathname === "/login" ||
       pathname === "/callback" ||
       pathname.startsWith("/onboarding");
 
     if (!session) {
       if (!isPublicAuthPath) {
-        router.replace("/");
+        router.replace("/login");
       }
       return;
     }
 
-    // Let callback and onboarding finish naturally
-    if (pathname === "/callback" || pathname.startsWith("/onboarding")) {
+    if (pathname === "/login") {
+      router.replace("/");
       return;
     }
 
-    // Do NOT redirect authed users away from "/"
-    // The tabs/index route can own "/"
+    if (pathname === "/callback" || pathname.startsWith("/onboarding")) {
+      return;
+    }
   }, [navReady, loading, session, pathname, router]);
 
   const showSplash = !navReady || loading;
