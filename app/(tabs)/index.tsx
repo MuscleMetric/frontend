@@ -228,7 +228,7 @@ export default function HomeTabIndex() {
 
     try {
       const { data, error } = await supabase.rpc(
-        "check_and_award_achievements_home_v2"
+        "check_and_award_achievements_home_v2",
       );
       if (error) return;
 
@@ -306,48 +306,47 @@ export default function HomeTabIndex() {
 
   return (
     <Screen edges={["left", "right"]}>
-      <HomeTransitionModal
-        visible={transitionOpen}
-        transition={summary.transition}
-        onClose={async () => {
-          await consumeTransition();
-          setTransitionOpen(false);
-          refetch();
-
-          // once transition closes, try show achievements first (priority)
-          setTimeout(() => tryStartNextAchievement(), 50);
+      <View
+        style={{
+          flex: 1,
+          width: "100%",
+          maxWidth: 720,
+          alignSelf: "center",
         }}
-      />
+      >
+        <HomeTransitionModal
+          visible={transitionOpen}
+          transition={summary.transition}
+          onClose={async () => {
+            await consumeTransition();
+            setTransitionOpen(false);
+            refetch();
+            setTimeout(() => tryStartNextAchievement(), 50);
+          }}
+        />
 
-      <AchievementUnlockedModal
-        visible={!!activeAchievement}
-        achievement={activeAchievement}
-        onClose={closeAchievement}
-        onViewAll={undefined}
-      />
+        <AchievementUnlockedModal
+          visible={!!activeAchievement}
+          achievement={activeAchievement}
+          onClose={closeAchievement}
+          onViewAll={undefined}
+        />
 
-      <BirthdayModal
-        visible={activeCelebration === "birthday"}
-        name={birthdayName}
-        age={birthdayAge}
-        onClose={closeCelebration}
-      />
+        <BirthdayModal
+          visible={activeCelebration === "birthday"}
+          name={birthdayName}
+          age={birthdayAge}
+          onClose={closeCelebration}
+        />
 
-      <ChristmasModal
-        visible={activeCelebration === "christmas"}
-        name={christmasName}
-        onClose={closeCelebration}
-      />
+        <ChristmasModal
+          visible={activeCelebration === "christmas"}
+          name={christmasName}
+          onClose={closeCelebration}
+        />
 
-      <HomeRoot summary={summary} userId={userId} />
-
-      {/* <OnboardingWizard
-        visible={shouldShowOnboarding}
-        onFinished={() => {
-          setOnboardingDoneLocal(true);
-          refetch();
-        }}
-      /> */}
+        <HomeRoot summary={summary} userId={userId} />
+      </View>
     </Screen>
   );
 }

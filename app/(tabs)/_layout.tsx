@@ -6,6 +6,7 @@ import {
   StyleSheet,
   ActivityIndicator,
   Pressable,
+  useWindowDimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
@@ -24,6 +25,8 @@ import { useAppTheme } from "../../lib/useAppTheme";
 import { useAuth } from "../../lib/authContext";
 import { supabase } from "../../lib/supabase";
 import { log } from "../../lib/logger";
+
+const TABLET_CONTENT_MAX_WIDTH = 720;
 
 function withTimeout<T>(
   promise: PromiseLike<T>,
@@ -55,7 +58,10 @@ function CustomHeader({
   right?: React.ReactNode;
 }) {
   const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
   const { colors, typography, layout } = useAppTheme();
+
+  const isWide = width >= 768;
 
   const styles = useMemo(
     () => makeStyles(colors, typography, layout),
@@ -64,7 +70,16 @@ function CustomHeader({
 
   return (
     <View style={[styles.headerWrap, { paddingTop: insets.top }]}>
-      <View style={styles.headerRow}>
+      <View
+        style={[
+          styles.headerRow,
+          isWide && {
+            maxWidth: TABLET_CONTENT_MAX_WIDTH,
+            alignSelf: "center",
+            width: "100%",
+          },
+        ]}
+      >
         <Text numberOfLines={1} style={styles.headerTitle}>
           {title}
         </Text>
@@ -101,7 +116,10 @@ type RpcResult<T> = {
 
 export default function TabsLayout() {
   const { colors, typography } = useAppTheme();
+  const { width } = useWindowDimensions();
   const { session, loading: authLoading } = useAuth();
+
+  const isWide = width >= 768;
 
   const [checking, setChecking] = useState(true);
   const [unreadCount, setUnreadCount] = useState<number>(0);
@@ -164,7 +182,6 @@ export default function TabsLayout() {
 
         if (cancelled) return;
 
-        // Fail open
         if (s1.error) {
           setChecking(false);
           return;
@@ -207,9 +224,7 @@ export default function TabsLayout() {
 
         setChecking(false);
       } catch {
-        if (!cancelled) {
-          setChecking(false); // fail open
-        }
+        if (!cancelled) setChecking(false);
       }
     }
 
@@ -264,11 +279,14 @@ export default function TabsLayout() {
           backgroundColor: colors.surface,
           borderTopWidth: StyleSheet.hairlineWidth,
           borderTopColor: colors.border,
+          height: isWide ? 72 : undefined,
+          paddingBottom: isWide ? 12 : undefined,
+          paddingTop: isWide ? 8 : undefined,
         },
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.textMuted,
         tabBarLabelStyle: {
-          fontSize: typography.size.meta,
+          fontSize: isWide ? typography.size.meta : typography.size.meta,
           fontFamily: typography.fontFamily.semibold,
         },
         sceneStyle: { backgroundColor: colors.bg },
@@ -279,7 +297,9 @@ export default function TabsLayout() {
         options={{
           headerTitle: "MuscleMetric",
           tabBarLabel: "Home",
-          tabBarIcon: ({ color, size }) => <House color={color} size={size} />,
+          tabBarIcon: ({ color, size }) => (
+            <House color={color} size={isWide ? 24 : size} />
+          ),
         }}
       />
 
@@ -289,7 +309,7 @@ export default function TabsLayout() {
           headerTitle: "Progress",
           tabBarLabel: "Progress",
           tabBarIcon: ({ color, size }) => (
-            <LineChart color={color} size={size} />
+            <LineChart color={color} size={isWide ? 24 : size} />
           ),
         }}
       />
@@ -300,27 +320,31 @@ export default function TabsLayout() {
           headerTitle: "Social",
           tabBarLabel: "Social",
           tabBarIcon: ({ color, size }) => (
-            <MessageCircle color={color} size={size} />
+            <MessageCircle color={color} size={isWide ? 24 : size} />
           ),
           headerRight: () => (
             <View
-              style={{ flexDirection: "row", alignItems: "center", gap: 20 }}
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: isWide ? 24 : 20,
+              }}
             >
               <Pressable
                 onPress={() => router.push("/features/social/search")}
-                hitSlop={10}
+                hitSlop={12}
                 style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
               >
-                <Search size={20} color={colors.text} />
+                <Search size={21} color={colors.text} />
               </Pressable>
 
               <Pressable
                 onPress={() => router.push("/features/social/inbox")}
-                hitSlop={10}
+                hitSlop={12}
                 style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
               >
                 <View style={{ position: "relative" }}>
-                  <Bell size={20} color={colors.text} />
+                  <Bell size={21} color={colors.text} />
                   {unreadCount > 0 ? (
                     <View
                       style={{
@@ -361,10 +385,10 @@ export default function TabsLayout() {
                     params: { openCreate: "1" },
                   })
                 }
-                hitSlop={10}
+                hitSlop={12}
                 style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
               >
-                <Plus size={22} color={colors.text} />
+                <Plus size={23} color={colors.text} />
               </Pressable>
             </View>
           ),
@@ -377,7 +401,7 @@ export default function TabsLayout() {
           headerTitle: "Workouts",
           tabBarLabel: "Workouts",
           tabBarIcon: ({ color, size }) => (
-            <Dumbbell color={color} size={size} />
+            <Dumbbell color={color} size={isWide ? 24 : size} />
           ),
         }}
       />
@@ -387,14 +411,16 @@ export default function TabsLayout() {
         options={{
           headerTitle: "Profile",
           tabBarLabel: "Profile",
-          tabBarIcon: ({ color, size }) => <User2 color={color} size={size} />,
+          tabBarIcon: ({ color, size }) => (
+            <User2 color={color} size={isWide ? 24 : size} />
+          ),
           headerRight: () => (
             <Pressable
               onPress={() => router.push("/features/settings")}
-              hitSlop={10}
+              hitSlop={12}
               style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
             >
-              <Settings size={20} color={colors.text} />
+              <Settings size={21} color={colors.text} />
             </Pressable>
           ),
         }}
@@ -411,7 +437,7 @@ const makeStyles = (colors: any, typography: any, layout: any) =>
       borderBottomColor: colors.border,
     },
     headerRow: {
-      height: 52,
+      height: 56,
       paddingHorizontal: layout.space.lg,
       justifyContent: "center",
       flexDirection: "row",

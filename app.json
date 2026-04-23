@@ -5,7 +5,8 @@
     "scheme": "musclemetric",
     "ios": {
       "bundleIdentifier": "com.musclemetric.app",
-      "usesAppleSignIn": true
+      "usesAppleSignIn": true,
+      "supportsTablet": false
     },
     "version": "1.0.4",
     "newArchEnabled": true,
