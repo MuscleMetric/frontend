@@ -1,9 +1,23 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { View, Text, ScrollView, RefreshControl, Pressable, Alert } from "react-native";
+import {
+  View,
+  Text,
+  ScrollView,
+  RefreshControl,
+  Pressable,
+  Alert,
+} from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import { supabase } from "@/lib/supabase";
 import { useAppTheme } from "@/lib/useAppTheme";
-import { Screen, ScreenHeader, Card, LoadingScreen, ErrorState, Icon } from "@/ui";
+import {
+  Screen,
+  ScreenHeader,
+  Card,
+  LoadingScreen,
+  ErrorState,
+  Icon,
+} from "@/ui";
 
 import { HistorySectionHeader } from "../ui/HistorySectionHeader";
 import { PRBadge } from "../ui/PRBadge";
@@ -34,6 +48,9 @@ type DetailPayload = {
   };
 
   stats?: {
+    distance_total?: number | null;
+    time_seconds?: number | null;
+    distance?: number | null;
     duration_seconds?: number | null;
     sets_count?: number | null;
     volume_kg?: number | null;
@@ -61,6 +78,8 @@ type DetailPayload = {
       reps?: number | null;
       weight_kg?: number | null;
       e1rm?: number | null;
+      time_seconds?: number | null;
+      distance?: number | null;
       is_best?: boolean | null;
       is_pr?: boolean | null;
     }>;
@@ -71,7 +90,11 @@ function fmtDayTime(iso?: string | null) {
   if (!iso) return "";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleDateString("en-GB", { weekday: "short", day: "2-digit", month: "short" });
+  return d.toLocaleDateString("en-GB", {
+    weekday: "short",
+    day: "2-digit",
+    month: "short",
+  });
 }
 
 function fmtMins(sec?: number | null) {
@@ -89,6 +112,52 @@ function fmtKg(x?: number | null) {
   return `${Math.round(x)}`;
 }
 
+function fmtDuration(sec?: number | null) {
+  if (sec == null || !isFinite(sec)) return "—";
+
+  const total = Math.max(0, Math.round(sec));
+  const mins = Math.floor(total / 60);
+  const secs = total % 60;
+
+  return `${mins}:${String(secs).padStart(2, "0")}`;
+}
+
+function fmtDistance(x?: number | null) {
+  if (x == null || !isFinite(x)) return null;
+
+  const rounded = Math.round(Number(x) * 100) / 100;
+  return `${rounded} km`;
+}
+
+function isCardioSet(st: {
+  time_seconds?: number | null;
+  distance?: number | null;
+}) {
+  return st.time_seconds != null || st.distance != null;
+}
+
+function fmtSetSummary(st: {
+  reps?: number | null;
+  weight_kg?: number | null;
+  time_seconds?: number | null;
+  distance?: number | null;
+}) {
+  if (isCardioSet(st)) {
+    const parts = [
+      st.time_seconds != null ? fmtDuration(st.time_seconds) : null,
+      fmtDistance(st.distance),
+    ].filter(Boolean);
+
+    return parts.length ? parts.join(" • ") : "—";
+  }
+
+  if (st.weight_kg != null && st.reps != null)
+    return `${st.weight_kg} kg × ${st.reps}`;
+  if (st.reps != null) return `${st.reps} reps`;
+
+  return "—";
+}
+
 export default function WorkoutHistoryDetailScreen({
   workoutHistoryId: workoutHistoryIdProp,
 }: {
@@ -99,7 +168,7 @@ export default function WorkoutHistoryDetailScreen({
 
   const workoutHistoryId = useMemo(
     () => (workoutHistoryIdProp ?? params.workoutHistoryId ?? "").toString(),
-    [workoutHistoryIdProp, params.workoutHistoryId]
+    [workoutHistoryIdProp, params.workoutHistoryId],
   );
 
   const [data, setData] = useState<DetailPayload | null>(null);
@@ -124,9 +193,12 @@ export default function WorkoutHistoryDetailScreen({
 
       setErr(null);
 
-      const { data: res, error } = await supabase.rpc(RPC_WORKOUT_HISTORY_DETAIL, {
-        p_workout_history_id: workoutHistoryId,
-      });
+      const { data: res, error } = await supabase.rpc(
+        RPC_WORKOUT_HISTORY_DETAIL,
+        {
+          p_workout_history_id: workoutHistoryId,
+        },
+      );
 
       if (error) {
         setErr(error.message);
@@ -138,7 +210,7 @@ export default function WorkoutHistoryDetailScreen({
       setLoading(false);
       setRefreshing(false);
     },
-    [workoutHistoryId]
+    [workoutHistoryId],
   );
 
   useEffect(() => {
@@ -183,6 +255,8 @@ export default function WorkoutHistoryDetailScreen({
           setNumber: s.set_number,
           weightKg: s.weight_kg ?? null,
           reps: s.reps ?? null,
+          timeSeconds: s.time_seconds ?? null,
+          distance: s.distance ?? null,
         })),
       })),
 
@@ -194,12 +268,20 @@ export default function WorkoutHistoryDetailScreen({
         e1rm: p.e1rm ?? null,
       })),
     };
-  }, [header, stats?.duration_seconds, stats?.sets_count, stats?.volume_kg, exercises, prs]);
+  }, [
+    header,
+    stats?.duration_seconds,
+    stats?.sets_count,
+    stats?.volume_kg,
+    exercises,
+    prs,
+  ]);
 
   // ✅ EARLY RETURNS AFTER ALL HOOKS
   if (loading) return <LoadingScreen />;
   if (err) return <ErrorState title="Workout detail failed" message={err} />;
-  if (!header) return <ErrorState title="No session" message="Try another workout." />;
+  if (!header)
+    return <ErrorState title="No session" message="Try another workout." />;
 
   return (
     <Screen>
@@ -214,7 +296,9 @@ export default function WorkoutHistoryDetailScreen({
               }
               setShareOpen(true);
             }}
-            style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1, padding: 6 }]}
+            style={({ pressed }) => [
+              { opacity: pressed ? 0.7 : 1, padding: 6 },
+            ]}
             hitSlop={10}
           >
             <Icon name="share-outline" size={20} color={colors.textMuted} />
@@ -237,7 +321,12 @@ export default function WorkoutHistoryDetailScreen({
           gap: 12,
         }}
         showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load("refresh")} />}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => load("refresh")}
+          />
+        }
       >
         <HistorySectionHeader
           title={header.title}
@@ -262,13 +351,17 @@ export default function WorkoutHistoryDetailScreen({
 
         {/* ✅ Insight line */}
         {insight?.label ? (
-          <Text style={{ color: colors.textMuted, marginTop: -6 }}>{insight.label}</Text>
+          <Text style={{ color: colors.textMuted, marginTop: -6 }}>
+            {insight.label}
+          </Text>
         ) : null}
 
         {/* Summary strip */}
         <View style={{ flexDirection: "row", gap: 10 }}>
           <Card style={{ flex: 1, padding: 12, borderRadius: 18 }}>
-            <Text style={{ color: colors.textMuted, fontSize: 12 }}>VOLUME</Text>
+            <Text style={{ color: colors.textMuted, fontSize: 12 }}>
+              VOLUME
+            </Text>
             <Text
               style={{
                 color: colors.text,
@@ -298,7 +391,13 @@ export default function WorkoutHistoryDetailScreen({
 
         {header.notes ? (
           <Card style={{ padding: 12, borderRadius: 18 }}>
-            <Text style={{ color: colors.textMuted, fontSize: 12, letterSpacing: 0.8 }}>
+            <Text
+              style={{
+                color: colors.textMuted,
+                fontSize: 12,
+                letterSpacing: 0.8,
+              }}
+            >
               NOTES
             </Text>
             <Text style={{ color: colors.text, marginTop: 8, fontSize: 14 }}>
@@ -309,7 +408,13 @@ export default function WorkoutHistoryDetailScreen({
 
         {/* Exercises */}
         <Card style={{ padding: 12, borderRadius: 18 }}>
-          <Text style={{ color: colors.text, fontFamily: typography.fontFamily.bold, fontSize: 14 }}>
+          <Text
+            style={{
+              color: colors.text,
+              fontFamily: typography.fontFamily.bold,
+              fontSize: 14,
+            }}
+          >
             Exercises
           </Text>
           <Text style={{ color: colors.textMuted, marginTop: 6 }}>
@@ -342,13 +447,7 @@ export default function WorkoutHistoryDetailScreen({
                       <WorkoutHistoryExerciseRow
                         key={`${ex.exercise_id}-${st.set_number}-${st.set_id ?? "x"}`}
                         name={`Set ${st.set_number}`}
-                        summary={
-                          st.weight_kg != null && st.reps != null
-                            ? `${st.weight_kg} × ${st.reps}`
-                            : st.reps != null
-                            ? `${st.reps} reps`
-                            : "—"
-                        }
+                        summary={fmtSetSummary(st)}
                         isPr={!!st.is_pr}
                       />
                     ))}
@@ -362,7 +461,13 @@ export default function WorkoutHistoryDetailScreen({
         {/* PR list */}
         {prsCount > 0 ? (
           <Card style={{ padding: 12, borderRadius: 18 }}>
-            <Text style={{ color: colors.text, fontFamily: typography.fontFamily.bold, fontSize: 14 }}>
+            <Text
+              style={{
+                color: colors.text,
+                fontFamily: typography.fontFamily.bold,
+                fontSize: 14,
+              }}
+            >
               PRs
             </Text>
             <Text style={{ color: colors.textMuted, marginTop: 6 }}>
@@ -371,13 +476,21 @@ export default function WorkoutHistoryDetailScreen({
 
             <View style={{ marginTop: 12, gap: 10 }}>
               {prs.slice(0, 12).map((p) => (
-                <View key={p.exercise_id} style={{ flexDirection: "row", alignItems: "center" }}>
-                  <Text style={{ flex: 1, color: colors.text }} numberOfLines={1}>
+                <View
+                  key={p.exercise_id}
+                  style={{ flexDirection: "row", alignItems: "center" }}
+                >
+                  <Text
+                    style={{ flex: 1, color: colors.text }}
+                    numberOfLines={1}
+                  >
                     {p.exercise_name}
                   </Text>
 
                   <Text style={{ color: colors.textMuted, marginRight: 10 }}>
-                    {p.weight_kg != null && p.reps != null ? `${p.weight_kg} × ${p.reps}` : ""}
+                    {p.weight_kg != null && p.reps != null
+                      ? `${p.weight_kg} × ${p.reps}`
+                      : ""}
                   </Text>
 
                   <PRBadge />
