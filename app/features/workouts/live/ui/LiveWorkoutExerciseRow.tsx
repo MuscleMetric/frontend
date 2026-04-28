@@ -33,10 +33,44 @@ function formatStrength(w: number | null, r: number | null) {
   return "—";
 }
 
+function formatDuration(sec: number | null) {
+  if (sec == null) return null;
+
+  const total = Math.max(0, Math.round(sec));
+  const mins = Math.floor(total / 60);
+  const secs = total % 60;
+
+  if (secs === 0) return `${mins} mins`;
+  return `${mins}m ${String(secs).padStart(2, "0")}s`;
+}
+
+function formatPace(distance: number | null, timeSeconds: number | null) {
+  if (
+    distance == null ||
+    distance <= 0 ||
+    timeSeconds == null ||
+    timeSeconds <= 0
+  ) {
+    return null;
+  }
+
+  const pace = timeSeconds / distance;
+  const mins = Math.floor(pace / 60);
+  const secs = Math.round(pace % 60);
+
+  return `${mins}:${String(secs).padStart(2, "0")} /km`;
+}
+
 function formatCardio(distance: number | null, timeSeconds: number | null) {
   const parts: string[] = [];
+
+  const duration = formatDuration(timeSeconds);
+  const pace = formatPace(distance, timeSeconds);
+
+  if (duration) parts.push(duration);
   if (distance != null) parts.push(`${fmtNum(distance, 2)}km`);
-  if (timeSeconds != null) parts.push(`${fmtNum(timeSeconds)}s`);
+  if (pace) parts.push(pace);
+
   return parts.join(" • ") || "—";
 }
 
@@ -51,6 +85,7 @@ export function LiveWorkoutExerciseRow(props: {
   const { colors, typography } = useAppTheme();
 
   const complete = isExerciseComplete(props.ex);
+  const type = (props.ex.type ?? "").toLowerCase();
   const cta = getExerciseCtaLabel(props.ex); // "Start" | "Continue" | "Edit"
 
   // ✅ match your desired pill text exactly
@@ -58,17 +93,15 @@ export function LiveWorkoutExerciseRow(props: {
     ? "Done ✓ Edit"
     : cta;
 
-  const pillBorder = complete ? colors.success ?? "#22c55e" : colors.border;
+  const pillBorder = complete ? (colors.success ?? "#22c55e") : colors.border;
   const pillBg = complete
-    ? colors.successBg ?? "rgba(34,197,94,0.12)"
+    ? (colors.successBg ?? "rgba(34,197,94,0.12)")
     : "transparent";
-  const pillText = complete ? colors.success ?? "#16a34a" : colors.text;
+  const pillText = complete ? (colors.success ?? "#16a34a") : colors.text;
 
   // ✅ build completed lines from entered set data (not a prop)
   const completedBlocks = useMemo(() => {
     if (!complete) return [];
-
-    const type = (props.ex.type ?? "").toLowerCase();
 
     // only keep rows that actually have data
     const rows = (props.ex.sets ?? [])
@@ -108,7 +141,7 @@ export function LiveWorkoutExerciseRow(props: {
 
       return { setNumber, baseLabel, dropLabels };
     });
-  }, [complete, props.ex.sets, props.ex.type]);
+  }, [complete, props.ex.sets, type]);
 
   return (
     <Pressable
@@ -228,47 +261,53 @@ export function LiveWorkoutExerciseRow(props: {
       {/* Completed sets list (only once complete) */}
       {complete && completedBlocks.length > 0 && (
         <View style={{ marginTop: 14, paddingLeft: 46, gap: 10 }}>
-          {completedBlocks.slice(0, 12).map((b) => (
-            <View key={`set-${b.setNumber}`} style={{ gap: 6 }}>
-              {/* Base set line */}
-              <Text
-                key={`${b.setNumber}-0`}
-                style={{
-                  fontFamily: typography.fontFamily.regular,
-                  fontSize: typography.size.body,
-                  color: colors.text,
-                }}
-              >
-                {b.setNumber}. {b.baseLabel}
-              </Text>
+          {completedBlocks.slice(0, 12).map((b) => {
+            const hideSetNumber =
+              type === "cardio" && completedBlocks.length === 1;
 
-              {/* Drops inline, slightly indented */}
-              {b.dropLabels.length > 0 && (
-                <View
+            return (
+              <View key={`set-${b.setNumber}`} style={{ gap: 6 }}>
+                <Text
+                  key={`${b.setNumber}-0`}
                   style={{
-                    paddingLeft: 18,
-                    flexDirection: "row",
-                    flexWrap: "wrap",
+                    fontFamily: typography.fontFamily.regular,
+                    fontSize: typography.size.body,
+                    color: colors.text,
                   }}
                 >
-                  {b.dropLabels.map((d) => (
-                    <Text
-                      key={`${b.setNumber}-${d.dropIndex}`}
-                      style={{
-                        fontFamily: typography.fontFamily.regular,
-                        fontSize: typography.size.sub,
-                        color: colors.textMuted,
-                        marginRight: 14,
-                        marginBottom: 6,
-                      }}
-                    >
-                      {dropLetter(d.dropIndex)}. {d.label}
-                    </Text>
-                  ))}
-                </View>
-              )}
-            </View>
-          ))}
+                  {hideSetNumber
+                    ? b.baseLabel
+                    : `${b.setNumber}. ${b.baseLabel}`}
+                </Text>
+
+                {/* Drops inline, slightly indented */}
+                {b.dropLabels.length > 0 && (
+                  <View
+                    style={{
+                      paddingLeft: 18,
+                      flexDirection: "row",
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    {b.dropLabels.map((d) => (
+                      <Text
+                        key={`${b.setNumber}-${d.dropIndex}`}
+                        style={{
+                          fontFamily: typography.fontFamily.regular,
+                          fontSize: typography.size.sub,
+                          color: colors.textMuted,
+                          marginRight: 14,
+                          marginBottom: 6,
+                        }}
+                      >
+                        {dropLetter(d.dropIndex)}. {d.label}
+                      </Text>
+                    ))}
+                  </View>
+                )}
+              </View>
+            );
+          })}
         </View>
       )}
     </Pressable>
