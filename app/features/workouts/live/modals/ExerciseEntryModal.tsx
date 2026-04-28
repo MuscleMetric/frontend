@@ -119,7 +119,8 @@ export function ExerciseEntryModal(props: {
   const repsRef = useRef<TextInput | null>(null);
 
   const [distanceText, setDistanceText] = useState("");
-  const [timeText, setTimeText] = useState("");
+  const [minutesText, setMinutesText] = useState("");
+  const [secondsText, setSecondsText] = useState("");
 
   const sessionVolume = useMemo(() => {
     if (!exercise || cardio) return 0;
@@ -254,6 +255,47 @@ export function ExerciseEntryModal(props: {
     commitRepsText(String(next));
   }
 
+  function splitTimeSeconds(totalSeconds?: number | null) {
+    if (totalSeconds == null || !Number.isFinite(totalSeconds)) {
+      return { minutes: "", seconds: "" };
+    }
+
+    const safe = Math.max(0, Math.round(totalSeconds));
+    return {
+      minutes: String(Math.floor(safe / 60)),
+      seconds: String(safe % 60),
+    };
+  }
+
+  function commitTimeParts(nextMinutes: string, nextSeconds: string) {
+    const cleanMinutes = nextMinutes.replace(/[^\d]/g, "");
+    const cleanSeconds = nextSeconds.replace(/[^\d]/g, "");
+
+    setMinutesText(cleanMinutes);
+    setSecondsText(cleanSeconds);
+
+    const minutes = cleanMinutes ? Number(cleanMinutes) : 0;
+    const seconds = cleanSeconds ? Number(cleanSeconds) : 0;
+
+    const safeSeconds = Math.max(0, Math.min(59, seconds));
+    const total = minutes * 60 + safeSeconds;
+
+    props.onUpdateSetValue({
+      exerciseIndex: index,
+      setNumber,
+      field: "timeSeconds",
+      value: total > 0 ? total : null,
+    });
+  }
+
+  function commitMinutesText(t: string) {
+    commitTimeParts(t, secondsText);
+  }
+
+  function commitSecondsText(t: string) {
+    commitTimeParts(minutesText, t);
+  }
+
   function commitDistanceText(t: string) {
     setDistanceText(t);
     const n = parseNullableNumber(t);
@@ -265,19 +307,6 @@ export function ExerciseEntryModal(props: {
     });
   }
 
-  function commitTimeText(t: string) {
-    setTimeText(t);
-    const n = t ? Number(t) : null;
-    const v =
-      n != null && Number.isFinite(n) ? Math.max(0, Math.min(86400, n)) : null;
-    props.onUpdateSetValue({
-      exerciseIndex: index,
-      setNumber,
-      field: "timeSeconds",
-      value: v,
-    });
-  }
-
   useEffect(() => {
     if (!props.visible || !exercise || !set) return;
 
@@ -286,7 +315,9 @@ export function ExerciseEntryModal(props: {
       setRepsText(set.reps != null ? String(set.reps) : "");
     } else {
       setDistanceText(set.distance != null ? String(set.distance) : "");
-      setTimeText(set.timeSeconds != null ? String(set.timeSeconds) : "");
+      const parts = splitTimeSeconds(set.timeSeconds);
+      setMinutesText(parts.minutes);
+      setSecondsText(parts.seconds);
     }
   }, [props.visible, index, setNumber, cardio]);
 
@@ -307,7 +338,10 @@ export function ExerciseEntryModal(props: {
       if (!src) return;
 
       if (src.distance != null) commitDistanceText(String(src.distance));
-      if (src.timeSeconds != null) commitTimeText(String(src.timeSeconds));
+      if (src.timeSeconds != null) {
+        const parts = splitTimeSeconds(src.timeSeconds);
+        commitTimeParts(parts.minutes, parts.seconds);
+      }
       return;
     }
 
@@ -496,13 +530,11 @@ export function ExerciseEntryModal(props: {
                     colors={colors}
                     typography={typography}
                     distanceText={distanceText}
-                    timeText={timeText}
-                    onChangeDistance={(t) => {
-                      commitDistanceText(t);
-                    }}
-                    onChangeTime={(t) => {
-                      commitTimeText(t);
-                    }}
+                    minutesText={minutesText}
+                    secondsText={secondsText}
+                    onChangeDistance={commitDistanceText}
+                    onChangeMinutes={commitMinutesText}
+                    onChangeSeconds={commitSecondsText}
                   />
                 ) : eligibleDropset && dropMode ? (
                   <View />
