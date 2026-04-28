@@ -23,7 +23,6 @@ import { HistorySectionHeader } from "../ui/HistorySectionHeader";
 import { PRBadge } from "../ui/PRBadge";
 import { WorkoutHistoryExerciseRow } from "../ui/WorkoutHistoryExerciseRow";
 
-// ✅ Share sheet
 import { ShareWorkoutSheet } from "../share/ShareWorkoutSheet";
 import type { ShareWorkoutData } from "../share/workoutShare";
 
@@ -35,6 +34,28 @@ type Insight = {
   delta_pct?: number | null;
   label?: string;
 } | null;
+
+type CardioPR = {
+  id: string;
+  exercise_id: string;
+  exercise_name: string;
+  metric:
+    | "longest_distance"
+    | "best_pace"
+    | "fastest_1k"
+    | "fastest_3k"
+    | "fastest_5k"
+    | "fastest_10k"
+    | "fastest_15k"
+    | "fastest_20k"
+    | "fastest_half_marathon"
+    | "fastest_marathon";
+  benchmark_distance_km?: number | null;
+  value: number;
+  calculation_method?: string | null;
+  workout_set_history_id?: string | null;
+  achieved_at?: string | null;
+};
 
 type DetailPayload = {
   meta?: { timezone?: string; unit?: "kg" };
@@ -48,12 +69,10 @@ type DetailPayload = {
   };
 
   stats?: {
-    distance_total?: number | null;
-    time_seconds?: number | null;
-    distance?: number | null;
     duration_seconds?: number | null;
     sets_count?: number | null;
     volume_kg?: number | null;
+    distance_total?: number | null;
     insight?: Insight;
   };
 
@@ -67,11 +86,14 @@ type DetailPayload = {
     delta_pct?: number | null;
   }>;
 
+  cardio_prs?: CardioPR[];
+
   exercises?: Array<{
     exercise_id: string;
     exercise_name: string;
     order_index?: number | null;
     is_pr?: boolean | null;
+    is_cardio_pr?: boolean | null;
     sets?: Array<{
       set_id?: string;
       set_number: number;
@@ -82,6 +104,7 @@ type DetailPayload = {
       distance?: number | null;
       is_best?: boolean | null;
       is_pr?: boolean | null;
+      is_cardio_pr?: boolean | null;
     }>;
   }>;
 };
@@ -123,11 +146,36 @@ function fmtDuration(sec?: number | null) {
   return `${mins}m ${secs}s`;
 }
 
+function fmtClock(sec?: number | null) {
+  if (sec == null || !isFinite(sec)) return "—";
+
+  const total = Math.max(0, Math.round(sec));
+  const hours = Math.floor(total / 3600);
+  const mins = Math.floor((total % 3600) / 60);
+  const secs = total % 60;
+
+  if (hours > 0) {
+    return `${hours}:${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+  }
+
+  return `${mins}:${String(secs).padStart(2, "0")}`;
+}
+
 function fmtDistance(x?: number | null) {
   if (x == null || !isFinite(x)) return null;
 
   const rounded = Math.round(Number(x) * 100) / 100;
   return `${rounded} km`;
+}
+
+function fmtPace(secPerKm?: number | null) {
+  if (secPerKm == null || !isFinite(secPerKm)) return "—";
+
+  const total = Math.max(0, Math.round(secPerKm));
+  const mins = Math.floor(total / 60);
+  const secs = total % 60;
+
+  return `${mins}:${String(secs).padStart(2, "0")} /km`;
 }
 
 function isCardioSet(st: {
@@ -149,14 +197,53 @@ function fmtSetSummary(st: {
       fmtDistance(st.distance),
     ].filter(Boolean);
 
+    if (st.time_seconds != null && st.distance != null && st.distance > 0) {
+      parts.push(fmtPace(st.time_seconds / st.distance));
+    }
+
     return parts.length ? parts.join(" • ") : "—";
   }
 
-  if (st.weight_kg != null && st.reps != null)
+  if (st.weight_kg != null && st.reps != null) {
     return `${st.weight_kg} kg × ${st.reps}`;
+  }
+
   if (st.reps != null) return `${st.reps} reps`;
 
   return "—";
+}
+
+function fmtCardioMetricLabel(metric: CardioPR["metric"]) {
+  switch (metric) {
+    case "longest_distance":
+      return "Longest Distance";
+    case "best_pace":
+      return "Best Pace";
+    case "fastest_1k":
+      return "Fastest 1K";
+    case "fastest_3k":
+      return "Fastest 3K";
+    case "fastest_5k":
+      return "Fastest 5K";
+    case "fastest_10k":
+      return "Fastest 10K";
+    case "fastest_15k":
+      return "Fastest 15K";
+    case "fastest_20k":
+      return "Fastest 20K";
+    case "fastest_half_marathon":
+      return "Fastest Half Marathon";
+    case "fastest_marathon":
+      return "Fastest Marathon";
+    default:
+      return "Cardio PB";
+  }
+}
+
+function fmtCardioPRValue(pr: CardioPR) {
+  if (pr.metric === "longest_distance") return fmtDistance(pr.value) ?? "—";
+  if (pr.metric === "best_pace") return fmtPace(pr.value);
+  return fmtClock(pr.value);
 }
 
 export default function WorkoutHistoryDetailScreen({
@@ -176,8 +263,6 @@ export default function WorkoutHistoryDetailScreen({
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-
-  // ✅ Share UI state
   const [shareOpen, setShareOpen] = useState(false);
 
   const load = useCallback(
@@ -205,7 +290,7 @@ export default function WorkoutHistoryDetailScreen({
         setErr(error.message);
         setData(null);
       } else {
-        setData(res as any);
+        setData(res as DetailPayload);
       }
 
       setLoading(false);
@@ -218,15 +303,20 @@ export default function WorkoutHistoryDetailScreen({
     load("initial");
   }, [load]);
 
-  // ✅ SAFE derived values (defined BEFORE early returns)
   const header = data?.header ?? null;
   const stats = data?.stats ?? null;
   const insight = stats?.insight ?? null;
   const exercises = data?.exercises ?? [];
   const prs = data?.prs ?? [];
-  const prsCount = prs.length;
+  const cardioPrs = data?.cardio_prs ?? [];
 
-  // ✅ Build share data (HOOK ALWAYS RUNS)
+  const prsCount = prs.length;
+  const cardioPrsCount = cardioPrs.length;
+  const totalPrs = prsCount + cardioPrsCount;
+
+  const hasDistance = (stats?.distance_total ?? 0) > 0;
+  const hasVolume = (stats?.volume_kg ?? 0) > 0;
+
   const shareData: ShareWorkoutData = useMemo(() => {
     if (!header) {
       return {
@@ -240,13 +330,10 @@ export default function WorkoutHistoryDetailScreen({
       };
     }
 
-    const dateLabel = fmtDayTime(header.completed_at);
-    const durationLabel = fmtMins(stats?.duration_seconds);
-
     return {
       title: header.title ?? "Workout",
-      dateLabel,
-      durationLabel,
+      dateLabel: fmtDayTime(header.completed_at),
+      durationLabel: fmtMins(stats?.duration_seconds),
       totalSets: stats?.sets_count ?? null,
       totalVolumeKg: stats?.volume_kg ?? null,
 
@@ -261,7 +348,6 @@ export default function WorkoutHistoryDetailScreen({
         })),
       })),
 
-      // PRs already include the set data that caused the PR (weight_kg + reps)
       prs: prs.map((p) => ({
         exerciseName: p.exercise_name,
         weightKg: p.weight_kg ?? null,
@@ -278,15 +364,11 @@ export default function WorkoutHistoryDetailScreen({
     prs,
   ]);
 
-  // ✅ EARLY RETURNS AFTER ALL HOOKS
   if (loading) return <LoadingScreen />;
   if (err) return <ErrorState title="Workout detail failed" message={err} />;
-  if (!header)
+  if (!header) {
     return <ErrorState title="No session" message="Try another workout." />;
-
-  const hasDistance = (stats?.distance_total ?? 0) > 0;
-  const hasVolume = (stats?.volume_kg ?? 0) > 0;
-  const showBoth = hasDistance && hasVolume;
+  }
 
   return (
     <Screen>
@@ -311,7 +393,6 @@ export default function WorkoutHistoryDetailScreen({
         }
       />
 
-      {/* ✅ Share sheet mounted here */}
       <ShareWorkoutSheet
         visible={shareOpen}
         onClose={() => setShareOpen(false)}
@@ -354,14 +435,12 @@ export default function WorkoutHistoryDetailScreen({
           }
         />
 
-        {/* ✅ Insight line */}
         {insight?.label ? (
           <Text style={{ color: colors.textMuted, marginTop: -6 }}>
             {insight.label}
           </Text>
         ) : null}
 
-        {/* Summary strip */}
         <View style={{ flexDirection: "row", gap: 10 }}>
           {hasVolume ? (
             <Card style={{ flex: 1, padding: 12, borderRadius: 18 }}>
@@ -399,21 +478,19 @@ export default function WorkoutHistoryDetailScreen({
             </Card>
           ) : null}
 
-          {!showBoth ? (
-            <Card style={{ flex: 1, padding: 12, borderRadius: 18 }}>
-              <Text style={{ color: colors.textMuted, fontSize: 12 }}>PRS</Text>
-              <Text
-                style={{
-                  color: colors.success,
-                  fontFamily: typography.fontFamily.bold,
-                  fontSize: 20,
-                  marginTop: 6,
-                }}
-              >
-                {n0(prsCount)}
-              </Text>
-            </Card>
-          ) : null}
+          <Card style={{ flex: 1, padding: 12, borderRadius: 18 }}>
+            <Text style={{ color: colors.textMuted, fontSize: 12 }}>PRS</Text>
+            <Text
+              style={{
+                color: colors.success,
+                fontFamily: typography.fontFamily.bold,
+                fontSize: 20,
+                marginTop: 6,
+              }}
+            >
+              {n0(totalPrs)}
+            </Text>
+          </Card>
         </View>
 
         {header.notes ? (
@@ -433,7 +510,6 @@ export default function WorkoutHistoryDetailScreen({
           </Card>
         ) : null}
 
-        {/* Exercises */}
         <Card style={{ padding: 12, borderRadius: 18 }}>
           <Text
             style={{
@@ -449,69 +525,113 @@ export default function WorkoutHistoryDetailScreen({
           </Text>
 
           <View style={{ marginTop: 12, gap: 14 }}>
-            {exercises.map((ex) => (
-              <View style={{ marginTop: 12, gap: 14 }}>
-                {exercises.map((ex) => {
-                  const sets = ex.sets ?? [];
-                  const singleSet = sets.length === 1 ? sets[0] : null;
+            {exercises.map((ex) => {
+              const sets = ex.sets ?? [];
+              const singleSet = sets.length === 1 ? sets[0] : null;
 
-                  return (
-                    <View key={ex.exercise_id}>
-                      <View
+              return (
+                <View key={ex.exercise_id}>
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: 10,
+                    }}
+                  >
+                    <Text
+                      numberOfLines={2}
+                      style={{
+                        flex: 1,
+                        color: colors.text,
+                        fontFamily: typography.fontFamily.bold,
+                        fontSize: 16,
+                      }}
+                    >
+                      {ex.exercise_name}
+                    </Text>
+
+                    {singleSet ? (
+                      <Text
+                        numberOfLines={2}
                         style={{
-                          flexDirection: "row",
-                          alignItems: "center",
-                          gap: 10,
+                          color: colors.textMuted,
+                          fontSize: 14,
                         }}
                       >
-                        <Text
-                          numberOfLines={1}
-                          style={{
-                            flex: 1,
-                            color: colors.text,
-                            fontFamily: typography.fontFamily.bold,
-                            fontSize: 16,
-                          }}
-                        >
-                          {ex.exercise_name}
-                        </Text>
+                        {fmtSetSummary(singleSet)}
+                      </Text>
+                    ) : null}
 
-                        {singleSet ? (
-                          <Text
-                            numberOfLines={1}
-                            style={{
-                              color: colors.textMuted,
-                              fontSize: 14,
-                            }}
-                          >
-                            {fmtSetSummary(singleSet)}
-                          </Text>
-                        ) : null}
+                    {ex.is_pr ? <PRBadge /> : null}
+                  </View>
 
-                        {ex.is_pr ? <PRBadge /> : null}
-                      </View>
-
-                      {!singleSet && sets.length ? (
-                        <View style={{ marginTop: 10, gap: 8 }}>
-                          {sets.map((st) => (
-                            <WorkoutHistoryExerciseRow
-                              key={`${ex.exercise_id}-${st.set_number}-${st.set_id ?? "x"}`}
-                              name={`Set ${st.set_number}`}
-                              summary={fmtSetSummary(st)}
-                              isPr={!!st.is_pr}
-                            />
-                          ))}
-                        </View>
-                      ) : null}
+                  {!singleSet && sets.length ? (
+                    <View style={{ marginTop: 10, gap: 8 }}>
+                      {sets.map((st) => (
+                        <WorkoutHistoryExerciseRow
+                          key={`${ex.exercise_id}-${st.set_number}-${st.set_id ?? "x"}`}
+                          name={`Set ${st.set_number}`}
+                          summary={fmtSetSummary(st)}
+                          isPr={!!st.is_pr}
+                          isBest={!!st.is_best}
+                        />
+                      ))}
                     </View>
-                  );
-                })}
-              </View>
-            ))}
+                  ) : null}
+                </View>
+              );
+            })}
           </View>
         </Card>
 
-        {/* PR list */}
+        {cardioPrsCount > 0 ? (
+          <Card style={{ padding: 12, borderRadius: 18 }}>
+            <Text
+              style={{
+                color: colors.text,
+                fontFamily: typography.fontFamily.bold,
+                fontSize: 14,
+              }}
+            >
+              Cardio PBs
+            </Text>
+            <Text style={{ color: colors.textMuted, marginTop: 6 }}>
+              Personal bests from this session.
+            </Text>
+
+            <View style={{ marginTop: 12, gap: 10 }}>
+              {cardioPrs.slice(0, 12).map((p) => (
+                <View
+                  key={p.id}
+                  style={{ flexDirection: "row", alignItems: "center" }}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ color: colors.text }} numberOfLines={1}>
+                      {fmtCardioMetricLabel(p.metric)}
+                    </Text>
+                    <Text
+                      style={{
+                        color: colors.textMuted,
+                        fontSize: 12,
+                        marginTop: 2,
+                      }}
+                      numberOfLines={1}
+                    >
+                      {p.exercise_name}
+                    </Text>
+                  </View>
+
+                  <Text style={{ color: colors.textMuted, marginRight: 10 }}>
+                    {fmtCardioPRValue(p)}
+                  </Text>
+
+                  <PRBadge />
+                </View>
+              ))}
+            </View>
+          </Card>
+        ) : null}
+
         {prsCount > 0 ? (
           <Card style={{ padding: 12, borderRadius: 18 }}>
             <Text
@@ -521,7 +641,7 @@ export default function WorkoutHistoryDetailScreen({
                 fontSize: 14,
               }}
             >
-              PRs
+              Strength PRs
             </Text>
             <Text style={{ color: colors.textMuted, marginTop: 6 }}>
               New bests from this session.
@@ -542,7 +662,7 @@ export default function WorkoutHistoryDetailScreen({
 
                   <Text style={{ color: colors.textMuted, marginRight: 10 }}>
                     {p.weight_kg != null && p.reps != null
-                      ? `${p.weight_kg} × ${p.reps}`
+                      ? `${p.weight_kg} kg × ${p.reps}`
                       : ""}
                   </Text>
 

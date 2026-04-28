@@ -46,19 +46,51 @@ export type WorkoutDetailPR = {
   delta_pct: number | null;
 };
 
+export type CardioPR = {
+  id: string;
+  exercise_id: string;
+  exercise_name: string;
+  metric:
+    | "longest_distance"
+    | "best_pace"
+    | "fastest_1k"
+    | "fastest_3k"
+    | "fastest_5k"
+    | "fastest_10k"
+    | "fastest_15k"
+    | "fastest_20k"
+    | "fastest_half_marathon"
+    | "fastest_marathon";
+  benchmark_distance_km: number | null;
+  value: number;
+  achieved_at: string;
+  workout_set_history_id: string;
+};
+
 export type WorkoutDetailSet = {
   set_id: string;
   set_number: number;
+
   reps: number | null;
   weight_kg: number | null;
   e1rm: number | null;
+
+  time_seconds: number | null;
+  distance: number | null;
+
   is_best: boolean;
+  is_pr: boolean;
+  is_cardio_pr: boolean;
 };
 
 export type WorkoutDetailExercise = {
   exercise_id: string;
   exercise_name: string;
   order_index: number;
+
+  is_pr: boolean;
+  is_cardio_pr: boolean;
+
   sets: WorkoutDetailSet[];
 };
 
@@ -78,7 +110,10 @@ export type WorkoutHistoryDetailPayload = {
     duration_seconds: number | null;
     sets_count: number;
     volume_kg: number;
+    distance_total: number;
+    insight: HistoryInsight;
   };
   prs: WorkoutDetailPR[];
+  cardio_prs: CardioPR[];
   exercises: WorkoutDetailExercise[];
 };
