@@ -119,7 +119,8 @@ function fmtDuration(sec?: number | null) {
   const mins = Math.floor(total / 60);
   const secs = total % 60;
 
-  return `${mins}:${String(secs).padStart(2, "0")}`;
+  if (secs === 0) return `${mins} mins`;
+  return `${mins}m ${secs}s`;
 }
 
 function fmtDistance(x?: number | null) {
@@ -283,6 +284,10 @@ export default function WorkoutHistoryDetailScreen({
   if (!header)
     return <ErrorState title="No session" message="Try another workout." />;
 
+  const hasDistance = (stats?.distance_total ?? 0) > 0;
+  const hasVolume = (stats?.volume_kg ?? 0) > 0;
+  const showBoth = hasDistance && hasVolume;
+
   return (
     <Screen>
       <ScreenHeader
@@ -358,35 +363,57 @@ export default function WorkoutHistoryDetailScreen({
 
         {/* Summary strip */}
         <View style={{ flexDirection: "row", gap: 10 }}>
-          <Card style={{ flex: 1, padding: 12, borderRadius: 18 }}>
-            <Text style={{ color: colors.textMuted, fontSize: 12 }}>
-              VOLUME
-            </Text>
-            <Text
-              style={{
-                color: colors.text,
-                fontFamily: typography.fontFamily.bold,
-                fontSize: 20,
-                marginTop: 6,
-              }}
-            >
-              {fmtKg(stats?.volume_kg)} kg
-            </Text>
-          </Card>
+          {hasVolume ? (
+            <Card style={{ flex: 1, padding: 12, borderRadius: 18 }}>
+              <Text style={{ color: colors.textMuted, fontSize: 12 }}>
+                VOLUME
+              </Text>
+              <Text
+                style={{
+                  color: colors.text,
+                  fontFamily: typography.fontFamily.bold,
+                  fontSize: 20,
+                  marginTop: 6,
+                }}
+              >
+                {fmtKg(stats?.volume_kg)} kg
+              </Text>
+            </Card>
+          ) : null}
 
-          <Card style={{ flex: 1, padding: 12, borderRadius: 18 }}>
-            <Text style={{ color: colors.textMuted, fontSize: 12 }}>PRS</Text>
-            <Text
-              style={{
-                color: colors.success,
-                fontFamily: typography.fontFamily.bold,
-                fontSize: 20,
-                marginTop: 6,
-              }}
-            >
-              {n0(prsCount)}
-            </Text>
-          </Card>
+          {hasDistance ? (
+            <Card style={{ flex: 1, padding: 12, borderRadius: 18 }}>
+              <Text style={{ color: colors.textMuted, fontSize: 12 }}>
+                DISTANCE
+              </Text>
+              <Text
+                style={{
+                  color: colors.text,
+                  fontFamily: typography.fontFamily.bold,
+                  fontSize: 20,
+                  marginTop: 6,
+                }}
+              >
+                {fmtDistance(stats?.distance_total)}
+              </Text>
+            </Card>
+          ) : null}
+
+          {!showBoth ? (
+            <Card style={{ flex: 1, padding: 12, borderRadius: 18 }}>
+              <Text style={{ color: colors.textMuted, fontSize: 12 }}>PRS</Text>
+              <Text
+                style={{
+                  color: colors.success,
+                  fontFamily: typography.fontFamily.bold,
+                  fontSize: 20,
+                  marginTop: 6,
+                }}
+              >
+                {n0(prsCount)}
+              </Text>
+            </Card>
+          ) : null}
         </View>
 
         {header.notes ? (
@@ -423,36 +450,62 @@ export default function WorkoutHistoryDetailScreen({
 
           <View style={{ marginTop: 12, gap: 14 }}>
             {exercises.map((ex) => (
-              <View key={ex.exercise_id}>
-                <View style={{ flexDirection: "row", alignItems: "center" }}>
-                  <Text
-                    numberOfLines={1}
-                    style={{
-                      flex: 1,
-                      color: colors.text,
-                      fontFamily: typography.fontFamily.bold,
-                      fontSize: 16,
-                    }}
-                  >
-                    {ex.exercise_name}
-                  </Text>
+              <View style={{ marginTop: 12, gap: 14 }}>
+                {exercises.map((ex) => {
+                  const sets = ex.sets ?? [];
+                  const singleSet = sets.length === 1 ? sets[0] : null;
 
-                  {/* Optional: exercise-level PR badge if you return ex.is_pr */}
-                  {ex.is_pr ? <PRBadge /> : null}
-                </View>
+                  return (
+                    <View key={ex.exercise_id}>
+                      <View
+                        style={{
+                          flexDirection: "row",
+                          alignItems: "center",
+                          gap: 10,
+                        }}
+                      >
+                        <Text
+                          numberOfLines={1}
+                          style={{
+                            flex: 1,
+                            color: colors.text,
+                            fontFamily: typography.fontFamily.bold,
+                            fontSize: 16,
+                          }}
+                        >
+                          {ex.exercise_name}
+                        </Text>
 
-                {ex.sets?.length ? (
-                  <View style={{ marginTop: 10, gap: 8 }}>
-                    {ex.sets.map((st) => (
-                      <WorkoutHistoryExerciseRow
-                        key={`${ex.exercise_id}-${st.set_number}-${st.set_id ?? "x"}`}
-                        name={`Set ${st.set_number}`}
-                        summary={fmtSetSummary(st)}
-                        isPr={!!st.is_pr}
-                      />
-                    ))}
-                  </View>
-                ) : null}
+                        {singleSet ? (
+                          <Text
+                            numberOfLines={1}
+                            style={{
+                              color: colors.textMuted,
+                              fontSize: 14,
+                            }}
+                          >
+                            {fmtSetSummary(singleSet)}
+                          </Text>
+                        ) : null}
+
+                        {ex.is_pr ? <PRBadge /> : null}
+                      </View>
+
+                      {!singleSet && sets.length ? (
+                        <View style={{ marginTop: 10, gap: 8 }}>
+                          {sets.map((st) => (
+                            <WorkoutHistoryExerciseRow
+                              key={`${ex.exercise_id}-${st.set_number}-${st.set_id ?? "x"}`}
+                              name={`Set ${st.set_number}`}
+                              summary={fmtSetSummary(st)}
+                              isPr={!!st.is_pr}
+                            />
+                          ))}
+                        </View>
+                      ) : null}
+                    </View>
+                  );
+                })}
               </View>
             ))}
           </View>
