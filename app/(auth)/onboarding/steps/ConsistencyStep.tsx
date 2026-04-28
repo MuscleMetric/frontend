@@ -8,6 +8,7 @@ import {
   TextInput,
   KeyboardAvoidingView,
   Platform,
+  ScrollView,
 } from "react-native";
 import { useAppTheme } from "../../../../lib/useAppTheme";
 import type { ErrorMap, OnboardingDraft } from "../types";
@@ -72,93 +73,86 @@ export function ConsistencyStep({
 
   return (
     <View style={styles.page}>
-      <View style={styles.body}>
-        <Stepper label={stepLabel} progress={progress} rightLabel={rightLabel} />
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      >
+        <ScrollView
+          contentContainerStyle={styles.body}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <Stepper label={stepLabel} progress={progress} rightLabel={rightLabel} />
 
-        <View style={styles.header}>
-          <Text style={styles.h1}>Define your consistency</Text>
-          <Text style={styles.sub}>
-            Set your weekly goals. We'll use these to calibrate training intensity
-            and reminders.
-          </Text>
-        </View>
-
-        {/* Workouts per week */}
-        <View style={styles.rowHeader}>
-          <Text style={styles.rowTitle}>Workouts per week</Text>
-          <View style={styles.badge}>
-            <Text style={styles.badgeText}>RECOMMENDED</Text>
+          <View style={styles.header}>
+            <Text style={styles.h1}>Define your consistency</Text>
+            <Text style={styles.sub}>
+              Set your weekly goals. We'll use these to calibrate training intensity
+              and reminders.
+            </Text>
           </View>
-        </View>
 
-        <View style={[styles.weekPill, errors.workoutsPerWeek && styles.errorBorder]}>
-          {workoutChoices.map((n) => {
-            const active = draft.workoutsPerWeek === n;
-            return (
-              <Pressable
-                key={n}
-                onPress={() => onChange("workoutsPerWeek", n)}
-                style={[styles.weekItem, active && styles.weekItemActive]}
-              >
-                <Text style={[styles.weekText, active && styles.weekTextActive]}>
-                  {n}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
-
-        {errors.workoutsPerWeek ? (
-          <Text style={styles.error}>{errors.workoutsPerWeek}</Text>
-        ) : null}
-
-        <View style={{ height: 22 }} />
-
-        {/* Daily steps */}
-        <View style={styles.rowHeader}>
-          <Text style={styles.rowTitle}>Daily Steps</Text>
-          <Text style={styles.miniValue}>{stepsGoal.toLocaleString()}</Text>
-        </View>
-
-        <View style={styles.stepsGrid}>
-          <StepTile
-            label="8k"
-            sub="steps"
-            active={stepsGoal === 8000}
-            onPress={() => setSteps(8000)}
-          />
-          <StepTile
-            label="10k"
-            sub="steps"
-            active={stepsGoal === 10000}
-            onPress={() => setSteps(10000)}
-          />
-          <StepTile
-            label="12k"
-            sub="steps"
-            active={stepsGoal === 12000}
-            onPress={() => setSteps(12000)}
-          />
-          <StepTile
-            label={isPresetSteps ? "Custom" : `${Math.round(stepsGoal / 100) / 10}k`}
-            sub={isPresetSteps ? "" : "custom"}
-            active={!isPresetSteps}
-            onPress={openCustom}
-          />
-        </View>
-
-        {errors.stepsGoal ? <Text style={styles.error}>{errors.stepsGoal}</Text> : null}
-
-        <View style={styles.infoCard}>
-          <View style={styles.infoIcon}>
-            <Text style={{ color: colors.primary, fontWeight: "900" }}>i</Text>
+          {/* Workouts per week */}
+          <View style={styles.rowHeader}>
+            <Text style={styles.rowTitle}>Workouts per week</Text>
+            <View style={styles.badge}>
+              <Text style={styles.badgeText}>RECOMMENDED</Text>
+            </View>
           </View>
-          <Text style={styles.infoText}>
-            Used for reminders and weekly targets. You can adjust these anytime in
-            settings.
-          </Text>
-        </View>
-      </View>
+
+          <View style={[styles.weekPill, errors.workoutsPerWeek && styles.errorBorder]}>
+            {workoutChoices.map((n) => {
+              const active = draft.workoutsPerWeek === n;
+              return (
+                <Pressable
+                  key={n}
+                  onPress={() => onChange("workoutsPerWeek", n)}
+                  style={[styles.weekItem, active && styles.weekItemActive]}
+                >
+                  <Text style={[styles.weekText, active && styles.weekTextActive]}>
+                    {n}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          {errors.workoutsPerWeek ? (
+            <Text style={styles.error}>{errors.workoutsPerWeek}</Text>
+          ) : null}
+
+          <View style={{ height: 22 }} />
+
+          {/* Daily steps */}
+          <View style={styles.rowHeader}>
+            <Text style={styles.rowTitle}>Daily Steps</Text>
+            <Text style={styles.miniValue}>{stepsGoal.toLocaleString()}</Text>
+          </View>
+
+          <View style={styles.stepsGrid}>
+            <StepTile label="8k" sub="steps" active={stepsGoal === 8000} onPress={() => setSteps(8000)} />
+            <StepTile label="10k" sub="steps" active={stepsGoal === 10000} onPress={() => setSteps(10000)} />
+            <StepTile label="12k" sub="steps" active={stepsGoal === 12000} onPress={() => setSteps(12000)} />
+            <StepTile
+              label={isPresetSteps ? "Custom" : `${Math.round(stepsGoal / 100) / 10}k`}
+              sub={isPresetSteps ? "" : "custom"}
+              active={!isPresetSteps}
+              onPress={openCustom}
+            />
+          </View>
+
+          {errors.stepsGoal ? <Text style={styles.error}>{errors.stepsGoal}</Text> : null}
+
+          <View style={styles.infoCard}>
+            <View style={styles.infoIcon}>
+              <Text style={{ color: colors.primary, fontWeight: "900" }}>i</Text>
+            </View>
+            <Text style={styles.infoText}>
+              Used for reminders and weekly targets. You can adjust these anytime in settings.
+            </Text>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
 
       <PrimaryCTA
         title="Finish setup"
@@ -167,7 +161,7 @@ export function ConsistencyStep({
         rightIcon={<Text style={styles.arrow}>→</Text>}
       />
 
-      {/* Custom steps modal */}
+      {/* Modal unchanged */}
       <Modal
         transparent
         animationType="fade"
@@ -258,7 +252,13 @@ function StepTile({
 const makeStyles = (colors: any) =>
   StyleSheet.create({
     page: { flex: 1, backgroundColor: colors.background },
-    body: { flex: 1, paddingTop: 6, paddingHorizontal: 16 },
+
+    // 👇 ONLY change here
+    body: {
+      paddingTop: 6,
+      paddingHorizontal: 16,
+      paddingBottom: 120,
+    },
 
     header: { marginTop: 10, marginBottom: 22 },
     h1: {
@@ -383,7 +383,6 @@ const makeStyles = (colors: any) =>
     errorBorder: { borderColor: "rgba(239,68,68,0.7)" },
     arrow: { color: "#fff", fontWeight: "900", fontSize: 16, marginTop: -1 },
 
-    // modal
     modalBackdrop: {
       ...StyleSheet.absoluteFillObject,
       backgroundColor: "rgba(0,0,0,0.55)",

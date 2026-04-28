@@ -1,5 +1,12 @@
 import React, { useMemo, useRef, useState } from "react";
-import { View, Text, StyleSheet, PanResponder, Animated } from "react-native";
+import {
+  View,
+  Text,
+  StyleSheet,
+  PanResponder,
+  Animated,
+  ScrollView,
+} from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Haptics from "expo-haptics";
 import { useAppTheme } from "../../../../lib/useAppTheme";
@@ -23,12 +30,15 @@ function cmToFtIn(cm: number) {
   const inch = Math.round(totalIn - ft * 12);
   return { ft, inch };
 }
+
 function kgToLb(kg: number) {
   return Math.round(kg * LB_PER_KG);
 }
+
 function clamp(v: number, min: number, max: number) {
   return Math.max(min, Math.min(max, v));
 }
+
 function roundToStep(v: number, step: number) {
   const inv = 1 / step;
   return Math.round(v * inv) / inv;
@@ -37,12 +47,15 @@ function roundToStep(v: number, step: number) {
 function cmToIn(cm: number) {
   return cm / CM_PER_IN;
 }
+
 function inToCm(inches: number) {
   return inches * CM_PER_IN;
 }
+
 function kgToLbExact(kg: number) {
   return kg * LB_PER_KG;
 }
+
 function lbToKgExact(lb: number) {
   return lb / LB_PER_KG;
 }
@@ -90,7 +103,11 @@ export function BodyMetricsStep({
 
   return (
     <View style={styles.page}>
-      <View style={styles.body}>
+      <ScrollView
+        contentContainerStyle={styles.body}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
         <Stepper label={stepLabel} progress={progress} />
 
         <View style={styles.header}>
@@ -100,7 +117,6 @@ export function BodyMetricsStep({
           </Text>
         </View>
 
-        {/* HEIGHT */}
         <View style={styles.metricHeader}>
           <Text style={styles.metricLabel}>HEIGHT</Text>
           <UnitToggle<UnitHeight>
@@ -113,22 +129,21 @@ export function BodyMetricsStep({
 
         {draft.unitHeight === "cm" ? (
           <RulerControl
-            value={heightCm} // cm
+            value={heightCm}
             min={100}
             max={250}
             step={1}
             valueLabel={heightText}
             error={!!errors.height}
             onChange={(v) => onChange("heightCm", v)}
-            formatMajorLabel={(v) => `${Math.round(v)}`} // cm labels
+            formatMajorLabel={(v) => `${Math.round(v)}`}
           />
         ) : (
           <RulerControl
-            // We operate ruler in inches, but store in cm
-            value={cmToIn(heightCm)} // inches
-            min={36} // 3'0"
-            max={98} // 8'2"
-            step={1} // 1 inch steps
+            value={cmToIn(heightCm)}
+            min={36}
+            max={98}
+            step={1}
             valueLabel={heightText}
             error={!!errors.height}
             onChange={(inches) => onChange("heightCm", inToCm(inches))}
@@ -136,13 +151,10 @@ export function BodyMetricsStep({
           />
         )}
 
-        {errors.height ? (
-          <Text style={styles.error}>{errors.height}</Text>
-        ) : null}
+        {errors.height ? <Text style={styles.error}>{errors.height}</Text> : null}
 
         <View style={{ height: 26 }} />
 
-        {/* WEIGHT */}
         <View style={styles.metricHeader}>
           <Text style={styles.metricLabel}>WEIGHT</Text>
           <UnitToggle<UnitWeight>
@@ -155,33 +167,30 @@ export function BodyMetricsStep({
 
         {draft.unitWeight === "kg" ? (
           <RulerControl
-            value={weightKg} // kg
+            value={weightKg}
             min={30}
             max={300}
             step={0.5}
             valueLabel={weightText}
             error={!!errors.weight}
             onChange={(v) => onChange("weightKg", v)}
-            formatMajorLabel={(v) => `${Math.round(v)}`} // kg labels
+            formatMajorLabel={(v) => `${Math.round(v)}`}
           />
         ) : (
           <RulerControl
-            // Ruler in pounds, store in kg
-            value={kgToLbExact(weightKg)} // lb (not rounded so it tracks smoothly)
+            value={kgToLbExact(weightKg)}
             min={66}
             max={660}
             step={1}
             valueLabel={weightText}
             error={!!errors.weight}
             onChange={(lb) => onChange("weightKg", lbToKgExact(lb))}
-            formatMajorLabel={(lb) => `${Math.round(lb)}`} // lb labels
+            formatMajorLabel={(lb) => `${Math.round(lb)}`}
           />
         )}
 
-        {errors.weight ? (
-          <Text style={styles.error}>{errors.weight}</Text>
-        ) : null}
-      </View>
+        {errors.weight ? <Text style={styles.error}>{errors.weight}</Text> : null}
+      </ScrollView>
 
       <PrimaryCTA
         title="Next Step"
@@ -192,12 +201,6 @@ export function BodyMetricsStep({
   );
 }
 
-/**
- * Drag-to-adjust ruler.
- * - Drag right => increases value
- * - Drag left => decreases value
- * - Snaps to `step`
- */
 function RulerControl({
   value,
   min,
@@ -227,25 +230,24 @@ function RulerControl({
   const centerX = width / 2;
 
   const tx = useRef(new Animated.Value(0)).current;
-
   const startVal = useRef(value);
   const startX = useRef(0);
   const dragging = useRef(false);
-
-  // haptics: only fire when step index changes
   const lastHapticIndex = useRef<number | null>(null);
 
   const valueWindow = useMemo(() => {
     const totalSteps = Math.round((max - min) / step);
     const stepsFromMin = Math.round((value - min) / step);
-
     const startSteps = clamp(stepsFromMin - WINDOW_STEPS, 0, totalSteps);
     const endSteps = clamp(stepsFromMin + WINDOW_STEPS, 0, totalSteps);
 
-    const start = min + startSteps * step;
-    const end = min + endSteps * step;
-
-    return { start, end, startSteps, endSteps, totalSteps };
+    return {
+      start: min + startSteps * step,
+      end: min + endSteps * step,
+      startSteps,
+      endSteps,
+      totalSteps,
+    };
   }, [value, min, max, step]);
 
   const ticks = useMemo(() => {
@@ -256,12 +258,13 @@ function RulerControl({
       const globalStep = valueWindow.startSteps + i;
       arr.push({ v: valueWindow.start + i * step, i, globalStep });
     }
+
     return arr;
   }, [valueWindow, step]);
 
-  // keep track aligned when not dragging
   const currentIndex = (value - valueWindow.start) / step;
   const targetTx = centerX - currentIndex * PX_PER_STEP;
+
   if (!dragging.current && width > 0) {
     tx.setValue(targetTx);
   }
@@ -291,15 +294,12 @@ function RulerControl({
 
           if (next !== value) onChange(next);
 
-          // slide track
           const idx = (next - valueWindow.start) / step;
           tx.setValue(centerX - idx * PX_PER_STEP);
 
-          // haptic tick when we cross a step boundary
           const idxGlobal = Math.round((next - min) / step);
           if (lastHapticIndex.current !== idxGlobal) {
             lastHapticIndex.current = idxGlobal;
-            // light “tick”
             Haptics.selectionAsync().catch(() => {});
           }
         },
@@ -326,7 +326,6 @@ function RulerControl({
     [value, width, centerX, step, min, max, onChange, valueWindow, tx]
   );
 
-  // Colors that work in light + dark (don’t use faint white)
   const minorTickColor = colors.trackBorder ?? "rgba(0,0,0,0.12)";
   const majorTickColor = colors.textMuted ?? "rgba(0,0,0,0.35)";
 
@@ -336,7 +335,6 @@ function RulerControl({
       onLayout={(e) => setWidth(e.nativeEvent.layout.width)}
       {...pan.panHandlers}
     >
-      {/* Track viewport (ticks slide under this) */}
       <View style={styles.trackViewport}>
         <Animated.View
           style={[
@@ -373,7 +371,6 @@ function RulerControl({
           })}
         </Animated.View>
 
-        {/* Edge fades */}
         <LinearGradient
           pointerEvents="none"
           colors={[colors.background, "transparent"]}
@@ -381,6 +378,7 @@ function RulerControl({
           end={{ x: 1, y: 0 }}
           style={styles.fadeLeft}
         />
+
         <LinearGradient
           pointerEvents="none"
           colors={["transparent", colors.background]}
@@ -389,11 +387,9 @@ function RulerControl({
           style={styles.fadeRight}
         />
 
-        {/* Fixed center line */}
         <View style={styles.centerLine} />
       </View>
 
-      {/* Value label */}
       <View style={styles.rulerFooter}>
         <Text style={styles.rulerValue}>{valueLabel}</Text>
         <Text style={styles.rulerHint}>Drag to adjust</Text>
@@ -405,7 +401,12 @@ function RulerControl({
 const makeStyles = (colors: any) =>
   StyleSheet.create({
     page: { flex: 1, backgroundColor: colors.background },
-    body: { flex: 1, paddingTop: 6, paddingHorizontal: 16 },
+
+    body: {
+      paddingTop: 6,
+      paddingHorizontal: 16,
+      paddingBottom: 120,
+    },
 
     header: {
       marginTop: 10,
@@ -450,23 +451,7 @@ const makeStyles = (colors: any) =>
     cardError: {
       borderColor: "rgba(239,68,68,0.7)",
     },
-    rulerInner: {
-      flex: 1,
-      justifyContent: "center",
-      paddingHorizontal: 18,
-    },
 
-    tickWrap: {
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "space-between",
-      opacity: 0.75,
-    },
-
-    tickTall: {
-      height: 26,
-      backgroundColor: "rgba(255,255,255,0.16)",
-    },
     centerLine: {
       position: "absolute",
       left: "50%",
@@ -562,5 +547,10 @@ const makeStyles = (colors: any) =>
       fontWeight: "800",
     },
 
-    arrow: { color: "#fff", fontWeight: "900", fontSize: 16, marginTop: -1 },
+    arrow: {
+      color: "#fff",
+      fontWeight: "900",
+      fontSize: 16,
+      marginTop: -1,
+    },
   });

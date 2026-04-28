@@ -6,6 +6,9 @@ import {
   Pressable,
   StyleSheet,
   ActivityIndicator,
+  ScrollView,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import { useAppTheme } from "../../../../lib/useAppTheme";
 import { supabase } from "@/lib/supabase";
@@ -32,9 +35,7 @@ type UsernameStatus =
   | { kind: "error"; message: string };
 
 function normalizeUsernameInput(raw: string) {
-  // Keep only a-z 0-9 _ , lowercased, trimmed, no spaces
   const v = (raw ?? "").toLowerCase().trim();
-  // remove spaces entirely, then strip invalid chars
   return v.replace(/\s+/g, "").replace(/[^a-z0-9_]/g, "");
 }
 
@@ -73,7 +74,7 @@ export function AboutYouStep({
   onOpenDob: () => void;
   onNext: () => void;
   stepLabel?: string;
-  progress?: number; // 0..1
+  progress?: number;
 }) {
   const { colors } = useAppTheme() as any;
   const styles = useMemo(() => makeStyles(colors), [colors]);
@@ -83,58 +84,53 @@ export function AboutYouStep({
   const [uStatus, setUStatus] = useState<UsernameStatus>({ kind: "idle" });
   const lastChecked = useRef<string>("");
 
-  const checkUsername = useCallback(
-    async (username: string) => {
-      const norm = normalizeUsernameInput(username);
+  const checkUsername = useCallback(async (username: string) => {
+    const norm = normalizeUsernameInput(username);
 
-      // if empty, just reset UI state (validation will catch it if required)
-      if (!norm) {
-        setUStatus({ kind: "idle" });
-        lastChecked.current = "";
-        return;
-      }
+    if (!norm) {
+      setUStatus({ kind: "idle" });
+      lastChecked.current = "";
+      return;
+    }
 
-      // avoid re-checking same value
-      if (lastChecked.current === norm) return;
+    if (lastChecked.current === norm) return;
 
-      setUStatus({ kind: "checking" });
+    setUStatus({ kind: "checking" });
 
-      const res = await supabase
-        .rpc("check_username_available_v1", { p_username: norm })
-        .single();
+    const res = await supabase
+      .rpc("check_username_available_v1", { p_username: norm })
+      .single();
 
-      if (res.error) {
-        setUStatus({ kind: "error", message: res.error.message ?? "Failed to check username" });
-        return;
-      }
+    if (res.error) {
+      setUStatus({
+        kind: "error",
+        message: res.error.message ?? "Failed to check username",
+      });
+      return;
+    }
 
-      const row = res.data as unknown as UsernameCheckRow;
+    const row = res.data as unknown as UsernameCheckRow;
+    lastChecked.current = row.normalized ?? norm;
 
-      lastChecked.current = row.normalized ?? norm;
+    if (!row.is_valid) {
+      setUStatus({
+        kind: "invalid",
+        normalized: row.normalized ?? norm,
+        reason: row.reason ?? "invalid",
+      });
+      return;
+    }
 
-      if (!row.is_valid) {
-        setUStatus({
-          kind: "invalid",
-          normalized: row.normalized ?? norm,
-          reason: row.reason ?? "invalid",
-        });
-        return;
-      }
+    if (row.is_available) {
+      setUStatus({ kind: "available", normalized: row.normalized ?? norm });
+    } else {
+      setUStatus({ kind: "taken", normalized: row.normalized ?? norm });
+    }
+  }, []);
 
-      if (row.is_available) {
-        setUStatus({ kind: "available", normalized: row.normalized ?? norm });
-      } else {
-        setUStatus({ kind: "taken", normalized: row.normalized ?? norm });
-      }
-    },
-    []
-  );
-
-  // Debounce username availability check
   useEffect(() => {
     const norm = normalizeUsernameInput((draft as any).username ?? "");
-    // Keep the input in sync with normalization (optional but helps)
-    // Only rewrite if user typed invalid chars/spaces
+
     if ((draft as any).username != null && (draft as any).username !== norm) {
       onChange("username" as any, norm as any);
     }
@@ -157,7 +153,6 @@ export function AboutYouStep({
   }, [uStatus]);
 
   const usernameHelperTone = useMemo(() => {
-    // style choices
     if (uStatus.kind === "available") return "ok";
     if (uStatus.kind === "checking" || uStatus.kind === "idle") return "neutral";
     return "bad";
@@ -165,108 +160,126 @@ export function AboutYouStep({
 
   return (
     <View style={styles.page}>
-      <View style={styles.body}>
-        <Stepper label={stepLabel} progress={progress} />
+      <KeyboardAvoidingView
+        style={styles.keyboard}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      >
+        <ScrollView
+          contentContainerStyle={styles.body}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <Stepper label={stepLabel} progress={progress} />
 
-        <View style={styles.header}>
-          <Text style={styles.h1}>About You</Text>
-          <Text style={styles.sub}>
-            We'll use this information to personalize your training experience and calculate your metrics.
-          </Text>
-        </View>
-
-        <Field label="FULL NAME" error={errors.fullName}>
-          <TextInput
-            style={[styles.input, !!errors.fullName && styles.inputError]}
-            placeholder="John Doe"
-            placeholderTextColor={colors.textMuted}
-            value={draft.fullName}
-            onChangeText={(t) => onChange("fullName", t)}
-            autoCapitalize="words"
-            returnKeyType="next"
-          />
-        </Field>
-
-        {/* ✅ Username field */}
-        <Field label="USERNAME" error={(errors as any).username}>
-          <View style={[styles.input, styles.rowInput, !!(errors as any).username && styles.inputError]}>
-            <View style={styles.leftIcon}>
-              <Text style={styles.leftIconText}>@</Text>
-            </View>
-
-            <TextInput
-              style={[styles.rowText, { color: colors.text }]}
-              placeholder="yourname"
-              placeholderTextColor={colors.textMuted}
-              value={(draft as any).username ?? ""}
-              onChangeText={(t) => onChange("username" as any, normalizeUsernameInput(t) as any)}
-              autoCapitalize="none"
-              autoCorrect={false}
-              textContentType="username"
-              returnKeyType="next"
-            />
-
-            {uStatus.kind === "checking" ? (
-              <ActivityIndicator />
-            ) : uStatus.kind === "available" ? (
-              <Text style={styles.okMark}>✓</Text>
-            ) : uStatus.kind === "taken" || uStatus.kind === "invalid" || uStatus.kind === "error" ? (
-              <Text style={styles.badMark}>!</Text>
-            ) : null}
+          <View style={styles.header}>
+            <Text style={styles.h1}>About You</Text>
+            <Text style={styles.sub}>
+              We'll use this information to personalize your training experience and calculate your metrics.
+            </Text>
           </View>
 
-          {!!usernameHelper && (
-            <Text
+          <Field label="FULL NAME" error={errors.fullName}>
+            <TextInput
+              style={[styles.input, !!errors.fullName && styles.inputError]}
+              placeholder="John Doe"
+              placeholderTextColor={colors.textMuted}
+              value={draft.fullName}
+              onChangeText={(t) => onChange("fullName", t)}
+              autoCapitalize="words"
+              returnKeyType="next"
+            />
+          </Field>
+
+          <Field label="USERNAME" error={(errors as any).username}>
+            <View
               style={[
-                styles.helper,
-                usernameHelperTone === "ok" && styles.helperOk,
-                usernameHelperTone === "bad" && styles.helperBad,
+                styles.input,
+                styles.rowInput,
+                !!(errors as any).username && styles.inputError,
               ]}
             >
-              {usernameHelper}
-            </Text>
-          )}
-        </Field>
+              <View style={styles.leftIcon}>
+                <Text style={styles.leftIconText}>@</Text>
+              </View>
 
-        <Field label="EMAIL ADDRESS">
-          <TextInput
-            style={[styles.input, styles.readOnly]}
-            placeholder="john.doe@musclemetric.com"
-            placeholderTextColor={colors.textMuted}
-            value={draft.email}
-            editable={false}
-          />
-        </Field>
+              <TextInput
+                style={styles.rowText}
+                placeholder="yourname"
+                placeholderTextColor={colors.textMuted}
+                value={(draft as any).username ?? ""}
+                onChangeText={(t) =>
+                  onChange("username" as any, normalizeUsernameInput(t) as any)
+                }
+                autoCapitalize="none"
+                autoCorrect={false}
+                textContentType="username"
+                returnKeyType="next"
+              />
 
-        <Field label="DATE OF BIRTH" error={errors.dob}>
-          <Pressable
-            onPress={onOpenDob}
-            style={[styles.input, styles.rowInput, !!errors.dob && styles.inputError]}
-          >
-            <Text
-              style={[
-                styles.rowText,
-                { color: draft.dob ? colors.text : colors.textMuted },
-              ]}
+              {uStatus.kind === "checking" ? (
+                <ActivityIndicator />
+              ) : uStatus.kind === "available" ? (
+                <Text style={styles.okMark}>✓</Text>
+              ) : uStatus.kind === "taken" ||
+                uStatus.kind === "invalid" ||
+                uStatus.kind === "error" ? (
+                <Text style={styles.badMark}>!</Text>
+              ) : null}
+            </View>
+
+            {!!usernameHelper && (
+              <Text
+                style={[
+                  styles.helper,
+                  usernameHelperTone === "ok" && styles.helperOk,
+                  usernameHelperTone === "bad" && styles.helperBad,
+                ]}
+              >
+                {usernameHelper}
+              </Text>
+            )}
+          </Field>
+
+          <Field label="EMAIL ADDRESS">
+            <TextInput
+              style={[styles.input, styles.readOnly]}
+              placeholder="john.doe@musclemetric.com"
+              placeholderTextColor={colors.textMuted}
+              value={draft.email}
+              editable={false}
+            />
+          </Field>
+
+          <Field label="DATE OF BIRTH" error={errors.dob}>
+            <Pressable
+              onPress={onOpenDob}
+              style={[styles.input, styles.rowInput, !!errors.dob && styles.inputError]}
             >
-              {dobLabel}
-            </Text>
-            <Text style={styles.chev}>›</Text>
-          </Pressable>
-        </Field>
+              <Text
+                style={[
+                  styles.rowText,
+                  { color: draft.dob ? colors.text : colors.textMuted },
+                ]}
+              >
+                {dobLabel}
+              </Text>
+              <Text style={styles.chev}>›</Text>
+            </Pressable>
+          </Field>
 
-        <Field label="GENDER" error={errors.gender}>
-          <SegmentRow<Gender>
-            value={draft.gender}
-            onChange={(g) => onChange("gender", g)}
-            options={[
-              { value: "male", label: "Male" },
-              { value: "female", label: "Female" },
-            ]}
-            error={!!errors.gender}
-          />
-        </Field>
-      </View>
+          <Field label="GENDER" error={errors.gender}>
+            <SegmentRow<Gender>
+              value={draft.gender}
+              onChange={(g) => onChange("gender", g)}
+              options={[
+                { value: "male", label: "Male" },
+                { value: "female", label: "Female" },
+              ]}
+              error={!!errors.gender}
+            />
+          </Field>
+        </ScrollView>
+      </KeyboardAvoidingView>
 
       <PrimaryCTA
         title="Next"
@@ -287,8 +300,18 @@ function formatDob(d: Date) {
 
 const makeStyles = (colors: any) =>
   StyleSheet.create({
-    page: { flex: 1, backgroundColor: colors.background },
-    body: { flex: 1, paddingTop: 6, paddingHorizontal: 16 },
+    page: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
+    keyboard: {
+      flex: 1,
+    },
+    body: {
+      paddingTop: 6,
+      paddingHorizontal: 16,
+      paddingBottom: 120,
+    },
 
     header: {
       marginTop: 10,
@@ -371,10 +394,10 @@ const makeStyles = (colors: any) =>
       color: colors.textMuted,
     },
     helperOk: {
-      color: "rgba(34,197,94,0.95)", // green-ish
+      color: "rgba(34,197,94,0.95)",
     },
     helperBad: {
-      color: "rgba(239,68,68,0.95)", // red-ish
+      color: "rgba(239,68,68,0.95)",
     },
 
     okMark: {
@@ -390,5 +413,10 @@ const makeStyles = (colors: any) =>
       marginLeft: 6,
     },
 
-    arrow: { color: "#fff", fontWeight: "900", fontSize: 16, marginTop: -1 },
+    arrow: {
+      color: "#fff",
+      fontWeight: "900",
+      fontSize: 16,
+      marginTop: -1,
+    },
   });
