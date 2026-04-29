@@ -55,7 +55,6 @@ export default function AuthIndex() {
     };
   }, []);
 
-  // ✅ FIXED GOOGLE FLOW
   async function signInWithGoogle() {
     try {
       setLoadingProvider("google");
@@ -132,17 +131,68 @@ export default function AuthIndex() {
         nonce: hashedNonce,
       });
 
+      const appleFullName = [
+        credential.fullName?.givenName,
+        credential.fullName?.familyName,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .trim();
+
+      console.log(
+        "[Apple] raw fullName:",
+        JSON.stringify(credential.fullName, null, 2),
+      );
+      console.log("[Apple] credential email:", credential.email);
+      console.log("[Apple] built appleFullName:", appleFullName || "(empty)");
+
       if (!credential.identityToken) {
         throw new Error("Apple did not return an identity token.");
       }
 
-      const { error } = await supabase.auth.signInWithIdToken({
+      const { data, error } = await supabase.auth.signInWithIdToken({
         provider: "apple",
         token: credential.identityToken,
         nonce: rawNonce,
       });
 
       if (error) throw error;
+
+      console.log("[Apple] Supabase user id:", data.user?.id);
+      console.log("[Apple] Supabase user email:", data.user?.email);
+
+      if (data.user?.id && appleFullName) {
+        const { error: metadataError } = await supabase.auth.updateUser({
+          data: {
+            name: appleFullName,
+            full_name: appleFullName,
+            apple_full_name: appleFullName,
+            provider: "apple",
+          },
+        });
+
+        console.log("[Apple] metadata save error:", metadataError);
+
+        const { data: profileRows, error: profileError } = await supabase
+          .from("profiles")
+          .upsert(
+            {
+              id: data.user.id,
+              name: appleFullName,
+              email: data.user.email ?? credential.email ?? null,
+            },
+            { onConflict: "id" },
+          )
+          .select("id, name, email");
+
+        console.log("[Apple] profile upsert rows:", profileRows);
+        console.log("[Apple] profile upsert error:", profileError);
+      } else {
+        console.log("[Apple] skipped profile name save", {
+          hasUserId: !!data.user?.id,
+          appleFullName,
+        });
+      }
 
       router.replace("/callback");
     } catch (e: any) {

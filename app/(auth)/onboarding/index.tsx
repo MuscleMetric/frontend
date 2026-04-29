@@ -42,7 +42,7 @@ export default function OnboardingIndex() {
   const { colors } = useAppTheme() as any;
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
-  const { session, loading: authLoading } = useAuth();
+  const { session, profile, loading: authLoading } = useAuth();
 
   // step: 0..3 = setup, 4 = ready
   const [step, setStep] = useState<0 | 1 | 2 | 3 | 4>(0);
@@ -60,24 +60,39 @@ export default function OnboardingIndex() {
     }
   }, [authLoading, session]);
 
-  // Prefill name/email from provider metadata
   useEffect(() => {
     if (!session) return;
+
     const u = session.user;
     const meta = (u.user_metadata || {}) as any;
 
-    setDraft((prev) => ({
-      ...prev,
-      email: prev.email || u.email || meta.email || "",
-      fullName:
-        prev.fullName ||
-        meta.name ||
-        meta.full_name ||
-        meta.given_name ||
-        meta.preferred_username ||
-        "",
-    }));
-  }, [session]);
+    const provider =
+      u.app_metadata?.provider || u.identities?.[0]?.provider || null;
+
+    const profileName = profile?.name?.trim();
+    const metadataName =
+      meta.apple_full_name ||
+      meta.full_name ||
+      meta.name ||
+      meta.given_name ||
+      meta.preferred_username ||
+      "";
+
+    const initialName = profileName || metadataName || "";
+
+    setDraft(
+      (prev) =>
+        ({
+          ...prev,
+          email: prev.email || profile?.email || u.email || meta.email || "",
+          fullName: prev.fullName || initialName,
+          provider: (prev as any).provider || provider,
+          appleProvidedName:
+            (prev as any).appleProvidedName ??
+            (provider === "apple" && !!initialName),
+        }) as any,
+    );
+  }, [session, profile?.name, profile?.email]);
 
   async function ensureUsernameOk(): Promise<true | string> {
     const raw = (draft.username ?? "").trim();
@@ -157,6 +172,15 @@ export default function OnboardingIndex() {
 
   async function next() {
     const map = validateStep(draft, step);
+
+    const isAppleUser =
+      (draft as any).provider === "apple" ||
+      draft.email?.includes("privaterelay.appleid.com");
+
+    if (step === 0 && isAppleUser && !draft.fullName.trim()) {
+      delete map.fullName;
+    }
+
     setErrors(map);
     if (hasErrors(map)) return;
 
@@ -188,12 +212,19 @@ export default function OnboardingIndex() {
       const u = session.user;
       const meta = (u.user_metadata || {}) as any;
 
+      const isAppleUser =
+        session.user.app_metadata?.provider === "apple" ||
+        session.user.identities?.some((i: any) => i.provider === "apple") ||
+        draft.email?.includes("privaterelay.appleid.com");
+
       const trimmedName =
         draft.fullName.trim() ||
-        meta.name ||
+        profile?.name ||
+        meta.apple_full_name ||
         meta.full_name ||
+        meta.name ||
         meta.given_name ||
-        u.email ||
+        (isAppleUser ? "Apple User" : u.email) ||
         null;
 
       const trimmedEmail =

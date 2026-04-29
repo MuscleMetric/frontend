@@ -1,4 +1,10 @@
-import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import React, {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useCallback,
+} from "react";
 import {
   View,
   Text,
@@ -69,7 +75,7 @@ export function AboutYouStep({
   errors: ErrorMap;
   onChange: <K extends keyof OnboardingDraft>(
     key: K,
-    value: OnboardingDraft[K]
+    value: OnboardingDraft[K],
   ) => void;
   onOpenDob: () => void;
   onNext: () => void;
@@ -83,10 +89,16 @@ export function AboutYouStep({
 
   // 🔥 IMPORTANT: detect Apple user
   const isAppleUser =
-    draft.email?.includes("privaterelay.appleid.com") ||
-    (draft as any).provider === "apple";
+    (draft as any).provider === "apple" ||
+    draft.email?.includes("privaterelay.appleid.com");
 
-  const shouldLockName = isAppleUser && !!draft.fullName?.trim();
+  const appleProvidedName = Boolean((draft as any).appleProvidedName);
+
+  const hasAppleName =
+    isAppleUser && appleProvidedName && !!draft.fullName?.trim();
+  const appleNameMissing = isAppleUser && !appleProvidedName;
+
+  const shouldLockName = hasAppleName;
 
   const [uStatus, setUStatus] = useState<UsernameStatus>({ kind: "idle" });
   const lastChecked = useRef<string>("");
@@ -150,18 +162,22 @@ export function AboutYouStep({
   }, [checkUsername, (draft as any).username, onChange]);
 
   const usernameHelper = useMemo(() => {
-    if (uStatus.kind === "idle") return "3–13 characters • letters, numbers, underscores";
+    if (uStatus.kind === "idle")
+      return "3–13 characters • letters, numbers, underscores";
     if (uStatus.kind === "checking") return "Checking availability…";
-    if (uStatus.kind === "available") return `@${uStatus.normalized} is available`;
+    if (uStatus.kind === "available")
+      return `@${uStatus.normalized} is available`;
     if (uStatus.kind === "taken") return `@${uStatus.normalized} is taken`;
-    if (uStatus.kind === "invalid") return usernameHintFromReason(uStatus.reason) ?? "Invalid username";
+    if (uStatus.kind === "invalid")
+      return usernameHintFromReason(uStatus.reason) ?? "Invalid username";
     if (uStatus.kind === "error") return uStatus.message;
     return null;
   }, [uStatus]);
 
   const usernameHelperTone = useMemo(() => {
     if (uStatus.kind === "available") return "ok";
-    if (uStatus.kind === "checking" || uStatus.kind === "idle") return "neutral";
+    if (uStatus.kind === "checking" || uStatus.kind === "idle")
+      return "neutral";
     return "bad";
   }, [uStatus.kind]);
 
@@ -181,7 +197,8 @@ export function AboutYouStep({
           <View style={styles.header}>
             <Text style={styles.h1}>About You</Text>
             <Text style={styles.sub}>
-              We'll use this information to personalize your training experience and calculate your metrics.
+              We'll use this information to personalize your training experience
+              and calculate your metrics.
             </Text>
           </View>
 
@@ -206,9 +223,14 @@ export function AboutYouStep({
               returnKeyType="next"
             />
 
-            {shouldLockName && (
+            {hasAppleName && (
+              <Text style={styles.helper}>Name provided by Apple</Text>
+            )}
+
+            {appleNameMissing && (
               <Text style={styles.helper}>
-                Name provided by Apple
+                Apple did not provide your name. You can add it here, or
+                continue without it.
               </Text>
             )}
           </Field>
@@ -276,7 +298,11 @@ export function AboutYouStep({
           <Field label="DATE OF BIRTH" error={errors.dob}>
             <Pressable
               onPress={onOpenDob}
-              style={[styles.input, styles.rowInput, !!errors.dob && styles.inputError]}
+              style={[
+                styles.input,
+                styles.rowInput,
+                !!errors.dob && styles.inputError,
+              ]}
             >
               <Text
                 style={[
