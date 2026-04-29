@@ -285,12 +285,7 @@ export default function OnboardingIndex() {
 
   return (
     <View style={styles.page}>
-      <TopBarAny
-        title="Setup"
-        onBack={back}
-        // if your TopBar supports it, great; otherwise harmless
-        showBack
-      />
+      <TopBarAny title="Setup" onBack={step === 0 ? undefined : back} />
 
       <View style={styles.content}>
         {step === 0 && (

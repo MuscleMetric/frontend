@@ -81,6 +81,13 @@ export function AboutYouStep({
 
   const dobLabel = draft.dob ? formatDob(draft.dob) : "Tap to select";
 
+  // 🔥 IMPORTANT: detect Apple user
+  const isAppleUser =
+    draft.email?.includes("privaterelay.appleid.com") ||
+    (draft as any).provider === "apple";
+
+  const shouldLockName = isAppleUser && !!draft.fullName?.trim();
+
   const [uStatus, setUStatus] = useState<UsernameStatus>({ kind: "idle" });
   const lastChecked = useRef<string>("");
 
@@ -178,17 +185,35 @@ export function AboutYouStep({
             </Text>
           </View>
 
+          {/* 🔥 FIXED FULL NAME FIELD */}
           <Field label="FULL NAME" error={errors.fullName}>
             <TextInput
-              style={[styles.input, !!errors.fullName && styles.inputError]}
+              style={[
+                styles.input,
+                shouldLockName && styles.readOnly,
+                !!errors.fullName && styles.inputError,
+              ]}
               placeholder="John Doe"
               placeholderTextColor={colors.textMuted}
               value={draft.fullName}
-              onChangeText={(t) => onChange("fullName", t)}
+              onChangeText={(t) => {
+                if (!shouldLockName) {
+                  onChange("fullName", t);
+                }
+              }}
+              editable={!shouldLockName}
               autoCapitalize="words"
               returnKeyType="next"
             />
+
+            {shouldLockName && (
+              <Text style={styles.helper}>
+                Name provided by Apple
+              </Text>
+            )}
           </Field>
+
+          {/* --- rest unchanged --- */}
 
           <Field label="USERNAME" error={(errors as any).username}>
             <View
@@ -243,8 +268,6 @@ export function AboutYouStep({
           <Field label="EMAIL ADDRESS">
             <TextInput
               style={[styles.input, styles.readOnly]}
-              placeholder="john.doe@musclemetric.com"
-              placeholderTextColor={colors.textMuted}
               value={draft.email}
               editable={false}
             />
@@ -300,37 +323,13 @@ function formatDob(d: Date) {
 
 const makeStyles = (colors: any) =>
   StyleSheet.create({
-    page: {
-      flex: 1,
-      backgroundColor: colors.background,
-    },
-    keyboard: {
-      flex: 1,
-    },
-    body: {
-      paddingTop: 6,
-      paddingHorizontal: 16,
-      paddingBottom: 120,
-    },
+    page: { flex: 1, backgroundColor: colors.background },
+    keyboard: { flex: 1 },
+    body: { paddingTop: 6, paddingHorizontal: 16, paddingBottom: 120 },
 
-    header: {
-      marginTop: 10,
-      marginBottom: 22,
-    },
-    h1: {
-      color: colors.text,
-      fontSize: 34,
-      fontWeight: "900",
-      letterSpacing: -0.8,
-    },
-    sub: {
-      color: colors.textMuted,
-      marginTop: 10,
-      fontSize: 14,
-      lineHeight: 20,
-      fontWeight: "700",
-      maxWidth: 360,
-    },
+    header: { marginTop: 10, marginBottom: 22 },
+    h1: { color: colors.text, fontSize: 34, fontWeight: "900" },
+    sub: { color: colors.textMuted, marginTop: 10, fontSize: 14 },
 
     input: {
       borderWidth: 1,
@@ -341,82 +340,27 @@ const makeStyles = (colors: any) =>
       backgroundColor: "rgba(255,255,255,0.04)",
       color: colors.text,
       fontWeight: "800",
-      fontSize: 14,
-    },
-    readOnly: {
-      opacity: 0.95,
-    },
-    inputError: {
-      borderColor: "rgba(239,68,68,0.75)",
     },
 
-    rowInput: {
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "space-between",
-      gap: 10,
-    },
-    leftIcon: {
-      width: 26,
-      height: 26,
-      borderRadius: 13,
-      backgroundColor: "rgba(255,255,255,0.05)",
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: "rgba(255,255,255,0.10)",
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    leftIconText: {
-      fontSize: 14,
-      opacity: 0.9,
-      color: colors.textMuted,
-      fontWeight: "900",
-      marginTop: -1,
-    },
-    rowText: {
-      flex: 1,
-      fontSize: 14,
-      fontWeight: "800",
-      paddingVertical: 0,
-      color: colors.text,
-    },
-    chev: {
-      color: colors.textMuted,
-      fontSize: 18,
-      fontWeight: "900",
-      marginTop: -2,
-    },
+    readOnly: { opacity: 0.6 },
 
-    helper: {
-      marginTop: 8,
-      fontSize: 12,
-      fontWeight: "700",
-      color: colors.textMuted,
-    },
-    helperOk: {
-      color: "rgba(34,197,94,0.95)",
-    },
-    helperBad: {
-      color: "rgba(239,68,68,0.95)",
-    },
+    inputError: { borderColor: "rgba(239,68,68,0.75)" },
 
-    okMark: {
-      fontWeight: "900",
-      color: "rgba(34,197,94,0.95)",
-      fontSize: 16,
-      marginLeft: 6,
-    },
-    badMark: {
-      fontWeight: "900",
-      color: "rgba(239,68,68,0.95)",
-      fontSize: 16,
-      marginLeft: 6,
-    },
+    rowInput: { flexDirection: "row", alignItems: "center" },
 
-    arrow: {
-      color: "#fff",
-      fontWeight: "900",
-      fontSize: 16,
-      marginTop: -1,
-    },
+    leftIcon: { width: 26, height: 26, borderRadius: 13 },
+    leftIconText: { fontSize: 14 },
+
+    rowText: { flex: 1, color: colors.text },
+
+    chev: { color: colors.textMuted },
+
+    helper: { marginTop: 8, fontSize: 12, color: colors.textMuted },
+    helperOk: { color: "rgba(34,197,94,0.95)" },
+    helperBad: { color: "rgba(239,68,68,0.95)" },
+
+    okMark: { color: "rgba(34,197,94,0.95)" },
+    badMark: { color: "rgba(239,68,68,0.95)" },
+
+    arrow: { color: "#fff" },
   });

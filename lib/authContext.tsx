@@ -81,6 +81,7 @@ type AuthValue = {
   userId: string | null;
   refreshProfile: () => Promise<void>;
   refreshEntitlements: () => Promise<void>;
+  signOut: () => Promise<void>;
 };
 
 const FREE_CAPABILITIES: Capabilities = {
@@ -265,6 +266,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await fetchEntitlements(uid);
   }, [fetchEntitlements, session?.user?.id]);
 
+  const signOut = useCallback(async () => {
+    profileReqId.current += 1;
+    entitlementReqId.current += 1;
+
+    setSession(null);
+    setProfile(null);
+    setEntitlements(null);
+    setEntitlementsLoading(false);
+    setLoading(false);
+
+    try {
+      await logoutRevenueCat();
+    } catch (e) {
+      console.warn("logoutRevenueCat failed:", e);
+    }
+
+    try {
+      const { error } = await supabase.auth.signOut({ scope: "local" });
+
+      if (error && error.message !== "Auth session missing!") {
+        console.warn("supabase signOut failed:", error);
+      }
+    } catch (e: any) {
+      if (e?.message !== "Auth session missing!") {
+        console.warn("supabase signOut exception:", e);
+      }
+    }
+  }, []);
+
   const trySync = useCallback(async () => {
     const uid = session?.user?.id;
     if (!uid) return;
@@ -400,6 +430,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       userId,
       refreshProfile,
       refreshEntitlements,
+      signOut,
     };
   }, [
     session,
@@ -410,6 +441,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     entitlementsLoading,
     refreshProfile,
     refreshEntitlements,
+    signOut,
   ]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -1,3 +1,4 @@
+// features/settings/index.tsx
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   View,
@@ -29,6 +30,7 @@ import { ExperienceModal } from "./modals/ExperienceModal";
 import { PrimaryGoalModal } from "./modals/PrimaryGoalModal";
 import { ConfirmLogoutModal } from "./modals/ConfirmLogoutModal";
 import { ConfirmDeleteAccountModal } from "./modals/ConfirmDeleteAccountModal";
+import { useAuth } from "@/lib/authContext";
 
 import { log } from "@/lib/logger";
 
@@ -88,6 +90,8 @@ function buildPersonalInfoSummary(data: SettingsOverview | null) {
 
 export default function SettingsScreen() {
   const { colors, typography, layout } = useAppTheme();
+
+  const { signOut } = useAuth();
 
   const styles = useMemo(
     () =>
@@ -261,7 +265,8 @@ export default function SettingsScreen() {
   );
 
   const openPrivacyPolicy = useCallback(async () => {
-    const url = "https://musclemetric.github.io/musclemetric-legal/privacy.html";
+    const url =
+      "https://musclemetric.github.io/musclemetric-legal/privacy.html";
     const ok = await Linking.canOpenURL(url);
 
     if (!ok) {
@@ -435,15 +440,8 @@ export default function SettingsScreen() {
 
           <SectionHeader title="LEGAL" />
           <SettingsCard>
-            <SettingsRow
-              label="Privacy Policy"
-              onPress={openPrivacyPolicy}
-            />
-            <SettingsRow
-              label="Terms & Conditions"
-              onPress={openTerms}
-              last
-            />
+            <SettingsRow label="Privacy Policy" onPress={openPrivacyPolicy} />
+            <SettingsRow label="Terms & Conditions" onPress={openTerms} last />
           </SettingsCard>
 
           <SectionHeader title="DANGER ZONE" tone="danger" />
@@ -515,7 +513,9 @@ export default function SettingsScreen() {
         <ConfirmLogoutModal
           open={openLogout}
           onClose={() => setOpenLogout(false)}
-          onLoggedOut={() => {
+          onLoggedOut={async () => {
+            await signOut();
+            setOpenLogout(false);
             router.replace("/");
           }}
         />

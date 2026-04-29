@@ -21,7 +21,7 @@ export function ConfirmLogoutModal({
 }: {
   open: boolean;
   onClose: () => void;
-  onLoggedOut: () => void;
+  onLoggedOut: () => void | Promise<void>;
 }) {
   const { colors, typography, layout } = useAppTheme();
 
@@ -135,17 +135,15 @@ export function ConfirmLogoutModal({
   const [loading, setLoading] = useState(false);
 
   const logout = async () => {
+    if (loading) return;
+
     setLoading(true);
-    const res = await supabase.auth.signOut();
-    setLoading(false);
 
-    if (res.error) {
-      log("signOut error:", res.error);
-      return;
+    try {
+      await onLoggedOut();
+    } finally {
+      setLoading(false);
     }
-
-    onClose();
-    onLoggedOut();
   };
 
   return (
@@ -163,9 +161,7 @@ export function ConfirmLogoutModal({
           <Pressable style={styles.card} onPress={() => {}}>
             <View style={styles.header}>
               <Text style={styles.title}>Log Out</Text>
-              <Text style={styles.subtitle}>
-                You can log back in any time.
-              </Text>
+              <Text style={styles.subtitle}>You can log back in any time.</Text>
             </View>
 
             <View style={styles.body}>
@@ -187,7 +183,11 @@ export function ConfirmLogoutModal({
                 )}
               </Pressable>
 
-              <Pressable style={styles.secondaryBtn} onPress={onClose}>
+              <Pressable
+                style={styles.secondaryBtn}
+                onPress={onClose}
+                disabled={loading}
+              >
                 <Text style={styles.secondaryBtnText}>Cancel</Text>
               </Pressable>
             </View>
