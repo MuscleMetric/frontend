@@ -24,6 +24,7 @@ import { StrengthStatsCards } from "./sections/StrengthStatsCards";
 import { LastSessionSummary } from "./sections/LastSessionSummary";
 import { StrengthInputs } from "./sections/StrengthInputs";
 import { CardioInputs } from "./sections/CardioInputs";
+import { TimedWeightInputs } from "./sections/TimedWeightInputs";
 import { BottomActions } from "./sections/BottomActions";
 
 import * as M from "../state/mutators";
@@ -37,7 +38,8 @@ import {
   bestSetByE1rm,
   pickBestStrengthSource,
 } from "./helpers/strengthMath";
-import { pickLastSessionSet, isCardio } from "./helpers/historyPickers";
+import { pickLastSessionSet } from "./helpers/historyPickers";
+import { getExerciseLoggingProfile } from "../../logging/exerciseLoggingProfile";
 import {
   getBaseSetCount,
   getDropRowsForSetNumber,
@@ -101,7 +103,18 @@ export function ExerciseEntryModal(props: {
       (s) => s.setNumber === setNumber && (s.dropIndex ?? 0) === 0,
     ) ?? null;
 
-  const cardio = exercise ? isCardio(exercise) : false;
+  const loggingProfile = exercise ? getExerciseLoggingProfile(exercise) : null;
+
+  const cardio = loggingProfile?.loggingType === "cardio";
+
+  const timed =
+    loggingProfile?.loggingType === "timed" ||
+    loggingProfile?.loggingType === "timed_weighted";
+
+  const strengthLike =
+    loggingProfile?.loggingType === "strength" ||
+    loggingProfile?.loggingType === "bodyweight_weighted" ||
+    loggingProfile?.loggingType === "assisted";
 
   const baseSetCount = useMemo(() => {
     if (!exercise) return 1;
@@ -123,17 +136,17 @@ export function ExerciseEntryModal(props: {
   const [secondsText, setSecondsText] = useState("");
 
   const sessionVolume = useMemo(() => {
-    if (!exercise || cardio) return 0;
+    if (!exercise || !loggingProfile?.canComputeVolume) return 0;
     return computeSessionVolume(exercise);
   }, [exercise, cardio]);
 
   const bestNow = useMemo(() => {
-    if (!exercise || cardio) return null;
+    if (!exercise || !loggingProfile?.canComputeE1rm) return null;
     return bestSetByE1rm(exercise);
   }, [exercise, cardio]);
 
   const prDelta = useMemo(() => {
-    if (!exercise || cardio) return null;
+    if (!exercise || !loggingProfile?.canComputeE1rm) return null;
     if (!bestNow) return null;
     if (!exercise.bestE1rm6m) return null;
     return bestNow.est - exercise.bestE1rm6m;
@@ -141,7 +154,9 @@ export function ExerciseEntryModal(props: {
 
   const supersetGroup = exercise?.prescription?.supersetGroup ?? null;
 
-  const eligibleDropset = !cardio && Boolean(exercise?.prescription?.isDropset);
+  const eligibleDropset =
+    Boolean(loggingProfile?.canShowDropset) &&
+    Boolean(exercise?.prescription?.isDropset);
 
   const dropRows = useMemo(() => {
     if (!exercise || !eligibleDropset) return [];
@@ -162,7 +177,7 @@ export function ExerciseEntryModal(props: {
   const lastCompletedAt = exercise?.lastSession?.completedAt ?? null;
 
   const lastSessionVolume = useMemo(() => {
-    if (!exercise || cardio) return null;
+    if (!exercise || !loggingProfile?.canComputeVolume) return null;
     if (!Array.isArray(lastSessionSets) || lastSessionSets.length === 0) {
       return null;
     }
@@ -186,7 +201,7 @@ export function ExerciseEntryModal(props: {
   }, [exercise, cardio, lastSessionSets]);
 
   const volDelta = useMemo(() => {
-    if (!exercise || cardio) return null;
+    if (!exercise || !loggingProfile?.canComputeVolume) return null;
     if (lastSessionVolume == null) return null;
     return sessionVolume - lastSessionVolume;
   }, [exercise, cardio, sessionVolume, lastSessionVolume]);
@@ -445,7 +460,7 @@ export function ExerciseEntryModal(props: {
                 title={exercise.name}
                 subtitle={`Set ${setNumber} of ${baseSetCount}`}
                 onClose={props.onClose}
-                canDropset={!cardio}
+                canDropset={Boolean(loggingProfile?.canShowDropset)}
                 dropsetEnabled={Boolean(exercise.prescription?.isDropset)}
                 onToggleDropset={() => {
                   props.onToggleDropset?.(
@@ -498,7 +513,8 @@ export function ExerciseEntryModal(props: {
                 />
               ) : null}
 
-              {!cardio ? (
+              {loggingProfile?.canComputeVolume ||
+              loggingProfile?.canComputeE1rm ? (
                 <StrengthStatsCards
                   colors={colors}
                   typography={typography}
@@ -515,7 +531,7 @@ export function ExerciseEntryModal(props: {
                 />
               ) : null}
 
-              {!cardio ? (
+              {strengthLike ? (
                 <LastSessionSummary
                   colors={colors}
                   typography={typography}
@@ -536,13 +552,28 @@ export function ExerciseEntryModal(props: {
                     onChangeMinutes={commitMinutesText}
                     onChangeSeconds={commitSecondsText}
                   />
+                ) : timed ? (
+                  <TimedWeightInputs
+                    colors={colors}
+                    typography={typography}
+                    weightText={weightText}
+                    minutesText={minutesText}
+                    secondsText={secondsText}
+                    onChangeWeightText={(t) => commitWeightText(t)}
+                    onChangeMinutes={commitMinutesText}
+                    onChangeSeconds={commitSecondsText}
+                    onStepWeight={(d) => stepWeight(d)}
+                    weightRef={weightRef as any}
+                  />
                 ) : eligibleDropset && dropMode ? (
                   <View />
                 ) : (
                   <StrengthInputs
                     colors={colors}
                     typography={typography}
-                    weightText={weightText}
+                    weightText={
+                      loggingProfile?.supportsWeight ? weightText : ""
+                    }
                     repsText={repsText}
                     onChangeWeightText={(t) => commitWeightText(t)}
                     onChangeRepsText={(t) => commitRepsText(t)}
@@ -550,6 +581,12 @@ export function ExerciseEntryModal(props: {
                     onStepReps={(d) => stepReps(d)}
                     weightRef={weightRef as any}
                     repsRef={repsRef as any}
+                    showWeight={Boolean(loggingProfile?.supportsWeight)}
+                    weightLabel={
+                      loggingProfile?.loggingType === "assisted"
+                        ? "Assistance (kg)"
+                        : "Weight (kg)"
+                    }
                   />
                 )}
 

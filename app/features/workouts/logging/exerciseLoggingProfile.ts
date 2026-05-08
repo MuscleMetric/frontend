@@ -76,7 +76,7 @@ export function getLoggingType(exercise: ExerciseLike): LoggingType {
 
   // Timed movements
   if (includesKeyword(name, TIMED_EXERCISE_NAMES)) {
-    return "timed";
+    return "timed_weighted";
   }
 
   // Assisted exercises

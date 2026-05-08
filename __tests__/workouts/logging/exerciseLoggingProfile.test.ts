@@ -6,21 +6,21 @@ import {
 
 describe("exerciseLoggingProfile", () => {
   describe("getLoggingType", () => {
-    it("detects plank as timed", () => {
+    it("detects plank as timed weighted", () => {
       expect(
         getLoggingType({
           name: "Plank",
           type: "strength",
         }),
-      ).toBe("timed");
+      ).toBe("timed_weighted");
     });
 
-    it("detects dead hang as timed", () => {
+    it("detects dead hang as timed weighted", () => {
       expect(
         getLoggingType({
           name: "Dead Hang",
         }),
-      ).toBe("timed");
+      ).toBe("timed_weighted");
     });
 
     it("detects running as cardio", () => {
@@ -103,9 +103,7 @@ describe("exerciseLoggingProfile", () => {
         name: "Bench Press",
       });
 
-      expect(
-        hasCompletedSet(profile, {}),
-      ).toBe(false);
+      expect(hasCompletedSet(profile, {})).toBe(false);
     });
   });
 });

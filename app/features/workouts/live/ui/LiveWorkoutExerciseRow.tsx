@@ -8,17 +8,14 @@ import {
   isExerciseComplete,
   hasSetData,
 } from "../state/selectors";
+import { getExerciseLoggingProfile } from "../../logging/exerciseLoggingProfile";
 
 function fmtNum(n: number, maxDp = 2) {
-  // Round to maxDp (to avoid float noise like 55.499999)
   const rounded = Number(n.toFixed(maxDp));
-
-  // Convert back to string without forcing trailing zeros
   return rounded.toString();
 }
 
 function dropLetter(dropIndex: number) {
-  // 1 -> a, 2 -> b, 3 -> c ...
   const n = Math.max(1, dropIndex);
   return String.fromCharCode("a".charCodeAt(0) + ((n - 1) % 26));
 }
@@ -26,10 +23,14 @@ function dropLetter(dropIndex: number) {
 function formatStrength(w: number | null, r: number | null) {
   const reps = r ?? null;
   const weight = w ?? null;
-  if (reps != null && weight != null)
+
+  if (reps != null && weight != null) {
     return `${reps} reps × ${fmtNum(weight)}kg`;
+  }
+
   if (reps != null) return `${reps} reps`;
   if (weight != null) return `${fmtNum(weight)}kg`;
+
   return "—";
 }
 
@@ -40,7 +41,9 @@ function formatDuration(sec: number | null) {
   const mins = Math.floor(total / 60);
   const secs = total % 60;
 
+  if (mins <= 0 && secs > 0) return `${secs}s`;
   if (secs === 0) return `${mins} mins`;
+
   return `${mins}m ${String(secs).padStart(2, "0")}s`;
 }
 
@@ -74,21 +77,55 @@ function formatCardio(distance: number | null, timeSeconds: number | null) {
   return parts.join(" • ") || "—";
 }
 
+function formatTimedWeighted(
+  weight: number | null,
+  timeSeconds: number | null,
+) {
+  const parts: string[] = [];
+
+  const duration = formatDuration(timeSeconds);
+
+  if (duration) parts.push(duration);
+  if (weight != null) parts.push(`${fmtNum(weight)}kg`);
+
+  return parts.join(" • ") || "—";
+}
+
+function formatSetByProfile(
+  loggingType: ReturnType<typeof getExerciseLoggingProfile>["loggingType"],
+  set: {
+    weight?: number | null;
+    reps?: number | null;
+    distance?: number | null;
+    timeSeconds?: number | null;
+  } | null,
+) {
+  if (loggingType === "cardio") {
+    return formatCardio(set?.distance ?? null, set?.timeSeconds ?? null);
+  }
+
+  if (loggingType === "timed" || loggingType === "timed_weighted") {
+    return formatTimedWeighted(set?.weight ?? null, set?.timeSeconds ?? null);
+  }
+
+  return formatStrength(set?.weight ?? null, set?.reps ?? null);
+}
+
 export function LiveWorkoutExerciseRow(props: {
-  index: number; // 1-based display
+  index: number;
   title: string;
-  subtitle: string; // e.g. "4 sets × 12 • 7.5kg"
-  tags?: string[]; // e.g. ["Superset A", "Dropset"]
-  ex: LiveExerciseDraft; // ✅ source of truth (drives CTA + completion + lines)
+  subtitle: string;
+  tags?: string[];
+  ex: LiveExerciseDraft;
   onPress: () => void;
 }) {
   const { colors, typography } = useAppTheme();
 
   const complete = isExerciseComplete(props.ex);
-  const type = (props.ex.type ?? "").toLowerCase();
-  const cta = getExerciseCtaLabel(props.ex); // "Start" | "Continue" | "Edit"
+  const loggingProfile = getExerciseLoggingProfile(props.ex);
+  const loggingType = loggingProfile.loggingType;
+  const cta = getExerciseCtaLabel(props.ex);
 
-  // ✅ match your desired pill text exactly
   const pillTextValue: "Start" | "Continue" | "Done ✓ Edit" = complete
     ? "Done ✓ Edit"
     : cta;
@@ -99,11 +136,9 @@ export function LiveWorkoutExerciseRow(props: {
     : "transparent";
   const pillText = complete ? (colors.success ?? "#16a34a") : colors.text;
 
-  // ✅ build completed lines from entered set data (not a prop)
   const completedBlocks = useMemo(() => {
     if (!complete) return [];
 
-    // only keep rows that actually have data
     const rows = (props.ex.sets ?? [])
       .filter((s) => hasSetData(props.ex, s))
       .slice()
@@ -112,36 +147,31 @@ export function LiveWorkoutExerciseRow(props: {
         return (a.dropIndex ?? 0) - (b.dropIndex ?? 0);
       });
 
-    // group by setNumber
     const bySet = new Map<number, typeof rows>();
+
     for (const r of rows) {
-      const k = r.setNumber;
-      if (!bySet.has(k)) bySet.set(k, []);
-      bySet.get(k)!.push(r);
+      const key = r.setNumber;
+      if (!bySet.has(key)) bySet.set(key, []);
+      bySet.get(key)!.push(r);
     }
 
     return Array.from(bySet.entries()).map(([setNumber, group]) => {
       const base = group.find((x) => (x.dropIndex ?? 0) === 0) ?? null;
+
       const drops = group
         .filter((x) => (x.dropIndex ?? 0) > 0)
         .sort((a, b) => (a.dropIndex ?? 0) - (b.dropIndex ?? 0));
 
-      const baseLabel =
-        type === "cardio"
-          ? formatCardio(base?.distance ?? null, base?.timeSeconds ?? null)
-          : formatStrength(base?.weight ?? null, base?.reps ?? null);
+      const baseLabel = formatSetByProfile(loggingType, base);
 
-      const dropLabels = drops.map((d) => ({
-        dropIndex: d.dropIndex ?? 0,
-        label:
-          type === "cardio"
-            ? formatCardio(d.distance ?? null, d.timeSeconds ?? null)
-            : formatStrength(d.weight ?? null, d.reps ?? null),
+      const dropLabels = drops.map((drop) => ({
+        dropIndex: drop.dropIndex ?? 0,
+        label: formatSetByProfile(loggingType, drop),
       }));
 
       return { setNumber, baseLabel, dropLabels };
     });
-  }, [complete, props.ex.sets, type]);
+  }, [complete, props.ex, loggingType]);
 
   return (
     <Pressable
@@ -160,7 +190,6 @@ export function LiveWorkoutExerciseRow(props: {
       }}
     >
       <View style={{ flexDirection: "row", alignItems: "flex-start" }}>
-        {/* Left index bubble */}
         <View
           style={{
             width: 34,
@@ -184,7 +213,6 @@ export function LiveWorkoutExerciseRow(props: {
           </Text>
         </View>
 
-        {/* Main text */}
         <View style={{ flex: 1, paddingRight: 12 }}>
           <Text
             style={{
@@ -197,7 +225,6 @@ export function LiveWorkoutExerciseRow(props: {
             {props.title}
           </Text>
 
-          {/* subtitle line */}
           <View
             style={{
               flexDirection: "row",
@@ -235,7 +262,6 @@ export function LiveWorkoutExerciseRow(props: {
           </View>
         </View>
 
-        {/* Right pill */}
         <View
           style={{
             borderWidth: 2,
@@ -258,17 +284,16 @@ export function LiveWorkoutExerciseRow(props: {
         </View>
       </View>
 
-      {/* Completed sets list (only once complete) */}
       {complete && completedBlocks.length > 0 && (
         <View style={{ marginTop: 14, paddingLeft: 46, gap: 10 }}>
-          {completedBlocks.slice(0, 12).map((b) => {
+          {completedBlocks.slice(0, 12).map((block) => {
             const hideSetNumber =
-              type === "cardio" && completedBlocks.length === 1;
+              loggingType === "cardio" && completedBlocks.length === 1;
 
             return (
-              <View key={`set-${b.setNumber}`} style={{ gap: 6 }}>
+              <View key={`set-${block.setNumber}`} style={{ gap: 6 }}>
                 <Text
-                  key={`${b.setNumber}-0`}
+                  key={`${block.setNumber}-0`}
                   style={{
                     fontFamily: typography.fontFamily.regular,
                     fontSize: typography.size.body,
@@ -276,12 +301,11 @@ export function LiveWorkoutExerciseRow(props: {
                   }}
                 >
                   {hideSetNumber
-                    ? b.baseLabel
-                    : `${b.setNumber}. ${b.baseLabel}`}
+                    ? block.baseLabel
+                    : `${block.setNumber}. ${block.baseLabel}`}
                 </Text>
 
-                {/* Drops inline, slightly indented */}
-                {b.dropLabels.length > 0 && (
+                {block.dropLabels.length > 0 && (
                   <View
                     style={{
                       paddingLeft: 18,
@@ -289,9 +313,9 @@ export function LiveWorkoutExerciseRow(props: {
                       flexWrap: "wrap",
                     }}
                   >
-                    {b.dropLabels.map((d) => (
+                    {block.dropLabels.map((drop) => (
                       <Text
-                        key={`${b.setNumber}-${d.dropIndex}`}
+                        key={`${block.setNumber}-${drop.dropIndex}`}
                         style={{
                           fontFamily: typography.fontFamily.regular,
                           fontSize: typography.size.sub,
@@ -300,7 +324,7 @@ export function LiveWorkoutExerciseRow(props: {
                           marginBottom: 6,
                         }}
                       >
-                        {dropLetter(d.dropIndex)}. {d.label}
+                        {dropLetter(drop.dropIndex)}. {drop.label}
                       </Text>
                     ))}
                   </View>
