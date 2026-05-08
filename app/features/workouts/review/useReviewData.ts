@@ -1,4 +1,3 @@
-// app/features/workouts/live/review/useReviewData.ts
 import { useMemo } from "react";
 import type { LiveWorkoutDraft } from "../live/state/types";
 import * as S from "../live/state/selectors";
@@ -8,6 +7,10 @@ import type {
   ReviewIssue,
   ReviewSetRow,
 } from "./reviewTypes";
+import {
+  getExerciseLoggingProfile,
+  hasCompletedSet,
+} from "../logging/exerciseLoggingProfile";
 
 function pad2(n: number) {
   return String(n).padStart(2, "0");
@@ -42,66 +45,70 @@ function deriveTimerSeconds(d: LiveWorkoutDraft) {
   const anchor = d.timerLastActiveAt;
   if (!anchor) return base;
 
-  // live duration = committed + time since last active
   return base + secondsBetween(anchor, new Date().toISOString());
 }
 
-function isCardio(ex: any) {
-  return String(ex.type ?? "").toLowerCase() === "cardio";
-}
-
-function setIsCompletedEnough(ex: any, s: any) {
-  if (isCardio(ex)) {
-    const timeSeconds = toNumOrNull(s.timeSeconds);
-    const distance = toNumOrNull(s.distance);
-    return timeSeconds !== null || distance !== null;
+function setMissingLabel(profile: ReturnType<typeof getExerciseLoggingProfile>, s: any) {
+  if (profile.supportsTime && toNumOrNull(s.timeSeconds) === null) {
+    return "Missing time";
   }
-  // Strength rule per you: include if reps is not null (but must be numeric)
-  const reps = toNumOrNull(s.reps);
-  return reps !== null;
-}
 
-function setMissingLabel(ex: any, s: any) {
-  if (isCardio(ex)) {
-    const timeSeconds = toNumOrNull(s.timeSeconds);
-    const distance = toNumOrNull(s.distance);
-    if (timeSeconds === null && distance === null) return "Missing";
-    return null;
+  if (profile.supportsDistance && toNumOrNull(s.distance) === null) {
+    return "Missing distance";
   }
-  const reps = toNumOrNull(s.reps);
-  if (reps === null) return "Missing reps";
-  const weight = toNumOrNull(s.weight);
-  // treat null as “missing weight” (you will save as 0, but still helpful UX)
-  if (weight === null) return "Missing weight";
+
+  if (profile.supportsReps && toNumOrNull(s.reps) === null) {
+    return "Missing reps";
+  }
+
+  if (
+    profile.loggingType === "strength" &&
+    profile.supportsWeight &&
+    toNumOrNull(s.weight) === null
+  ) {
+    return "Missing weight";
+  }
+
   return null;
 }
 
-function calcStrengthVolumeKg(ex: any) {
+function calcVolumeKg(ex: any, profile: ReturnType<typeof getExerciseLoggingProfile>) {
+  if (!profile.canComputeVolume) return 0;
+
   let vol = 0;
+
   for (const s of ex.sets ?? []) {
     const reps = toNumOrNull(s.reps);
     if (reps === null) continue;
 
     const weight = toNumOrNull(s.weight);
-    const w = weight === null ? 0 : weight;
-    vol += reps * w;
+    if (weight === null) continue;
+
+    vol += reps * weight;
   }
+
   return vol;
 }
 
 function buildExerciseVM(
   ex: any,
-  supersetLabels: Record<string, string>
+  supersetLabels: Record<string, string>,
 ): ReviewExerciseVM {
-  const cardio = isCardio(ex);
+  const profile = getExerciseLoggingProfile(ex);
+  const loggingType = profile.loggingType;
 
   const sets: ReviewSetRow[] = (ex.sets ?? []).map((s: any) => {
-    const reps = cardio ? null : toNumOrNull(s.reps);
-    const weight = cardio ? null : toNumOrNull(s.weight);
-    const timeSeconds = cardio ? toNumOrNull(s.timeSeconds) : null;
-    const distance = cardio ? toNumOrNull(s.distance) : null;
+    const reps = profile.supportsReps ? toNumOrNull(s.reps) : null;
+    const weight = profile.supportsWeight ? toNumOrNull(s.weight) : null;
+    const timeSeconds = profile.supportsTime ? toNumOrNull(s.timeSeconds) : null;
+    const distance = profile.supportsDistance ? toNumOrNull(s.distance) : null;
 
-    const complete = setIsCompletedEnough(ex, s);
+    const complete = hasCompletedSet(profile, {
+      reps,
+      weight,
+      timeSeconds,
+      distance,
+    });
 
     return {
       setNumber: Number(s.setNumber ?? s.set_number ?? 0) || 0,
@@ -110,9 +117,9 @@ function buildExerciseVM(
       weight,
       timeSeconds,
       distance,
-      isCardio: cardio,
+      isCardio: loggingType === "cardio",
       isComplete: complete,
-      missingLabel: complete ? null : setMissingLabel(ex, s),
+      missingLabel: complete ? null : setMissingLabel(profile, s),
     };
   });
 
@@ -121,17 +128,16 @@ function buildExerciseVM(
   const group = ex.prescription?.supersetGroup ?? null;
   const supersetLabel = group ? supersetLabels[group] ?? null : null;
 
-  const missingWeightSetCount = cardio
-    ? 0
-    : (ex.sets ?? []).reduce((acc: number, s: any) => {
-        const reps = toNumOrNull(s.reps);
-        if (reps === null) return acc;
-        const w = toNumOrNull(s.weight);
-        if (w === null) return acc + 1;
-        return acc;
-      }, 0);
+  const missingWeightSetCount =
+    loggingType === "strength"
+      ? sets.reduce((acc, s) => {
+          if (s.reps === null) return acc;
+          if (s.weight === null) return acc + 1;
+          return acc;
+        }, 0)
+      : 0;
 
-  const volumeKg = cardio ? 0 : calcStrengthVolumeKg(ex);
+  const volumeKg = calcVolumeKg(ex, profile);
 
   return {
     id: String(ex.exerciseId ?? ex.exercise_id ?? ""),
@@ -160,27 +166,30 @@ export function useReviewData(draft: LiveWorkoutDraft | null): ReviewVM | null {
       .sort((a: any, b: any) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0));
 
     const exerciseVMs = exercisesSorted.map((ex: any) =>
-      buildExerciseVM(ex, supersetLabels)
+      buildExerciseVM(ex, supersetLabels),
     );
 
     const durationSeconds = deriveTimerSeconds(draft);
     const exercisesTotal = exerciseVMs.length;
 
     const exercisesWithCompletedSets = exerciseVMs.filter(
-      (e) => e.completedSetsCount > 0
+      (e) => e.completedSetsCount > 0,
     ).length;
+
     const setsCompleted = exerciseVMs.reduce(
       (acc, e) => acc + e.completedSetsCount,
-      0
+      0,
     );
+
     const volumeKg = exerciseVMs.reduce((acc, e) => acc + e.volumeKg, 0);
 
     const issues: ReviewIssue[] = [];
 
     const missingWeightSets = exerciseVMs.reduce(
       (acc, e) => acc + e.missingWeightSetCount,
-      0
+      0,
     );
+
     if (missingWeightSets > 0) {
       issues.push({
         key: "missing_weight",
@@ -193,8 +202,9 @@ export function useReviewData(draft: LiveWorkoutDraft | null): ReviewVM | null {
     }
 
     const noCompletedExercises = exerciseVMs.filter(
-      (e) => e.hasNoCompletedSets
+      (e) => e.hasNoCompletedSets,
     ).length;
+
     if (noCompletedExercises > 0) {
       issues.push({
         key: "no_completed_sets",

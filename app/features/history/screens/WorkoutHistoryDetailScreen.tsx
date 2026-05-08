@@ -111,8 +111,10 @@ type DetailPayload = {
 
 function fmtDayTime(iso?: string | null) {
   if (!iso) return "";
+
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
+
   return d.toLocaleDateString("en-GB", {
     weekday: "short",
     day: "2-digit",
@@ -142,7 +144,9 @@ function fmtDuration(sec?: number | null) {
   const mins = Math.floor(total / 60);
   const secs = total % 60;
 
+  if (mins <= 0) return `${secs}s`;
   if (secs === 0) return `${mins} mins`;
+
   return `${mins}m ${secs}s`;
 }
 
@@ -155,7 +159,10 @@ function fmtClock(sec?: number | null) {
   const secs = total % 60;
 
   if (hours > 0) {
-    return `${hours}:${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+    return `${hours}:${String(mins).padStart(2, "0")}:${String(secs).padStart(
+      2,
+      "0",
+    )}`;
   }
 
   return `${mins}:${String(secs).padStart(2, "0")}`;
@@ -178,7 +185,7 @@ function fmtPace(secPerKm?: number | null) {
   return `${mins}:${String(secs).padStart(2, "0")} /km`;
 }
 
-function isCardioSet(st: {
+function hasTimeOrDistance(st: {
   time_seconds?: number | null;
   distance?: number | null;
 }) {
@@ -191,7 +198,7 @@ function fmtSetSummary(st: {
   time_seconds?: number | null;
   distance?: number | null;
 }) {
-  if (isCardioSet(st)) {
+  if (hasTimeOrDistance(st)) {
     const parts = [
       st.time_seconds != null ? fmtDuration(st.time_seconds) : null,
       fmtDistance(st.distance),
@@ -199,6 +206,14 @@ function fmtSetSummary(st: {
 
     if (st.time_seconds != null && st.distance != null && st.distance > 0) {
       parts.push(fmtPace(st.time_seconds / st.distance));
+    }
+
+    if (st.weight_kg != null) {
+      parts.push(`${st.weight_kg} kg`);
+    }
+
+    if (st.reps != null) {
+      parts.push(`${st.reps} reps`);
     }
 
     return parts.length ? parts.join(" • ") : "—";
@@ -209,6 +224,7 @@ function fmtSetSummary(st: {
   }
 
   if (st.reps != null) return `${st.reps} reps`;
+  if (st.weight_kg != null) return `${st.weight_kg} kg`;
 
   return "—";
 }
@@ -381,6 +397,7 @@ export default function WorkoutHistoryDetailScreen({
                 Alert.alert("Share unavailable", "Missing share data.");
                 return;
               }
+
               setShareOpen(true);
             }}
             style={({ pressed }) => [
@@ -556,6 +573,8 @@ export default function WorkoutHistoryDetailScreen({
                         style={{
                           color: colors.textMuted,
                           fontSize: 14,
+                          textAlign: "right",
+                          maxWidth: "55%",
                         }}
                       >
                         {fmtSetSummary(singleSet)}
@@ -569,7 +588,9 @@ export default function WorkoutHistoryDetailScreen({
                     <View style={{ marginTop: 10, gap: 8 }}>
                       {sets.map((st) => (
                         <WorkoutHistoryExerciseRow
-                          key={`${ex.exercise_id}-${st.set_number}-${st.set_id ?? "x"}`}
+                          key={`${ex.exercise_id}-${st.set_number}-${
+                            st.set_id ?? "x"
+                          }`}
                           name={`Set ${st.set_number}`}
                           summary={fmtSetSummary(st)}
                           isPr={!!st.is_pr}
