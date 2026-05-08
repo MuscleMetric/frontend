@@ -64,9 +64,7 @@ function includesKeyword(value: string, keywords: string[]) {
   return keywords.some((k) => value.includes(k));
 }
 
-export function getLoggingType(
-  exercise: ExerciseLike,
-): LoggingType {
+export function getLoggingType(exercise: ExerciseLike): LoggingType {
   const name = (exercise.name ?? "").toLowerCase();
   const type = (exercise.type ?? "").toLowerCase();
   const equipment = (exercise.equipment ?? "").toLowerCase();
@@ -87,10 +85,7 @@ export function getLoggingType(
   }
 
   // Bodyweight equipment
-  if (
-    equipment.includes("bodyweight") ||
-    equipment.includes("body only")
-  ) {
+  if (equipment.includes("bodyweight") || equipment.includes("body only")) {
     return "bodyweight_weighted";
   }
 
@@ -201,4 +196,60 @@ export function getExerciseLoggingProfile(
         canShowDropset: true,
       };
   }
+}
+
+type SetLike = {
+  reps?: number | null;
+  weight?: number | null;
+  timeSeconds?: number | null;
+  distance?: number | null;
+};
+
+export function hasCompletedSet(profile: ExerciseLoggingProfile, set: SetLike) {
+  if (profile.supportsTime) {
+    const t = set.timeSeconds ?? 0;
+
+    if (t > 0) {
+      return true;
+    }
+  }
+
+  if (profile.supportsDistance) {
+    const d = set.distance ?? 0;
+
+    if (d > 0) {
+      return true;
+    }
+  }
+
+  if (profile.supportsReps) {
+    const r = set.reps ?? 0;
+
+    if (r > 0) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+export function getMissingFields(
+  profile: ExerciseLoggingProfile,
+  set: SetLike,
+) {
+  const missing: string[] = [];
+
+  if (profile.supportsReps) {
+    if ((set.reps ?? 0) <= 0) {
+      missing.push("reps");
+    }
+  }
+
+  if (profile.supportsTime) {
+    if ((set.timeSeconds ?? 0) <= 0) {
+      missing.push("time");
+    }
+  }
+
+  return missing;
 }
