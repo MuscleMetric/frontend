@@ -24,7 +24,7 @@ export function calcAge(d: Date) {
  */
 export function validateStep(
   draft: OnboardingDraft,
-  stepIndex: number
+  stepIndex: number,
 ): ErrorMap {
   const errors: ErrorMap = {};
 
@@ -36,17 +36,11 @@ export function validateStep(
       errors.fullName = "Add your full name";
     }
 
-    if (!draft.dob) {
-      errors.dob = "Select your date of birth";
-    } else {
+    if (draft.dob) {
       const age = calcAge(draft.dob);
       if (age < 13) {
         errors.dob = "You must be at least 13 years old";
       }
-    }
-
-    if (!draft.gender) {
-      errors.gender = "Select a gender";
     }
   }
 
@@ -54,10 +48,7 @@ export function validateStep(
   // STEP 1 — BODY METRICS
   // ─────────────────────────────
   if (stepIndex >= 1) {
-    if (
-      draft.heightCm == null ||
-      !Number.isFinite(draft.heightCm)
-    ) {
+    if (draft.heightCm == null || !Number.isFinite(draft.heightCm)) {
       errors.height = "Enter your height";
     } else if (
       draft.heightCm < MIN_HEIGHT_CM ||
@@ -66,10 +57,7 @@ export function validateStep(
       errors.height = `Height must be ${MIN_HEIGHT_CM}–${MAX_HEIGHT_CM}cm`;
     }
 
-    if (
-      draft.weightKg == null ||
-      !Number.isFinite(draft.weightKg)
-    ) {
+    if (draft.weightKg == null || !Number.isFinite(draft.weightKg)) {
       errors.weight = "Enter your weight";
     } else if (
       draft.weightKg < MIN_WEIGHT_KG ||

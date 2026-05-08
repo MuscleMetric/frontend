@@ -1,3 +1,5 @@
+// app/features/onboarding/steps/AboutYouStep.tsx
+
 import React, {
   useEffect,
   useMemo,
@@ -85,19 +87,15 @@ export function AboutYouStep({
   const { colors } = useAppTheme() as any;
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
-  const dobLabel = draft.dob ? formatDob(draft.dob) : "Tap to select";
+  const dobLabel = draft.dob ? formatDob(draft.dob) : "Optional";
 
-  // 🔥 IMPORTANT: detect Apple user
   const isAppleUser =
     (draft as any).provider === "apple" ||
     draft.email?.includes("privaterelay.appleid.com");
 
   const appleProvidedName = Boolean((draft as any).appleProvidedName);
-
-  const hasAppleName =
-    isAppleUser && appleProvidedName && !!draft.fullName?.trim();
+  const hasAppleName = isAppleUser && appleProvidedName && !!draft.fullName?.trim();
   const appleNameMissing = isAppleUser && !appleProvidedName;
-
   const shouldLockName = hasAppleName;
 
   const [uStatus, setUStatus] = useState<UsernameStatus>({ kind: "idle" });
@@ -165,8 +163,7 @@ export function AboutYouStep({
     if (uStatus.kind === "idle")
       return "3–13 characters • letters, numbers, underscores";
     if (uStatus.kind === "checking") return "Checking availability…";
-    if (uStatus.kind === "available")
-      return `@${uStatus.normalized} is available`;
+    if (uStatus.kind === "available") return `@${uStatus.normalized} is available`;
     if (uStatus.kind === "taken") return `@${uStatus.normalized} is taken`;
     if (uStatus.kind === "invalid")
       return usernameHintFromReason(uStatus.reason) ?? "Invalid username";
@@ -176,8 +173,7 @@ export function AboutYouStep({
 
   const usernameHelperTone = useMemo(() => {
     if (uStatus.kind === "available") return "ok";
-    if (uStatus.kind === "checking" || uStatus.kind === "idle")
-      return "neutral";
+    if (uStatus.kind === "checking" || uStatus.kind === "idle") return "neutral";
     return "bad";
   }, [uStatus.kind]);
 
@@ -197,12 +193,11 @@ export function AboutYouStep({
           <View style={styles.header}>
             <Text style={styles.h1}>About You</Text>
             <Text style={styles.sub}>
-              We'll use this information to personalize your training experience
-              and calculate your metrics.
+              Add the basics for your profile. Date of birth and gender are optional
+              and are only used to improve metric estimates.
             </Text>
           </View>
 
-          {/* 🔥 FIXED FULL NAME FIELD */}
           <Field label="FULL NAME" error={errors.fullName}>
             <TextInput
               style={[
@@ -214,9 +209,7 @@ export function AboutYouStep({
               placeholderTextColor={colors.textMuted}
               value={draft.fullName}
               onChangeText={(t) => {
-                if (!shouldLockName) {
-                  onChange("fullName", t);
-                }
+                if (!shouldLockName) onChange("fullName", t);
               }}
               editable={!shouldLockName}
               autoCapitalize="words"
@@ -229,13 +222,11 @@ export function AboutYouStep({
 
             {appleNameMissing && (
               <Text style={styles.helper}>
-                Apple did not provide your name. You can add it here, or
-                continue without it.
+                Apple did not provide your name. You can add it here, or continue
+                without it.
               </Text>
             )}
           </Field>
-
-          {/* --- rest unchanged --- */}
 
           <Field label="USERNAME" error={(errors as any).username}>
             <View
@@ -295,14 +286,10 @@ export function AboutYouStep({
             />
           </Field>
 
-          <Field label="DATE OF BIRTH" error={errors.dob}>
+          <Field label="DATE OF BIRTH — OPTIONAL">
             <Pressable
               onPress={onOpenDob}
-              style={[
-                styles.input,
-                styles.rowInput,
-                !!errors.dob && styles.inputError,
-              ]}
+              style={[styles.input, styles.rowInput]}
             >
               <Text
                 style={[
@@ -314,9 +301,21 @@ export function AboutYouStep({
               </Text>
               <Text style={styles.chev}>›</Text>
             </Pressable>
+
+            <View style={styles.optionalRow}>
+              <Text style={styles.helper}>
+                Used only to improve age-based training estimates.
+              </Text>
+
+              {!!draft.dob && (
+                <Pressable onPress={() => onChange("dob", null as any)}>
+                  <Text style={styles.clearText}>Clear</Text>
+                </Pressable>
+              )}
+            </View>
           </Field>
 
-          <Field label="GENDER" error={errors.gender}>
+          <Field label="GENDER — OPTIONAL">
             <SegmentRow<Gender>
               value={draft.gender}
               onChange={(g) => onChange("gender", g)}
@@ -324,8 +323,20 @@ export function AboutYouStep({
                 { value: "male", label: "Male" },
                 { value: "female", label: "Female" },
               ]}
-              error={!!errors.gender}
+              error={false}
             />
+
+            <View style={styles.optionalRow}>
+              <Text style={styles.helper}>
+                Optional. Used only to improve training recommendations.
+              </Text>
+
+              {!!draft.gender && (
+                <Pressable onPress={() => onChange("gender", null as any)}>
+                  <Text style={styles.clearText}>Clear</Text>
+                </Pressable>
+              )}
+            </View>
           </Field>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -355,7 +366,7 @@ const makeStyles = (colors: any) =>
 
     header: { marginTop: 10, marginBottom: 22 },
     h1: { color: colors.text, fontSize: 34, fontWeight: "900" },
-    sub: { color: colors.textMuted, marginTop: 10, fontSize: 14 },
+    sub: { color: colors.textMuted, marginTop: 10, fontSize: 14, lineHeight: 20 },
 
     input: {
       borderWidth: 1,
@@ -369,24 +380,38 @@ const makeStyles = (colors: any) =>
     },
 
     readOnly: { opacity: 0.6 },
-
     inputError: { borderColor: "rgba(239,68,68,0.75)" },
 
     rowInput: { flexDirection: "row", alignItems: "center" },
 
     leftIcon: { width: 26, height: 26, borderRadius: 13 },
-    leftIconText: { fontSize: 14 },
+    leftIconText: { fontSize: 14, color: colors.textMuted, fontWeight: "800" },
 
-    rowText: { flex: 1, color: colors.text },
+    rowText: { flex: 1, color: colors.text, fontWeight: "800" },
 
-    chev: { color: colors.textMuted },
+    chev: { color: colors.textMuted, fontSize: 24 },
 
-    helper: { marginTop: 8, fontSize: 12, color: colors.textMuted },
+    optionalRow: {
+      marginTop: 8,
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      gap: 12,
+    },
+
+    helper: { flex: 1, fontSize: 12, color: colors.textMuted, lineHeight: 16 },
     helperOk: { color: "rgba(34,197,94,0.95)" },
     helperBad: { color: "rgba(239,68,68,0.95)" },
 
-    okMark: { color: "rgba(34,197,94,0.95)" },
-    badMark: { color: "rgba(239,68,68,0.95)" },
+    clearText: {
+      fontSize: 12,
+      fontWeight: "900",
+      color: colors.text,
+      opacity: 0.8,
+    },
+
+    okMark: { color: "rgba(34,197,94,0.95)", fontWeight: "900" },
+    badMark: { color: "rgba(239,68,68,0.95)", fontWeight: "900" },
 
     arrow: { color: "#fff" },
   });
