@@ -1,21 +1,20 @@
+// app/(features)/workouts/share/templates/black.tsx
+
 import React, { useMemo } from "react";
 import { View, Text } from "react-native";
 import { useAppTheme } from "@/lib/useAppTheme";
 import type { ShareWorkoutData } from "../workoutShare";
-import {
-  ShareTokens,
-  MetaChip,
-  StatTile,
-  Surface,
-  Divider,
-  ExerciseRow,
-  PRBanner,
-  bestTopSetLabel,
-  formatVolumeKg,
-  pickBestPR,
-  makeScale,
-} from "./shared";
-import { Icon } from "@/ui";
+
+function formatVolume(v?: number | null) {
+  if (v == null) return null;
+  const rounded = Math.round(v);
+  return `${rounded.toLocaleString()} kg`;
+}
+
+function formatDistance(v?: number | null) {
+  if (v == null || v <= 0) return null;
+  return `${Math.round(v * 100) / 100} km`;
+}
 
 export function BlackShareCard({
   data,
@@ -28,192 +27,185 @@ export function BlackShareCard({
 }) {
   const { typography } = useAppTheme();
 
-  // scale system (story-sized)
-  const scale = useMemo(() => makeScale(width), [width]);
+  const styles = useMemo(
+    () => ({
+      horizontalPadding: Math.round(width * 0.08),
+    }),
+    [width],
+  );
 
-  // bigger outer padding
-  const PAD_X = Math.round(width * 0.07);
-  const PAD_TOP = Math.round(height * 0.085);
-  const PAD_BOTTOM = Math.round(height * 0.07);
+  const hasPrs = (data.prs?.length ?? 0) > 0;
 
-  const tokens: ShareTokens = {
-    fg: "#FFFFFF",
-    muted: "rgba(255,255,255,0.72)",
-    muted2: "rgba(255,255,255,0.46)",
-    border: "rgba(255,255,255,0.12)",
-    hairline: "rgba(255,255,255,0.07)",
-    surface: "rgba(255,255,255,0.06)",
-    surfaceStrong: "rgba(255,255,255,0.09)",
-    activeBorder: "rgba(255,255,255,0.22)",
-    activeSurface: "rgba(255,255,255,0.08)",
-    useBlur: false,
-  };
-
-  const meta = useMemo(() => {
-    return {
-      volume: formatVolumeKg(data.totalVolumeKg),
-      sets: data.totalSets != null ? String(data.totalSets) : "—",
-      prs: data.prs?.length != null ? String(data.prs.length) : "0",
-    };
-  }, [data]);
-
-  const pr = useMemo(() => pickBestPR(data), [data]);
-
-  const maxExercises = 5;
-  const moreCount = Math.max(0, (data.exercises?.length ?? 0) - maxExercises);
+  const statRows = [
+    { label: "Duration", value: data.durationLabel || "—" },
+    { label: "Total Sets", value: data.totalSets != null ? String(data.totalSets) : null },
+    { label: "Total Volume", value: formatVolume(data.totalVolumeKg) },
+    { label: "Distance", value: formatDistance(data.totalDistanceKm) },
+    { label: "PRs", value: hasPrs ? String(data.prs.length) : null },
+  ].filter((x) => !!x.value);
 
   return (
     <View
       style={{
         width,
         height,
-        backgroundColor: "#090A0D",
-        paddingHorizontal: PAD_X,
-        paddingTop: PAD_TOP,
-        paddingBottom: PAD_BOTTOM,
+        backgroundColor: "#000000",
+        paddingHorizontal: styles.horizontalPadding,
+        paddingTop: 140,
+        paddingBottom: 90,
       }}
     >
-      {/* Single centered column */}
-      <View style={{ flex: 1, alignItems: "center" }}>
-        <View style={{ width: scale.contentW, flex: 1, justifyContent: "space-between" }}>
-          {/* ===== Header ===== */}
-          <View style={{ alignItems: "center", gap: scale.gapMd }}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-              <Icon name="flash" size={18} color={tokens.fg} />
+      <View style={{ flex: 1 }}>
+        {/* TOP */}
+        <View>
+          <Text
+            numberOfLines={2}
+            style={{
+              color: "#FFFFFF",
+              textAlign: "center",
+              fontSize: 74,
+              lineHeight: 78,
+              letterSpacing: -2,
+              fontFamily: typography.fontFamily.bold,
+            }}
+          >
+            {data.title}
+          </Text>
+
+          <Text
+            style={{
+              marginTop: 20,
+              color: "rgba(255,255,255,0.72)",
+              textAlign: "center",
+              fontSize: 28,
+              letterSpacing: 0.3,
+              fontFamily: typography.fontFamily.medium,
+            }}
+          >
+            {data.dateLabel}
+          </Text>
+        </View>
+
+        {/* CENTER */}
+        <View
+          style={{
+            flex: 1,
+            justifyContent: "center",
+          }}
+        >
+          <View style={{ gap: 28 }}>
+            {statRows.map((row) => (
+              <View
+                key={row.label}
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  borderBottomWidth: 1,
+                  borderBottomColor: "rgba(255,255,255,0.08)",
+                  paddingBottom: 18,
+                }}
+              >
+                <Text
+                  style={{
+                    color: "rgba(255,255,255,0.68)",
+                    fontSize: 30,
+                    letterSpacing: 0.5,
+                    fontFamily: typography.fontFamily.medium,
+                  }}
+                >
+                  {row.label}
+                </Text>
+
+                <Text
+                  style={{
+                    color: "#FFFFFF",
+                    fontSize: 34,
+                    letterSpacing: -0.5,
+                    fontFamily: typography.fontFamily.bold,
+                  }}
+                >
+                  {row.value}
+                </Text>
+              </View>
+            ))}
+          </View>
+
+          {hasPrs ? (
+            <View
+              style={{
+                marginTop: 80,
+                borderWidth: 1,
+                borderColor: "rgba(255,255,255,0.12)",
+                borderRadius: 32,
+                padding: 32,
+                backgroundColor: "rgba(255,255,255,0.04)",
+              }}
+            >
               <Text
                 style={{
-                  color: tokens.muted,
-                  fontSize: 13,
-                  letterSpacing: 2.2,
+                  color: "rgba(255,255,255,0.6)",
+                  fontSize: 22,
+                  letterSpacing: 2,
+                  marginBottom: 20,
                   fontFamily: typography.fontFamily.semibold,
                 }}
               >
-                MUSCLEMETRIC
+                PERSONAL BESTS
               </Text>
-            </View>
 
-            <Text
-              numberOfLines={2}
-              style={{
-                color: tokens.fg,
-                fontSize: 92,
-                lineHeight: 94,
-                letterSpacing: -1.4,
-                fontFamily: typography.fontFamily.bold,
-                textAlign: "center",
-                paddingHorizontal: 8,
-              }}
-            >
-              {data.title}
-            </Text>
+              <View style={{ gap: 18 }}>
+                {data.prs.slice(0, 4).map((pr, index) => (
+                  <View
+                    key={`${pr.exerciseName}-${index}`}
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                    }}
+                  >
+                    <Text
+                      numberOfLines={1}
+                      style={{
+                        flex: 1,
+                        color: "#FFFFFF",
+                        fontSize: 28,
+                        paddingRight: 20,
+                        fontFamily: typography.fontFamily.semibold,
+                      }}
+                    >
+                      {pr.exerciseName}
+                    </Text>
 
-            <View style={{ flexDirection: "row", gap: 12, justifyContent: "center" }}>
-              <MetaChip
-                icon="calendar"
-                text={data.dateLabel}
-                tokens={tokens}
-                typography={typography}
-                scale={scale}
-              />
-              <MetaChip
-                icon="time"
-                text={data.durationLabel}
-                tokens={tokens}
-                typography={typography}
-                scale={scale}
-              />
-            </View>
-
-            <View style={{ flexDirection: "row", gap: 14, width: "100%", marginTop: 6 }}>
-              <StatTile
-                label="Volume"
-                value={meta.volume}
-                tokens={tokens}
-                typography={typography}
-                scale={scale}
-              />
-              <StatTile
-                label="Sets"
-                value={meta.sets}
-                active
-                tokens={tokens}
-                typography={typography}
-                scale={scale}
-              />
-              <StatTile
-                label="PRs"
-                value={meta.prs}
-                tokens={tokens}
-                typography={typography}
-                scale={scale}
-              />
-            </View>
-          </View>
-
-          {/* ===== Body ===== */}
-          <View style={{ marginTop: scale.gapLg }}>
-            <Surface
-              tokens={tokens}
-              style={{
-                width: "100%",
-                borderRadius: scale.rCard,
-                borderWidth: 1,
-                borderColor: tokens.border,
-                backgroundColor: tokens.surface,
-                paddingVertical: scale.pyCard,
-                paddingHorizontal: scale.pxCard,
-                gap: scale.gapSm,
-              }}
-            >
-              {(data.exercises ?? []).slice(0, maxExercises).map((ex, idx) => {
-                const value = bestTopSetLabel(ex);
-                const last = idx === Math.min(maxExercises, data.exercises.length) - 1;
-
-                return (
-                  <View key={`${ex.name}-${idx}`} style={{ gap: scale.gapSm }}>
-                    <ExerciseRow
-                      name={ex.name}
-                      value={value}
-                      tokens={tokens}
-                      typography={typography}
-                      scale={scale}
-                    />
-                    {!last ? <Divider tokens={tokens} /> : null}
+                    <Text
+                      style={{
+                        color: "rgba(255,255,255,0.74)",
+                        fontSize: 24,
+                        fontFamily: typography.fontFamily.medium,
+                      }}
+                    >
+                      {pr.value || "PR"}
+                    </Text>
                   </View>
-                );
-              })}
+                ))}
+              </View>
+            </View>
+          ) : null}
+        </View>
 
-              {moreCount > 0 ? (
-                <Text
-                  style={{
-                    color: tokens.muted,
-                    fontSize: 13,
-                    fontFamily: typography.fontFamily.semibold,
-                    letterSpacing: 0.4,
-                    marginTop: 4,
-                  }}
-                >
-                  + {moreCount} more exercises
-                </Text>
-              ) : null}
-            </Surface>
-          </View>
-
-          {/* ===== Footer ===== */}
-          <View style={{ gap: scale.gapSm }}>
-            <PRBanner pr={pr} tokens={tokens} typography={typography} scale={scale} />
-            <Text
-              style={{
-                textAlign: "center",
-                color: tokens.muted2,
-                fontSize: 11,
-                letterSpacing: 1.4,
-                fontFamily: typography.fontFamily.semibold,
-              }}
-            >
-              TRAIN WITH MUSCLEMETRIC
-            </Text>
-          </View>
+        {/* FOOTER */}
+        <View>
+          <Text
+            style={{
+              textAlign: "center",
+              color: "#FFFFFF",
+              fontSize: 30,
+              letterSpacing: 1.2,
+              fontFamily: typography.fontFamily.semibold,
+            }}
+          >
+            Trained with MuscleMetric
+          </Text>
         </View>
       </View>
     </View>

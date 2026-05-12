@@ -341,17 +341,39 @@ export default function WorkoutHistoryDetailScreen({
         durationLabel: "",
         totalSets: null,
         totalVolumeKg: null,
+        totalDistanceKm: null,
         exercises: [],
         prs: [],
       };
     }
 
+    const strengthPrs = prs.map((p) => ({
+      exerciseName: p.exercise_name,
+      kind: "strength" as const,
+      label: "Strength PR",
+      value:
+        p.weight_kg != null && p.reps != null
+          ? `${p.weight_kg} kg × ${p.reps}`
+          : p.e1rm != null
+            ? `${Math.round(p.e1rm)} kg e1RM`
+            : "New PR",
+    }));
+
+    const cardioPbItems = cardioPrs.map((p) => ({
+      exerciseName: p.exercise_name,
+      kind: "cardio" as const,
+      label: fmtCardioMetricLabel(p.metric),
+      value: fmtCardioPRValue(p),
+    }));
+
     return {
       title: header.title ?? "Workout",
       dateLabel: fmtDayTime(header.completed_at),
       durationLabel: fmtMins(stats?.duration_seconds),
+
       totalSets: stats?.sets_count ?? null,
       totalVolumeKg: stats?.volume_kg ?? null,
+      totalDistanceKm: stats?.distance_total ?? null,
 
       exercises: exercises.map((ex) => ({
         name: ex.exercise_name,
@@ -364,20 +386,17 @@ export default function WorkoutHistoryDetailScreen({
         })),
       })),
 
-      prs: prs.map((p) => ({
-        exerciseName: p.exercise_name,
-        weightKg: p.weight_kg ?? null,
-        reps: p.reps ?? null,
-        e1rm: p.e1rm ?? null,
-      })),
+      prs: [...strengthPrs, ...cardioPbItems],
     };
   }, [
     header,
     stats?.duration_seconds,
     stats?.sets_count,
     stats?.volume_kg,
+    stats?.distance_total,
     exercises,
     prs,
+    cardioPrs,
   ]);
 
   if (loading) return <LoadingScreen />;
