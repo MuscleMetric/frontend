@@ -9,28 +9,10 @@ import {
   VictoryTheme,
   VictoryLabel,
 } from "victory-native";
+
 import { supabase } from "../../../../lib/supabase";
 import { useAppTheme } from "../../../../lib/useAppTheme";
-
-export type Plan = {
-  id: string;
-  title: string | null;
-  start_date: string | null;
-  end_date: string | null;
-  is_completed: boolean | null;
-};
-
-export type GoalRow = {
-  id: string;
-  type: "exercise_weight" | "exercise_reps" | "distance" | "time";
-  target_number: number;
-  unit: string | null;
-  deadline: string | null;
-  is_active: boolean | null;
-  notes: string | null; // { start?: number }
-  exercises: { id: string | null; name: string | null } | null;
-  created_at?: string | null;
-};
+import type { GoalMetric, GoalRow, Plan } from "../hooks/usePlanGoals";
 
 type ViewMode = "twoWeeks" | "overall";
 
@@ -39,13 +21,7 @@ type Props = {
   goal: GoalRow;
   viewMode: ViewMode;
   userId?: string | null;
-
-  /**
-   * Optional: allows parent to pass colors explicitly.
-   * If omitted, we fall back to useAppTheme().
-   */
   colors?: any;
-
   onPointPress?: (info: {
     date: Date;
     goalValue: number;
@@ -56,15 +32,46 @@ type Props = {
   }) => void;
 };
 
-/* ---------- helpers ---------- */
+type PlanWorkout = {
+  id: string;
+  title: string | null;
+  workout_id: string | null;
+};
 
-function parseStart(notes?: string | null): number | null {
-  if (!notes) return null;
-  try {
-    const obj = JSON.parse(notes);
-    if (typeof obj?.start === "number") return obj.start;
-  } catch {}
-  return null;
+type ExerciseWorkout = {
+  workout_id: string;
+  title: string | null;
+};
+
+type ActualMetricPoint = {
+  x: Date;
+  metrics: Partial<Record<GoalMetric, number>>;
+  workoutTitle: string | null;
+};
+
+type GraphPoint = {
+  x: Date;
+  y: number;
+  label: string;
+  workoutTitle: string | null;
+};
+
+const METRIC_LABEL: Record<GoalMetric, string> = {
+  weight: "Weight",
+  reps: "Reps",
+  distance: "Distance",
+  time: "Time",
+};
+
+const METRIC_UNIT: Record<GoalMetric, string> = {
+  weight: "kg",
+  reps: "reps",
+  distance: "km",
+  time: "sec",
+};
+
+function fmtDate(d: Date) {
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
 function weeksBetweenInclusive(startIso: string, endIso: string) {
@@ -75,50 +82,174 @@ function weeksBetweenInclusive(startIso: string, endIso: string) {
   return Math.max(1, Math.ceil(ms / (7 * 24 * 60 * 60 * 1000)));
 }
 
-function buildEvenDates(
-  startIso: string,
-  endIso: string,
-  points: number
-): Date[] {
+function buildEvenDates(startIso: string, endIso: string, points: number) {
   const s = new Date(startIso);
   const e = new Date(endIso);
-  if (isNaN(s.getTime()) || isNaN(e.getTime()) || points <= 1) return [s, e];
-  const out: Date[] = [];
-  for (let i = 0; i < points; i++) {
-    const t = i / (points - 1);
-    out.push(new Date(s.getTime() + t * (e.getTime() - s.getTime())));
+
+  if (isNaN(s.getTime()) || isNaN(e.getTime()) || points <= 1) {
+    return [s, e];
   }
+
+  return Array.from({ length: points }, (_, i) => {
+    const t = i / Math.max(1, points - 1);
+    return new Date(s.getTime() + t * (e.getTime() - s.getTime()));
+  });
+}
+
+function metricStartKey(metric: GoalMetric) {
+  switch (metric) {
+    case "weight":
+      return "start_weight";
+    case "reps":
+      return "start_reps";
+    case "distance":
+      return "start_distance";
+    case "time":
+      return "start_time_seconds";
+  }
+}
+
+function metricTargetKey(metric: GoalMetric) {
+  switch (metric) {
+    case "weight":
+      return "target_weight";
+    case "reps":
+      return "target_reps";
+    case "distance":
+      return "target_distance";
+    case "time":
+      return "target_time_seconds";
+  }
+}
+
+function positive(n: number | null | undefined) {
+  return n != null && Number.isFinite(n) && n > 0;
+}
+
+function goalValue(goal: GoalRow, side: "start" | "target", metric: GoalMetric) {
+  const key = side === "start" ? metricStartKey(metric) : metricTargetKey(metric);
+  const value = goal[key];
+
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function formatMetric(metric: GoalMetric, value: number) {
+  if (metric === "weight") return roundToNearest(value, 2.5).toString();
+  if (metric === "distance") return Number(value.toFixed(2)).toString();
+  return Math.round(value).toString();
+}
+
+function roundToNearest(value: number, step: number) {
+  return Math.round(value / step) * step;
+}
+
+function expectedMetricValue(
+  goal: GoalRow,
+  metric: GoalMetric,
+  progress: number,
+) {
+  const start = goalValue(goal, "start", metric);
+  const target = goalValue(goal, "target", metric);
+
+  if (!positive(start) || !positive(target)) return null;
+
+  return start! + (target! - start!) * progress;
+}
+
+function progressForMetric(goal: GoalRow, metric: GoalMetric, actual: number) {
+  const start = goalValue(goal, "start", metric);
+  const target = goalValue(goal, "target", metric);
+
+  if (!positive(start) || !positive(target) || !positive(actual)) return null;
+  if (start === target) return 100;
+
+  if (metric === "time" && target! < start!) {
+    return ((start! - actual) / (start! - target!)) * 100;
+  }
+
+  return ((actual - start!) / (target! - start!)) * 100;
+}
+
+function expectedLabel(goal: GoalRow, progress: number) {
+  return goal.metrics
+    .map((metric) => {
+      const value = expectedMetricValue(goal, metric, progress);
+
+      if (!positive(value)) {
+        return `${METRIC_LABEL[metric]} —`;
+      }
+
+      return `${formatMetric(metric, value!)}${METRIC_UNIT[metric]}`;
+    })
+    .join(" • ");
+}
+
+function actualLabel(goal: GoalRow, metrics: Partial<Record<GoalMetric, number>>) {
+  return goal.metrics
+    .map((metric) => {
+      const value = metrics[metric];
+
+      if (!positive(value)) {
+        return `${METRIC_LABEL[metric]} —`;
+      }
+
+      return `${formatMetric(metric, value!)}${METRIC_UNIT[metric]}`;
+    })
+    .join(" • ");
+}
+
+function actualProgressScore(
+  goal: GoalRow,
+  metrics: Partial<Record<GoalMetric, number>>,
+) {
+  const scores = goal.metrics
+    .map((metric) => {
+      const value = metrics[metric];
+      if (!positive(value)) return null;
+      return progressForMetric(goal, metric, value!);
+    })
+    .filter((v): v is number => typeof v === "number" && Number.isFinite(v));
+
+  if (!scores.length) return null;
+
+  const avg = scores.reduce((sum, n) => sum + n, 0) / scores.length;
+  return Math.max(0, Math.min(120, avg));
+}
+
+function getBestMetricValuesFromSets(
+  sets: any[],
+  goal: GoalRow,
+): Partial<Record<GoalMetric, number>> {
+  const out: Partial<Record<GoalMetric, number>> = {};
+
+  if (goal.metrics.includes("weight")) {
+    const vals = sets.map((s) => Number(s.weight ?? 0)).filter((n) => n > 0);
+    if (vals.length) out.weight = Math.max(...vals);
+  }
+
+  if (goal.metrics.includes("reps")) {
+    const vals = sets.map((s) => Number(s.reps ?? 0)).filter((n) => n > 0);
+    if (vals.length) out.reps = Math.max(...vals);
+  }
+
+  if (goal.metrics.includes("distance")) {
+    const total = sets.reduce(
+      (sum, s) => sum + Number(s.distance ?? 0),
+      0,
+    );
+    if (total > 0) out.distance = total;
+  }
+
+  if (goal.metrics.includes("time")) {
+    const total = sets.reduce(
+      (sum, s) => sum + Number(s.time_seconds ?? 0),
+      0,
+    );
+    if (total > 0) out.time = total;
+  }
+
   return out;
 }
-
-const roundQuarter = (n: number) => Math.round(n * 4) / 4;
-const roundTime = (s: number) => Math.round(s / 5) * 5;
-const roundDistance = (d: number) => Math.round(d * 10) / 10;
-
-function coerceUnitRound(value: number, type: GoalRow["type"]): number {
-  switch (type) {
-    case "exercise_weight":
-    case "exercise_reps":
-      return roundQuarter(value);
-    case "distance":
-      return roundDistance(value);
-    case "time":
-      return roundTime(value);
-    default:
-      return value;
-  }
-}
-
-const fmtDate = (d: Date) =>
-  d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-
-type SessionPoint = {
-  x: Date;
-  y: number;
-  workoutTitle: string | null;
-};
-
-/* ---------- component ---------- */
 
 export default function PlanGoalsGraph({
   plan,
@@ -132,48 +263,47 @@ export default function PlanGoalsGraph({
   const colors = colorsProp ?? theme.colors;
 
   const [loading, setLoading] = useState(true);
-  const [planWorkouts, setPlanWorkouts] = useState<
-    { id: string; title: string | null; workout_id: string | null }[]
-  >([]);
-  const [actualRaw, setActualRaw] = useState<SessionPoint[]>([]);
+  const [planWorkouts, setPlanWorkouts] = useState<PlanWorkout[]>([]);
+  const [exerciseWorkouts, setExerciseWorkouts] = useState<ExerciseWorkout[]>([]);
+  const [actualRaw, setActualRaw] = useState<ActualMetricPoint[]>([]);
 
-  // only workouts in this plan that actually contain the goal exercise
-  const [exerciseWorkouts, setExerciseWorkouts] = useState<
-    { workout_id: string; title: string | null }[]
-  >([]);
-
-  // load workouts for this plan so we know names + workout_id
   useEffect(() => {
     let alive = true;
-    (async () => {
+
+    async function loadPlanWorkouts() {
       if (!plan?.id) return;
+
       try {
         setLoading(true);
+
         const { data, error } = await supabase
           .from("plan_workouts")
           .select("id, title, workout_id")
           .eq("plan_id", plan.id)
+          .eq("is_archived", false)
           .order("order_index", { ascending: true });
 
         if (error) throw error;
-        if (alive) setPlanWorkouts(data ?? []);
+        if (alive) setPlanWorkouts((data ?? []) as PlanWorkout[]);
       } catch (e) {
         console.warn("planWorkouts load error:", e);
         if (alive) setPlanWorkouts([]);
       } finally {
         if (alive) setLoading(false);
       }
-    })();
+    }
+
+    loadPlanWorkouts();
+
     return () => {
       alive = false;
     };
   }, [plan?.id]);
 
-  // filter to plan workouts that actually contain this exercise
   useEffect(() => {
     let alive = true;
 
-    (async () => {
+    async function filterGoalWorkouts() {
       if (!plan?.id || !goal?.exercises?.id || !planWorkouts.length) {
         if (alive) setExerciseWorkouts([]);
         return;
@@ -199,7 +329,7 @@ export default function PlanGoalsGraph({
         if (error) throw error;
 
         const allowedIds = new Set(
-          (data ?? []).map((row: any) => row.workout_id as string)
+          (data ?? []).map((row: any) => row.workout_id as string),
         );
 
         const filtered = planWorkouts
@@ -214,17 +344,19 @@ export default function PlanGoalsGraph({
         console.warn("exerciseWorkouts filter error:", e);
         if (alive) setExerciseWorkouts([]);
       }
-    })();
+    }
+
+    filterGoalWorkouts();
 
     return () => {
       alive = false;
     };
   }, [plan?.id, goal?.exercises?.id, planWorkouts]);
 
-  // load actual history-based progression for this exercise
   useEffect(() => {
     let alive = true;
-    (async () => {
+
+    async function loadActuals() {
       if (
         !userId ||
         !plan?.id ||
@@ -238,11 +370,6 @@ export default function PlanGoalsGraph({
       }
 
       const workoutIds = exerciseWorkouts.map((w) => w.workout_id);
-
-      if (!workoutIds.length) {
-        if (alive) setActualRaw([]);
-        return;
-      }
 
       try {
         const { data, error } = await supabase
@@ -262,7 +389,7 @@ export default function PlanGoalsGraph({
                 distance
               )
             )
-          `
+          `,
           )
           .eq("user_id", userId)
           .in("workout_id", workoutIds)
@@ -272,57 +399,29 @@ export default function PlanGoalsGraph({
 
         if (error) throw error;
 
-        const exId = goal.exercises?.id;
-        const pts: SessionPoint[] = [];
+        const exId = goal.exercises.id;
+        const pts: ActualMetricPoint[] = [];
 
         (data ?? []).forEach((row: any) => {
-          const eh = (row.workout_exercise_history ?? []).find(
-            (h: any) => h.exercise_id === exId
-          );
-          if (!eh) return;
+          const histories = row.workout_exercise_history ?? [];
+          const matching = histories.filter((h: any) => h.exercise_id === exId);
 
-          const sets = eh.workout_set_history ?? [];
+          if (!matching.length) return;
+
+          const sets = matching.flatMap(
+            (h: any) => h.workout_set_history ?? [],
+          );
+
           if (!sets.length) return;
 
-          let rawVal = 0;
-
-          switch (goal.type) {
-            case "exercise_weight": {
-              rawVal = Math.max(...sets.map((s: any) => Number(s.weight ?? 0)));
-              break;
-            }
-            case "exercise_reps": {
-              rawVal = Math.max(...sets.map((s: any) => Number(s.reps ?? 0)));
-              break;
-            }
-            case "distance": {
-              rawVal = sets.reduce(
-                (sum: number, s: any) => sum + Number(s.distance ?? 0),
-                0
-              );
-              break;
-            }
-            case "time": {
-              rawVal = sets.reduce(
-                (sum: number, s: any) => sum + Number(s.time_seconds ?? 0),
-                0
-              );
-              break;
-            }
-            default: {
-              rawVal = 0;
-            }
-          }
-
           const workout = planWorkouts.find(
-            (pw) => pw.workout_id === row.workout_id
+            (pw) => pw.workout_id === row.workout_id,
           );
-          const workoutTitle = workout?.title ?? null;
 
           pts.push({
             x: new Date(row.completed_at),
-            y: coerceUnitRound(rawVal, goal.type),
-            workoutTitle,
+            metrics: getBestMetricValuesFromSets(sets, goal),
+            workoutTitle: workout?.title ?? null,
           });
         });
 
@@ -331,7 +430,9 @@ export default function PlanGoalsGraph({
         console.warn("actual goal line load error:", e);
         if (alive) setActualRaw([]);
       }
-    })();
+    }
+
+    loadActuals();
 
     return () => {
       alive = false;
@@ -342,9 +443,8 @@ export default function PlanGoalsGraph({
     plan?.start_date,
     plan?.end_date,
     goal?.id,
-    goal?.type,
-    goal?.notes,
     goal?.exercises?.id,
+    goal?.metrics,
     planWorkouts,
     exerciseWorkouts,
   ]);
@@ -354,44 +454,62 @@ export default function PlanGoalsGraph({
       return null;
     }
 
+    if (!goal.metrics.length) return null;
+
     const startDate = new Date(plan.start_date);
     const endDate = new Date(plan.end_date);
     const totalMs = endDate.getTime() - startDate.getTime();
 
-    const startVal = (() => {
-      const s = parseStart(goal.notes);
-      return typeof s === "number" ? s : 0;
-    })();
-    const targetVal = goal.target_number;
+    if (isNaN(startDate.getTime()) || isNaN(endDate.getTime()) || totalMs <= 0) {
+      return null;
+    }
 
     const idealYAt = (d: Date) => {
-      if (
-        isNaN(startDate.getTime()) ||
-        isNaN(endDate.getTime()) ||
-        totalMs <= 0
-      )
-        return targetVal;
       const t = Math.min(
         1,
-        Math.max(0, (d.getTime() - startDate.getTime()) / totalMs)
+        Math.max(0, (d.getTime() - startDate.getTime()) / totalMs),
       );
-      return coerceUnitRound(startVal + t * (targetVal - startVal), goal.type);
+
+      return Math.round(t * 100);
+    };
+
+    const idealLabelAt = (d: Date) => {
+      const t = Math.min(
+        1,
+        Math.max(0, (d.getTime() - startDate.getTime()) / totalMs),
+      );
+
+      return expectedLabel(goal, t);
     };
 
     const weeks = weeksBetweenInclusive(plan.start_date, plan.end_date);
-    const perWeek = exerciseWorkouts.length;
-    const sessions = Math.max(1, weeks * perWeek);
-
+    const sessions = Math.max(1, weeks * Math.max(1, exerciseWorkouts.length));
     const dates = buildEvenDates(plan.start_date, plan.end_date, sessions);
 
-    const allIdeal: SessionPoint[] = dates.map((d, i) => {
-      const y = idealYAt(d);
+    const allIdeal: GraphPoint[] = dates.map((d, i) => {
       const w = exerciseWorkouts[i % exerciseWorkouts.length];
-      const workoutTitle = w?.title ?? `Workout ${i + 1}`;
-      return { x: d, y, workoutTitle };
+
+      return {
+        x: d,
+        y: idealYAt(d),
+        label: idealLabelAt(d),
+        workoutTitle: w?.title ?? `Workout ${i + 1}`,
+      };
     });
 
-    const allActual: SessionPoint[] = actualRaw.slice();
+    const allActual: GraphPoint[] = actualRaw
+      .map((p) => {
+        const score = actualProgressScore(goal, p.metrics);
+        if (score == null) return null;
+
+        return {
+          x: p.x,
+          y: Math.round(score),
+          label: actualLabel(goal, p.metrics),
+          workoutTitle: p.workoutTitle,
+        };
+      })
+      .filter((p): p is GraphPoint => !!p);
 
     const now = new Date();
     const TWO_WEEKS_MS = 14 * 24 * 60 * 60 * 1000;
@@ -399,47 +517,24 @@ export default function PlanGoalsGraph({
     const windowEnd = new Date(now.getTime() + TWO_WEEKS_MS);
 
     let idealPoints = allIdeal;
-    if (viewMode === "twoWeeks") {
-      const filtered = allIdeal.filter(
-        (p) => p.x >= windowStart && p.x <= windowEnd
-      );
-      idealPoints = filtered.length ? filtered : allIdeal;
-    }
-
     let actualPoints = allActual;
+
     if (viewMode === "twoWeeks") {
+      const filteredIdeal = allIdeal.filter(
+        (p) => p.x >= windowStart && p.x <= windowEnd,
+      );
+      idealPoints = filteredIdeal.length ? filteredIdeal : allIdeal;
+
       actualPoints = allActual.filter(
-        (p) => p.x >= windowStart && p.x <= windowEnd
+        (p) => p.x >= windowStart && p.x <= windowEnd,
       );
     }
 
-    const xIdeal = idealPoints.map((p) => +p.x);
-    const yIdeal = idealPoints.map((p) => p.y);
-    const xActual = actualPoints.map((p) => +p.x);
-    const yActual = actualPoints.map((p) => p.y);
+    const xAll = idealPoints.concat(actualPoints).map((p) => +p.x);
+    const yAll = idealPoints.concat(actualPoints).map((p) => p.y);
 
-    const xAll = xIdeal.concat(xActual);
-    const yAll = yIdeal.concat(yActual);
-
-    const fallbackXDomain: [number, number] = [
-      startDate.getTime(),
-      endDate.getTime(),
-    ];
-    const fallbackYDomain: [number, number] = [startVal, targetVal];
-
-    if (!xAll.length || !yAll.length) {
-      return {
-        idealPoints,
-        actualPoints,
-        xDomain: fallbackXDomain,
-        yDomain: fallbackYDomain,
-        xTicks: [fallbackXDomain[0], fallbackXDomain[1]],
-        idealYAt,
-      };
-    }
-
-    const xMinData = Math.min(...xAll);
-    const xMaxData = Math.max(...xAll);
+    const xMinData = xAll.length ? Math.min(...xAll) : startDate.getTime();
+    const xMaxData = xAll.length ? Math.max(...xAll) : endDate.getTime();
 
     const xMin =
       viewMode === "twoWeeks"
@@ -450,19 +545,22 @@ export default function PlanGoalsGraph({
         ? Math.max(windowEnd.getTime(), xMaxData)
         : xMaxData;
 
-    const yMin = Math.min(...yAll);
-    const yMax = Math.max(...yAll);
-    const yPad = Math.max(1, (yMax - yMin) * 0.1);
+    const yMin = Math.min(0, ...(yAll.length ? yAll : [0]));
+    const yMax = Math.max(100, ...(yAll.length ? yAll : [100]));
 
-    const xTicks = [xMin, (xMin + xMax) / 2, xMax];
+    const yPad = Math.max(5, (yMax - yMin) * 0.1);
 
     return {
       idealPoints,
       actualPoints,
       xDomain: [xMin, xMax] as [number, number],
-      yDomain: [yMin - yPad, yMax + yPad] as [number, number],
-      xTicks,
+      yDomain: [Math.max(0, yMin - yPad), Math.min(125, yMax + yPad)] as [
+        number,
+        number,
+      ],
+      xTicks: [xMin, (xMin + xMax) / 2, xMax],
       idealYAt,
+      idealLabelAt,
     };
   }, [
     plan?.start_date,
@@ -476,7 +574,7 @@ export default function PlanGoalsGraph({
   if (loading) {
     return (
       <View style={{ padding: 8 }}>
-        <ActivityIndicator />
+        <ActivityIndicator color={colors.primary} />
       </View>
     );
   }
@@ -484,7 +582,9 @@ export default function PlanGoalsGraph({
   if (!graph) {
     return (
       <View style={{ padding: 8 }}>
-        <Text style={{ color: colors.subtle }}>No data to draw.</Text>
+        <Text style={{ color: colors.subtle }}>
+          No goal data to draw yet.
+        </Text>
       </View>
     );
   }
@@ -495,7 +595,6 @@ export default function PlanGoalsGraph({
   const { idealPoints, actualPoints, xDomain, yDomain, xTicks, idealYAt } =
     graph;
 
-  // COLORS
   const goalColor = colors.primary ?? "#38bdf8";
   const actualColor = colors.text;
   const axis = colors.subtle;
@@ -503,36 +602,49 @@ export default function PlanGoalsGraph({
   const goalLineData = idealPoints.map((p) => ({ x: +p.x, y: p.y }));
   const actualLineData = actualPoints.map((p) => ({ x: +p.x, y: p.y }));
 
-  const findClosestActual = (d: Date): SessionPoint | null => {
+  const findClosestActual = (d: Date): GraphPoint | null => {
     if (!actualPoints.length) return null;
-    let best: SessionPoint | null = null;
+
+    let best: GraphPoint | null = null;
     let bestDiff = Infinity;
     const t = d.getTime();
+
     for (const p of actualPoints) {
       const diff = Math.abs(p.x.getTime() - t);
+
       if (diff < bestDiff) {
         bestDiff = diff;
         best = p;
       }
     }
+
     return best;
   };
 
   return (
-    <View
-      style={{
-        height: 340,
-        padding: 1,
-        overflow: "hidden",
-      }}
-    >
+    <View style={{ height: 340, padding: 1, overflow: "hidden" }}>
+      <View style={{ paddingHorizontal: 6, paddingTop: 4 }}>
+        <Text
+          style={{
+            color: colors.text,
+            fontSize: 13,
+            fontFamily: theme.typography?.fontFamily?.bold,
+          }}
+        >
+          Progress vs expected path
+        </Text>
+        <Text style={{ color: colors.subtle, fontSize: 11, marginTop: 2 }}>
+          0% = start • 100% = target reached
+        </Text>
+      </View>
+
       <VictoryChart
         theme={VictoryTheme.material}
-        padding={{ top: 14, left: 30, right: 28, bottom: 25 }}
+        padding={{ top: 14, left: 36, right: 28, bottom: 25 }}
         domainPadding={{ y: 2 }}
         domain={{ x: xDomain as any, y: yDomain as any }}
         width={chartWidth}
-        height={300}
+        height={275}
       >
         <VictoryAxis
           tickValues={xTicks}
@@ -543,8 +655,10 @@ export default function PlanGoalsGraph({
             grid: { stroke: colors.border },
           }}
         />
+
         <VictoryAxis
           dependentAxis
+          tickFormat={(t) => `${Math.round(Number(t))}%`}
           style={{
             axis: { stroke: axis },
             tickLabels: { fill: axis, fontSize: 11 },
@@ -553,7 +667,6 @@ export default function PlanGoalsGraph({
           axisLabelComponent={<VictoryLabel dy={-28} />}
         />
 
-        {/* dotted ideal goal trajectory */}
         <VictoryLine
           data={goalLineData}
           style={{
@@ -565,8 +678,7 @@ export default function PlanGoalsGraph({
           }}
         />
 
-        {/* solid actual trajectory */}
-        {actualLineData.length > 0 && (
+        {actualLineData.length > 0 ? (
           <VictoryLine
             data={actualLineData}
             style={{
@@ -576,10 +688,9 @@ export default function PlanGoalsGraph({
               },
             }}
           />
-        )}
+        ) : null}
 
-        {/* dots on ideal (projected) line */}
-        {viewMode === "twoWeeks" && (
+        {viewMode === "twoWeeks" ? (
           <VictoryScatter
             data={idealPoints.map((p, i) => ({
               x: +p.x,
@@ -593,10 +704,8 @@ export default function PlanGoalsGraph({
                 target: "data",
                 eventHandlers: {
                   onPressIn: (_, props) => {
-                    if (viewMode !== "twoWeeks") return [];
                     const idx = props.datum.i as number;
                     const p = idealPoints[idx];
-
                     const closestActual = findClosestActual(p.x);
 
                     onPointPress?.({
@@ -614,10 +723,9 @@ export default function PlanGoalsGraph({
               },
             ]}
           />
-        )}
+        ) : null}
 
-        {/* dots on actual (history) line */}
-        {viewMode === "twoWeeks" && actualPoints.length > 0 && (
+        {viewMode === "twoWeeks" && actualPoints.length > 0 ? (
           <VictoryScatter
             data={actualPoints.map((p, i) => ({
               x: +p.x,
@@ -631,14 +739,12 @@ export default function PlanGoalsGraph({
                 target: "data",
                 eventHandlers: {
                   onPressIn: (_, props) => {
-                    if (viewMode !== "twoWeeks") return [];
                     const idx = props.datum.i as number;
                     const p = actualPoints[idx];
-                    const goalAtDate = idealYAt(p.x);
 
                     onPointPress?.({
                       date: p.x,
-                      goalValue: goalAtDate,
+                      goalValue: idealYAt(p.x),
                       actualValue: p.y,
                       index: idx,
                       workoutTitle: p.workoutTitle,
@@ -651,17 +757,16 @@ export default function PlanGoalsGraph({
               },
             ]}
           />
-        )}
+        ) : null}
       </VictoryChart>
 
-      {/* Legend */}
       <View
         style={{
           flexDirection: "row",
           justifyContent: "center",
           alignItems: "center",
           gap: 16,
-          marginTop: 4,
+          marginTop: -2,
         }}
       >
         <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
@@ -674,7 +779,7 @@ export default function PlanGoalsGraph({
               borderColor: goalColor,
             }}
           />
-          <Text style={{ fontSize: 11, color: colors.subtle }}>Goal</Text>
+          <Text style={{ fontSize: 11, color: colors.subtle }}>Expected</Text>
         </View>
 
         <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>

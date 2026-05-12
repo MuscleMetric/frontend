@@ -1,34 +1,108 @@
 // app/(features)/goals/components/PlanGoalsCard.tsx
 import React, { useMemo, useState, useEffect } from "react";
-import { View, Text, ActivityIndicator, Pressable, StyleSheet } from "react-native";
+import {
+  View,
+  Text,
+  ActivityIndicator,
+  Pressable,
+  StyleSheet,
+} from "react-native";
 import { router } from "expo-router";
-import { usePlanGoals } from "../hooks/usePlanGoals";
+
+import { usePlanGoals, type GoalMetric, type GoalRow } from "../hooks/usePlanGoals";
 import PlanGoalsGraph from "./PlanGoalsGraph";
 import { useAppTheme } from "../../../../lib/useAppTheme";
 
 type Props = { userId?: string | null };
 
-function fmtMode(m: "exercise_weight" | "exercise_reps" | "distance" | "time") {
-  switch (m) {
-    case "exercise_weight":
-      return "Weight";
-    case "exercise_reps":
-      return "Reps";
+const METRIC_LABEL: Record<GoalMetric, string> = {
+  weight: "Weight",
+  reps: "Reps",
+  distance: "Distance",
+  time: "Time",
+};
+
+const METRIC_UNIT: Record<GoalMetric, string> = {
+  weight: "kg",
+  reps: "reps",
+  distance: "km",
+  time: "sec",
+};
+
+function metricStartKey(metric: GoalMetric) {
+  switch (metric) {
+    case "weight":
+      return "start_weight";
+    case "reps":
+      return "start_reps";
     case "distance":
-      return "Distance";
+      return "start_distance";
     case "time":
-      return "Time";
-    default:
-      return m;
+      return "start_time_seconds";
   }
 }
-function parseStart(notes?: string | null): number | null {
-  if (!notes) return null;
-  try {
-    const o = JSON.parse(notes);
-    if (typeof o?.start === "number") return o.start;
-  } catch {}
-  return null;
+
+function metricTargetKey(metric: GoalMetric) {
+  switch (metric) {
+    case "weight":
+      return "target_weight";
+    case "reps":
+      return "target_reps";
+    case "distance":
+      return "target_distance";
+    case "time":
+      return "target_time_seconds";
+  }
+}
+
+function positive(n: number | null | undefined) {
+  return n != null && Number.isFinite(n) && n > 0;
+}
+
+function fmtMetric(metric: GoalMetric, value: number | null | undefined) {
+  if (!positive(value)) return "—";
+
+  if (metric === "weight") return `${roundToNearest(value!, 2.5)}kg`;
+  if (metric === "distance") return `${Number(value!.toFixed(2))}km`;
+  if (metric === "time") return `${Math.round(value!)}sec`;
+  return `${Math.round(value!)}reps`;
+}
+
+function roundToNearest(value: number, step: number) {
+  return Math.round(value / step) * step;
+}
+
+function goalSummary(g: GoalRow) {
+  if (g.goal_summary) return g.goal_summary;
+
+  return g.metrics
+    .map((metric) => {
+      const start = g[metricStartKey(metric)];
+      const target = g[metricTargetKey(metric)];
+
+      return `${METRIC_LABEL[metric]}: ${fmtMetric(metric, start)} → ${fmtMetric(
+        metric,
+        target,
+      )}`;
+    })
+    .join(" • ");
+}
+
+function goalShortLabel(g: GoalRow) {
+  return g.metrics.map((m) => METRIC_LABEL[m]).join(" + ");
+}
+
+function statusFromPoint(point: {
+  goalValue: number;
+  actualValue?: number | null;
+} | null) {
+  if (!point || point.actualValue == null) return null;
+
+  const diff = point.actualValue - point.goalValue;
+
+  if (diff >= 5) return { label: "Ahead", detail: `+${Math.round(diff)}% ahead` };
+  if (diff <= -5) return { label: "Behind", detail: `${Math.abs(Math.round(diff))}% behind` };
+  return { label: "On track", detail: "Close to expected progress" };
 }
 
 export default function PlanGoalsCard({ userId }: Props) {
@@ -39,16 +113,22 @@ export default function PlanGoalsCard({ userId }: Props) {
 
   const endText = useMemo(() => {
     if (!plan?.end_date) return null;
+
     const d = new Date(plan.end_date);
     return isNaN(d.getTime())
       ? plan.end_date
-      : d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+      : d.toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+        });
   }, [plan?.end_date]);
 
   const [selectedGoalId, setSelectedGoalId] = useState<string | null>(null);
+
   const selectedGoal = useMemo(
     () => goals.find((g) => g.id === (selectedGoalId ?? goals[0]?.id)),
-    [goals, selectedGoalId]
+    [goals, selectedGoalId],
   );
 
   const [selectedPoint, setSelectedPoint] = useState<{
@@ -60,13 +140,19 @@ export default function PlanGoalsCard({ userId }: Props) {
   } | null>(null);
 
   useEffect(() => {
-    if (goals.length && !selectedGoalId) setSelectedGoalId(goals[0].id);
+    if (goals.length && !selectedGoalId) {
+      setSelectedGoalId(goals[0].id);
+    }
   }, [goals, selectedGoalId]);
 
   const [viewMode, setViewMode] = useState<"twoWeeks" | "overall">("twoWeeks");
-  useEffect(() => setSelectedPoint(null), [viewMode, selectedGoalId]);
+
+  useEffect(() => {
+    setSelectedPoint(null);
+  }, [viewMode, selectedGoalId]);
 
   const now = new Date();
+  const selectedStatus = statusFromPoint(selectedPoint);
 
   return (
     <View style={styles.card}>
@@ -76,21 +162,37 @@ export default function PlanGoalsCard({ userId }: Props) {
           <Text style={styles.h3}>Goals</Text>
         </View>
 
-        {/* range switch */}
         <View style={styles.switchRow}>
           <Pressable
             onPress={() => setViewMode("twoWeeks")}
-            style={[styles.switchBtn, viewMode === "twoWeeks" && styles.switchActive]}
+            style={[
+              styles.switchBtn,
+              viewMode === "twoWeeks" && styles.switchActive,
+            ]}
           >
-            <Text style={[styles.switchText, viewMode === "twoWeeks" && styles.switchActiveText]}>
+            <Text
+              style={[
+                styles.switchText,
+                viewMode === "twoWeeks" && styles.switchActiveText,
+              ]}
+            >
               2 Weeks
             </Text>
           </Pressable>
+
           <Pressable
             onPress={() => setViewMode("overall")}
-            style={[styles.switchBtn, viewMode === "overall" && styles.switchActive]}
+            style={[
+              styles.switchBtn,
+              viewMode === "overall" && styles.switchActive,
+            ]}
           >
-            <Text style={[styles.switchText, viewMode === "overall" && styles.switchActiveText]}>
+            <Text
+              style={[
+                styles.switchText,
+                viewMode === "overall" && styles.switchActiveText,
+              ]}
+            >
               Overall
             </Text>
           </Pressable>
@@ -98,20 +200,25 @@ export default function PlanGoalsCard({ userId }: Props) {
       </View>
 
       <Text style={styles.subtle}>
-        {plan ? `From “${planTitle}”${endText ? ` • Ends ${endText}` : ""}` : "No active plan"}
+        {plan
+          ? `From “${planTitle}”${endText ? ` • Ends ${endText}` : ""}`
+          : "No active plan"}
       </Text>
 
       <View style={{ height: 12 }} />
 
       {loading ? (
-        <ActivityIndicator />
+        <ActivityIndicator color={colors.primary} />
       ) : error ? (
-        <Text style={[styles.subtle, { color: colors.danger ?? "#e11" }]}>{error}</Text>
+        <Text style={[styles.subtle, { color: colors.danger ?? "#e11" }]}>
+          {error}
+        </Text>
       ) : goals.length === 0 ? (
         <>
           <Text style={styles.subtle}>
             No plan goals yet. Create a plan with goals to see them here.
           </Text>
+
           <Pressable
             style={[styles.primaryBtn, { marginTop: 12 }]}
             onPress={() => router.push("/features/plans/create/planInfo")}
@@ -121,6 +228,23 @@ export default function PlanGoalsCard({ userId }: Props) {
         </>
       ) : (
         <>
+          {selectedGoal ? (
+            <View style={styles.focusCard}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.focusTitle}>
+                  {selectedGoal.exercises?.name ?? "Goal exercise"}
+                </Text>
+                <Text style={styles.focusMeta}>{goalSummary(selectedGoal)}</Text>
+              </View>
+
+              <View style={styles.focusPill}>
+                <Text style={styles.focusPillText}>
+                  {goalShortLabel(selectedGoal)}
+                </Text>
+              </View>
+            </View>
+          ) : null}
+
           <View style={styles.graphShell}>
             {plan && selectedGoal ? (
               <>
@@ -129,7 +253,13 @@ export default function PlanGoalsCard({ userId }: Props) {
                   goal={selectedGoal}
                   viewMode={viewMode}
                   userId={userId}
-                  onPointPress={({ date, goalValue, actualValue, workoutTitle, kind }) => {
+                  onPointPress={({
+                    date,
+                    goalValue,
+                    actualValue,
+                    workoutTitle,
+                    kind,
+                  }) => {
                     setSelectedPoint({
                       date,
                       goalValue,
@@ -140,9 +270,10 @@ export default function PlanGoalsCard({ userId }: Props) {
                   }}
                 />
 
-                {selectedPoint && viewMode === "twoWeeks" && (
+                {selectedPoint && viewMode === "twoWeeks" ? (
                   (() => {
-                    const isFuture = selectedPoint.date.getTime() > now.getTime() + 60 * 1000;
+                    const isFuture =
+                      selectedPoint.date.getTime() > now.getTime() + 60 * 1000;
 
                     if (isFuture) {
                       return (
@@ -151,18 +282,21 @@ export default function PlanGoalsCard({ userId }: Props) {
                             <Text style={styles.pointBubbleTitle}>
                               {selectedPoint.workoutTitle || "Workout"}
                             </Text>
+
                             <View style={styles.plannedPill}>
                               <Text style={styles.plannedPillText}>Planned</Text>
                             </View>
                           </View>
 
                           <Text style={styles.pointBubbleDate}>
-                            {selectedPoint.date.toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                            {selectedPoint.date.toLocaleDateString("en-US", {
+                              month: "short",
+                              day: "numeric",
+                            })}
                           </Text>
 
                           <Text style={styles.pointBubbleGoal}>
-                            Goal for this session:{" "}
-                            {`${selectedPoint.goalValue}${selectedGoal.unit ? ` ${selectedGoal.unit}` : ""}`}
+                            Expected progress: {Math.round(selectedPoint.goalValue)}%
                           </Text>
                         </View>
                       );
@@ -176,35 +310,49 @@ export default function PlanGoalsCard({ userId }: Props) {
                               {selectedPoint.workoutTitle || "Workout"}
                             </Text>
                             <Text style={styles.pointBubbleDate}>
-                              {selectedPoint.date.toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                              {selectedPoint.date.toLocaleDateString("en-US", {
+                                month: "short",
+                                day: "numeric",
+                              })}
                             </Text>
                           </View>
 
                           <View style={styles.pointBubbleRight}>
                             <Text style={styles.pointBubbleActual}>
                               {selectedPoint.actualValue != null
-                                ? `${selectedPoint.actualValue}${selectedGoal.unit ? ` ${selectedGoal.unit}` : ""}`
+                                ? `${Math.round(selectedPoint.actualValue)}%`
                                 : "—"}
                             </Text>
                             <Text style={styles.pointBubbleGoal}>
-                              Goal:{" "}
-                              {`${selectedPoint.goalValue}${selectedGoal.unit ? ` ${selectedGoal.unit}` : ""}`}
+                              Expected: {Math.round(selectedPoint.goalValue)}%
                             </Text>
                           </View>
                         </View>
+
+                        {selectedStatus ? (
+                          <View style={styles.statusRow}>
+                            <Text style={styles.statusLabel}>
+                              {selectedStatus.label}
+                            </Text>
+                            <Text style={styles.statusDetail}>
+                              {selectedStatus.detail}
+                            </Text>
+                          </View>
+                        ) : null}
                       </View>
                     );
                   })()
-                )}
+                ) : null}
               </>
             ) : (
-              <Text style={styles.subtle}>Select a goal below to view the trajectory.</Text>
+              <Text style={styles.subtle}>
+                Select a goal below to view the trajectory.
+              </Text>
             )}
           </View>
 
           <View style={{ gap: 10, marginTop: 14 }}>
             {goals.map((g) => {
-              const start = parseStart(g.notes);
               const exerciseName = g.exercises?.name ?? "Exercise";
               const active = g.id === selectedGoalId;
 
@@ -214,14 +362,17 @@ export default function PlanGoalsCard({ userId }: Props) {
                   onPress={() => setSelectedGoalId(g.id)}
                   style={[styles.goalRow, active && styles.goalRowActive]}
                 >
-                  <View style={{ flexDirection: "row", justifyContent: "space-between", gap: 12 }}>
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      justifyContent: "space-between",
+                      gap: 12,
+                    }}
+                  >
                     <View style={{ flex: 1 }}>
                       <Text style={styles.goalTitle}>{exerciseName}</Text>
-                      <Text style={styles.subtle}>
-                        {fmtMode(g.type)} → {g.target_number}
-                        {g.unit ? ` ${g.unit}` : ""}
-                        {start != null ? `  (start ${start}${g.unit ?? ""})` : ""}
-                      </Text>
+                      <Text style={styles.subtle}>{goalSummary(g)}</Text>
+
                       {!!g.deadline && (
                         <Text style={styles.deadline}>
                           Due{" "}
@@ -234,11 +385,11 @@ export default function PlanGoalsCard({ userId }: Props) {
                       )}
                     </View>
 
-                    {active && (
+                    {active ? (
                       <View style={styles.activePill}>
                         <Text style={styles.activePillText}>Selected</Text>
                       </View>
-                    )}
+                    ) : null}
                   </View>
                 </Pressable>
               );
@@ -279,9 +430,17 @@ const makeStyles = (colors: any, typography: any) =>
       marginTop: 2,
       letterSpacing: -0.3,
     },
-    subtle: { color: colors.subtle, marginTop: 6, fontSize: 13, lineHeight: 18 },
-    deadline: { color: colors.subtle, marginTop: 6, fontSize: 12 },
-
+    subtle: {
+      color: colors.subtle,
+      marginTop: 6,
+      fontSize: 13,
+      lineHeight: 18,
+    },
+    deadline: {
+      color: colors.subtle,
+      marginTop: 6,
+      fontSize: 12,
+    },
     primaryBtn: {
       backgroundColor: colors.primary,
       borderRadius: 14,
@@ -296,7 +455,44 @@ const makeStyles = (colors: any, typography: any) =>
       color: colors.onPrimary ?? "#fff",
       fontSize: 14,
     },
-
+    focusCard: {
+      backgroundColor: colors.surface,
+      borderRadius: 16,
+      padding: 12,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      flexDirection: "row",
+      gap: 12,
+      alignItems: "flex-start",
+      marginBottom: 12,
+    },
+    focusTitle: {
+      fontFamily: typography?.fontFamily?.bold ?? undefined,
+      color: colors.text,
+      fontSize: 15,
+      letterSpacing: -0.2,
+    },
+    focusMeta: {
+      color: colors.subtle,
+      marginTop: 4,
+      fontSize: 12,
+      lineHeight: 17,
+      fontFamily: typography?.fontFamily?.medium ?? undefined,
+    },
+    focusPill: {
+      alignSelf: "flex-start",
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      borderRadius: 999,
+      backgroundColor: colors.primary,
+    },
+    focusPillText: {
+      color: colors.onPrimary ?? "#fff",
+      fontFamily: typography?.fontFamily?.bold ?? undefined,
+      fontSize: 10,
+      textTransform: "uppercase",
+      letterSpacing: 0.4,
+    },
     graphShell: {
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.border,
@@ -308,7 +504,6 @@ const makeStyles = (colors: any, typography: any) =>
       gap: 10,
       marginTop: 12,
     },
-
     goalRow: {
       backgroundColor: colors.surface,
       borderRadius: 16,
@@ -326,7 +521,6 @@ const makeStyles = (colors: any, typography: any) =>
       fontSize: 14,
       letterSpacing: -0.2,
     },
-
     activePill: {
       alignSelf: "flex-start",
       paddingHorizontal: 10,
@@ -341,7 +535,6 @@ const makeStyles = (colors: any, typography: any) =>
       letterSpacing: 0.4,
       textTransform: "uppercase",
     },
-
     pointBubble: {
       marginTop: 4,
       paddingVertical: 10,
@@ -368,8 +561,15 @@ const makeStyles = (colors: any, typography: any) =>
       alignItems: "flex-start",
       gap: 12,
     },
-    pointBubbleLeft: { flexShrink: 1, flexGrow: 1, paddingRight: 8 },
-    pointBubbleRight: { alignItems: "flex-end", flexShrink: 0 },
+    pointBubbleLeft: {
+      flexShrink: 1,
+      flexGrow: 1,
+      paddingRight: 8,
+    },
+    pointBubbleRight: {
+      alignItems: "flex-end",
+      flexShrink: 0,
+    },
     pointBubbleTitle: {
       fontSize: 14,
       fontFamily: typography?.fontFamily?.bold ?? undefined,
@@ -394,7 +594,27 @@ const makeStyles = (colors: any, typography: any) =>
       textAlign: "right",
       marginTop: 2,
     },
-
+    statusRow: {
+      marginTop: 8,
+      paddingTop: 8,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: colors.border,
+      flexDirection: "row",
+      justifyContent: "space-between",
+      gap: 12,
+    },
+    statusLabel: {
+      color: colors.text,
+      fontFamily: typography?.fontFamily?.bold ?? undefined,
+      fontSize: 13,
+    },
+    statusDetail: {
+      color: colors.subtle,
+      fontFamily: typography?.fontFamily?.medium ?? undefined,
+      fontSize: 12,
+      textAlign: "right",
+      flexShrink: 1,
+    },
     plannedPill: {
       paddingHorizontal: 10,
       paddingVertical: 5,
@@ -408,7 +628,6 @@ const makeStyles = (colors: any, typography: any) =>
       textTransform: "uppercase",
       letterSpacing: 0.6,
     },
-
     switchRow: {
       flexDirection: "row",
       backgroundColor: colors.surface,
@@ -417,12 +636,19 @@ const makeStyles = (colors: any, typography: any) =>
       borderColor: colors.border,
       overflow: "hidden",
     },
-    switchBtn: { paddingVertical: 8, paddingHorizontal: 12 },
+    switchBtn: {
+      paddingVertical: 8,
+      paddingHorizontal: 12,
+    },
     switchText: {
       fontFamily: typography?.fontFamily?.semibold ?? undefined,
       color: colors.text,
       fontSize: 12,
     },
-    switchActive: { backgroundColor: colors.primary },
-    switchActiveText: { color: colors.onPrimary ?? "#fff" },
+    switchActive: {
+      backgroundColor: colors.primary,
+    },
+    switchActiveText: {
+      color: colors.onPrimary ?? "#fff",
+    },
   });
