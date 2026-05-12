@@ -11,16 +11,33 @@ import {
 import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { usePlanDraft } from "./store";
+import {
+  usePlanDraft,
+  type GoalDraft,
+  type GoalMetric,
+} from "./store";
 import { supabase } from "../../../../lib/supabase";
 import { useAuth } from "../../../../lib/authContext";
 import { useAppTheme } from "../../../../lib/useAppTheme";
 
-import PaywallModal from "@/app/features/paywall/components/PaywallModal";
 import { Icon } from "@/ui";
-
-import { log } from "@/lib/logger";
 import FeaturePaywallModal from "../../paywall/components/FeaturePaywallModal";
+
+type PaywallReason = "goal_limit" | "plan_limit";
+
+const METRIC_LABEL: Record<GoalMetric, string> = {
+  weight: "Weight",
+  reps: "Reps",
+  distance: "Distance",
+  time: "Time",
+};
+
+const METRIC_UNIT: Record<GoalMetric, string> = {
+  weight: "kg",
+  reps: "reps",
+  distance: "km",
+  time: "sec",
+};
 
 function humanDate(iso?: string | null) {
   if (!iso) return "—";
@@ -41,13 +58,13 @@ function weekKeySundayLocal(d: Date) {
   const dow = copy.getDay();
   copy.setHours(0, 0, 0, 0);
   copy.setDate(copy.getDate() - dow);
+
   const y = copy.getFullYear();
   const m = String(copy.getMonth() + 1).padStart(2, "0");
   const day = String(copy.getDate()).padStart(2, "0");
+
   return `${y}-${m}-${day}`;
 }
-
-type PaywallReason = "goal_limit" | "plan_limit";
 
 function isGoalLimitError(err: any) {
   const code = String(err?.code ?? "").toUpperCase();
@@ -111,15 +128,7 @@ export default function Review() {
       return false;
     }
 
-    return goals.every(
-      (g) =>
-        g.start != null &&
-        !Number.isNaN(g.start) &&
-        g.start > 0 &&
-        g.target != null &&
-        !Number.isNaN(g.target) &&
-        g.target > 0,
-    );
+    return goals.every(isGoalComplete);
   }, [goals, capabilities.maxGoalsPerPlan]);
 
   const canSave = useMemo(() => {
@@ -130,11 +139,13 @@ export default function Review() {
       return false;
     }
     if (!goalsValid) return false;
+
     return true;
   }, [title, endDate, workoutsPerWeek, workouts, goalsValid]);
 
   useEffect(() => {
     if (loading) return;
+
     if (!userId) {
       Alert.alert("Please log in", "You must be signed in to create a plan.");
       router.replace("/");
@@ -158,6 +169,7 @@ export default function Review() {
 
       const p_workouts = workouts.map((w) => ({
         title: w.title,
+        notes: w.notes ?? null,
         exercises: w.exercises.map((e) => ({
           exerciseId: e.exercise.id,
           order_index: e.order_index,
@@ -174,19 +186,31 @@ export default function Review() {
 
       const p_goals = goals.map((g) => ({
         exerciseId: g.exercise.id,
-        mode: g.mode,
-        target: g.target,
-        unit: g.unit ?? null,
-        start: g.start ?? null,
+        metrics: g.metrics,
+
+        start_weight: g.start_weight,
+        start_reps: g.start_reps,
+        start_distance: g.start_distance,
+        start_time_seconds: g.start_time_seconds,
+
+        target_weight: g.target_weight,
+        target_reps: g.target_reps,
+        target_distance: g.target_distance,
+        target_time_seconds: g.target_time_seconds,
+
+        summary: goalSummary(g),
       }));
 
-      const { error: rpcError } = await supabase.rpc("create_plan_v1", {
-        p_user_id: userId,
-        p_title: title,
-        p_end_date: endDate,
-        p_workouts,
-        p_goals,
-      });
+      const { data: createdPlanId, error: rpcError } = await supabase.rpc(
+        "create_plan_v1",
+        {
+          p_user_id: userId,
+          p_title: title,
+          p_end_date: endDate,
+          p_workouts,
+          p_goals,
+        },
+      );
 
       if (rpcError) {
         console.error("create_plan_v1 RPC failed:", rpcError);
@@ -204,7 +228,7 @@ export default function Review() {
         if (isPlanLimitError(rpcError)) {
           setPaywallReason("plan_limit");
           setSaveErrorMessage(
-            `You’ve reached your active plan limit. Upgrade to MuscleMetric Pro to create more active plans.`,
+            "You’ve reached your active plan limit. Upgrade to MuscleMetric Pro to create more active plans.",
           );
           return;
         }
@@ -269,7 +293,19 @@ export default function Review() {
       }
 
       Alert.alert("Plan created", "Your plan has been saved.", [
-        { text: "OK", onPress: () => router.replace("/workout") },
+        {
+          text: "OK",
+          onPress: () => {
+            if (createdPlanId) {
+              router.replace({
+                pathname: "/features/plans/create/goalRoadmap",
+                params: { planId: String(createdPlanId) },
+              });
+            } else {
+              router.replace("/workout");
+            }
+          },
+        },
       ]);
     } catch (e: any) {
       console.error("Unexpected error creating plan:", e);
@@ -362,6 +398,26 @@ export default function Review() {
         ) : null}
 
         <View style={s.card}>
+          <Text style={s.h3}>Goals</Text>
+          <View style={{ height: 8 }} />
+
+          {goals.length === 0 ? (
+            <Text style={s.muted}>No goals selected.</Text>
+          ) : (
+            <View style={{ gap: 8 }}>
+              {goals.map((g, i) => (
+                <View key={g.exercise.id} style={s.goalReviewRow}>
+                  <Text style={[s.line, s.lineGoal]}>
+                    {i + 1}. {g.exercise.name}
+                  </Text>
+                  <Text style={s.muted}>{goalSummary(g)}</Text>
+                </View>
+              ))}
+            </View>
+          )}
+        </View>
+
+        <View style={s.card}>
           <Text style={s.h3}>Workouts</Text>
           <View style={{ height: 8 }} />
 
@@ -406,6 +462,7 @@ export default function Review() {
 
                     {members.map(({ x, idx: memberIdx }) => {
                       const isGoal = goalExerciseIds.has(x.exercise.id);
+
                       return (
                         <Text
                           key={`m-${gid}-${memberIdx}`}
@@ -421,6 +478,7 @@ export default function Review() {
                 );
               } else {
                 const isGoal = goalExerciseIds.has(e.exercise.id);
+
                 rows.push(
                   <Text
                     key={key}
@@ -447,25 +505,6 @@ export default function Review() {
               </View>
             );
           })}
-        </View>
-
-        <View style={s.card}>
-          <Text style={s.h3}>Goals</Text>
-          <View style={{ height: 8 }} />
-          {goals.length === 0 ? (
-            <Text style={s.muted}>No goals selected.</Text>
-          ) : (
-            <View style={{ gap: 6 }}>
-              {goals.map((g, i) => (
-                <Text key={i} style={[s.line, s.lineGoal]}>
-                  • {g.exercise.name} — {g.mode.replaceAll("_", " ")} →{" "}
-                  {g.target}
-                  {g.unit ? ` ${g.unit}` : ""}
-                  {g.start != null ? `  (start ${g.start}${g.unit ?? ""})` : ""}
-                </Text>
-              ))}
-            </View>
-          )}
         </View>
 
         <View style={{ flexDirection: "row", gap: 12 }}>
@@ -495,11 +534,68 @@ export default function Review() {
 
       <FeaturePaywallModal
         visible={paywallOpen}
-        reason="goal_limit"
+        reason={paywallReason}
         onClose={() => setPaywallOpen(false)}
       />
     </SafeAreaView>
   );
+}
+
+function metricStartKey(metric: GoalMetric) {
+  switch (metric) {
+    case "weight":
+      return "start_weight";
+    case "reps":
+      return "start_reps";
+    case "distance":
+      return "start_distance";
+    case "time":
+      return "start_time_seconds";
+  }
+}
+
+function metricTargetKey(metric: GoalMetric) {
+  switch (metric) {
+    case "weight":
+      return "target_weight";
+    case "reps":
+      return "target_reps";
+    case "distance":
+      return "target_distance";
+    case "time":
+      return "target_time_seconds";
+  }
+}
+
+function isGoalComplete(g: GoalDraft) {
+  if (!Array.isArray(g.metrics) || g.metrics.length === 0) return false;
+
+  return g.metrics.every((metric) => {
+    const start = g[metricStartKey(metric)];
+    const target = g[metricTargetKey(metric)];
+
+    return positive(start) && positive(target);
+  });
+}
+
+function positive(n: number | null | undefined) {
+  return n != null && Number.isFinite(n) && n > 0;
+}
+
+function goalSummary(g: GoalDraft) {
+  return g.metrics
+    .map((metric) => {
+      const start = g[metricStartKey(metric)];
+      const target = g[metricTargetKey(metric)];
+      const unit = METRIC_UNIT[metric];
+
+      if (!positive(start) || !positive(target)) {
+        return `${METRIC_LABEL[metric]} incomplete`;
+      }
+
+      return `${METRIC_LABEL[metric]}: ${start}${unit} → ${target}${unit}`;
+    })
+    .join(" • ");
 }
 
 const makeStyles = (colors: any, typography: any, layout: any) =>
@@ -520,13 +616,18 @@ const makeStyles = (colors: any, typography: any, layout: any) =>
       gap: 4,
       marginBottom: layout.space.sm,
     },
-
+    goalReviewRow: {
+      backgroundColor: colors.bg,
+      borderRadius: layout.radius.lg,
+      padding: layout.space.md,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+    },
     divider: {
       height: 1,
       backgroundColor: colors.border,
       marginVertical: layout.space.md,
     },
-
     h2: {
       fontSize: typography.size.h2,
       lineHeight: typography.lineHeight.h2,
@@ -552,7 +653,6 @@ const makeStyles = (colors: any, typography: any, layout: any) =>
       fontSize: typography.size.meta,
       lineHeight: typography.lineHeight.meta,
     },
-
     line: {
       color: colors.textMuted,
       fontFamily: typography.fontFamily.medium,
@@ -563,7 +663,6 @@ const makeStyles = (colors: any, typography: any, layout: any) =>
       color: colors.text,
       fontFamily: typography.fontFamily.semibold,
     },
-
     superset: {
       borderWidth: 2,
       borderRadius: layout.radius.lg,
@@ -579,7 +678,6 @@ const makeStyles = (colors: any, typography: any, layout: any) =>
       textTransform: "uppercase",
       marginBottom: 4,
     },
-
     limitCard: {
       backgroundColor: colors.surface,
       borderRadius: layout.radius.lg,
@@ -616,7 +714,6 @@ const makeStyles = (colors: any, typography: any, layout: any) =>
       fontFamily: typography.fontFamily.bold,
       fontSize: typography.size.meta,
     },
-
     btn: {
       backgroundColor: colors.surface,
       paddingVertical: 12,

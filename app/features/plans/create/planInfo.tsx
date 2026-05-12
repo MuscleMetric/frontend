@@ -195,14 +195,6 @@ export default function PlanInfo() {
           <View style={s.headerCenter}>
             <Text style={s.headerTitle}>Step 1: Plan Info</Text>
           </View>
-
-          <Pressable
-            onPress={() => router.back()}
-            hitSlop={layout.hitSlop}
-            style={s.headerTextBtn}
-          >
-            <Text style={s.headerTextBtnText}>Save & Exit</Text>
-          </Pressable>
         </View>
 
         {/* Progress */}

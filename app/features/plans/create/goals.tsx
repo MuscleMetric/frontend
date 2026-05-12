@@ -7,33 +7,42 @@ import {
   ScrollView,
   StyleSheet,
   Alert,
+  Modal,
 } from "react-native";
 import { router } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useAppTheme } from "../../../../lib/useAppTheme";
 import { useAuth } from "../../../../lib/authContext";
-import { usePlanDraft, type ExerciseRow, type GoalDraft } from "./store";
+import {
+  usePlanDraft,
+  createEmptyGoal,
+  type ExerciseRow,
+  type GoalDraft,
+  type GoalMetric,
+} from "./store";
 
 import { Icon } from "@/ui";
-
-import { log } from "@/lib/logger";
 import FeaturePaywallModal from "../../paywall/components/FeaturePaywallModal";
-
-/** Helpers for mode <-> unit */
-const MODE_UNIT: Record<GoalDraft["mode"], string> = {
-  exercise_weight: "kg",
-  exercise_reps: "reps",
-  distance: "km",
-  time: "min",
-};
 
 type DedupExercise = {
   exercise: ExerciseRow;
   workoutTitles: string[];
 };
 
-type FilterTab = "all" | "strength" | "cardio";
+const METRIC_LABEL: Record<GoalMetric, string> = {
+  weight: "Weight",
+  reps: "Reps",
+  distance: "Distance",
+  time: "Time",
+};
+
+const METRIC_UNIT: Record<GoalMetric, string> = {
+  weight: "kg",
+  reps: "reps",
+  distance: "km",
+  time: "sec",
+};
 
 export default function Goals() {
   const { colors, typography, layout } = useAppTheme();
@@ -44,10 +53,10 @@ export default function Goals() {
     [colors, typography, layout],
   );
 
-  const { workouts, goals, setGoals, endDate } = usePlanDraft();
+  const { workouts, goals, endDate, upsertGoal, updateGoal, removeGoal } =
+    usePlanDraft();
 
   const [query, setQuery] = useState("");
-  const [tab, setTab] = useState<FilterTab>("all");
   const [paywallOpen, setPaywallOpen] = useState(false);
   const [goalLimitMessage, setGoalLimitMessage] = useState<string | null>(null);
 
@@ -55,8 +64,16 @@ export default function Goals() {
   const proGoalCap = 5;
   const isFreeTier = maxGoals < proGoalCap;
 
-  const todayIso = new Date().toISOString().slice(0, 10);
-  const planWeeks = endDate ? getWeeksBetween(todayIso, endDate) : 0;
+  const planWeeks = useMemo(() => {
+    if (!endDate) return 1;
+
+    const start = new Date();
+    const end = new Date(endDate);
+    const diff = end.getTime() - start.getTime();
+    const weeks = diff / (1000 * 60 * 60 * 24 * 7);
+
+    return Math.max(1, Math.ceil(weeks));
+  }, [endDate]);
 
   const deduped: DedupExercise[] = useMemo(() => {
     const map = new Map<string, DedupExercise>();
@@ -64,6 +81,7 @@ export default function Goals() {
     for (const w of workouts ?? []) {
       for (const ex of w.exercises ?? []) {
         const id = ex.exercise.id;
+
         if (!map.has(id)) {
           map.set(id, { exercise: ex.exercise, workoutTitles: [w.title] });
         } else {
@@ -80,23 +98,31 @@ export default function Goals() {
     );
   }, [workouts]);
 
+  const goalErrors = useMemo(() => {
+    const map = new Map<string, string>();
+
+    for (const goal of goals) {
+      const result = validateGoalAttainability(goal, planWeeks);
+
+      if (!result.ok) {
+        map.set(goal.exercise.id, result.message);
+      }
+    }
+
+    return map;
+  }, [goals, planWeeks]);
+
   const findGoal = useCallback(
     (exerciseId: string) =>
       goals.find((g) => g.exercise.id === exerciseId) ?? null,
     [goals],
   );
 
-  function modeOptionsForExercise(ex: ExerciseRow): GoalDraft["mode"][] {
-    return ex.type === "cardio"
-      ? ["distance", "time"]
-      : ["exercise_weight", "exercise_reps"];
-  }
-
   const showGoalLimit = useCallback(() => {
     setGoalLimitMessage(
-      `You’ve reached your goal limit. Your current plan allows up to ${maxGoals} goal${
+      `Your current plan allows ${maxGoals} goal${
         maxGoals === 1 ? "" : "s"
-      }. Upgrade to MuscleMetric Pro to track up to ${proGoalCap}.`,
+      }. Upgrade to MuscleMetric Pro to track up to ${proGoalCap} goals and build more complete progression plans.`,
     );
   }, [maxGoals]);
 
@@ -112,7 +138,7 @@ export default function Goals() {
         return;
       }
 
-      setGoals(goals.filter((g) => g.exercise.id !== ex.id));
+      removeGoal(ex.id);
       setGoalLimitMessage(null);
       return;
     }
@@ -122,112 +148,44 @@ export default function Goals() {
       return;
     }
 
-    const firstMode = modeOptionsForExercise(ex)[0];
-    const newGoal: GoalDraft = {
-      exercise: ex,
-      mode: firstMode,
-      unit: MODE_UNIT[firstMode],
-      start: null,
-      target: 0,
-    };
-
-    setGoals([...goals, newGoal]);
+    upsertGoal(createEmptyGoal(ex));
     setGoalLimitMessage(null);
   }
 
-  function updateGoal(
-    exerciseId: string,
-    patch: Partial<Pick<GoalDraft, "mode" | "unit" | "start" | "target">>,
-  ) {
-    setGoals(
-      goals.map((g) => (g.exercise.id === exerciseId ? { ...g, ...patch } : g)),
-    );
-  }
+  function toggleMetric(goal: GoalDraft, metric: GoalMetric) {
+    const hasMetric = goal.metrics.includes(metric);
 
-  function onChangeMode(
-    ex: ExerciseRow,
-    _goal: GoalDraft,
-    nextMode: GoalDraft["mode"],
-  ) {
-    updateGoal(ex.id, {
-      mode: nextMode,
-      unit: MODE_UNIT[nextMode],
-    });
-  }
+    if (hasMetric && goal.metrics.length <= 1) {
+      Alert.alert(
+        "At least one metric",
+        "Each goal needs at least one metric to track.",
+      );
+      return;
+    }
 
-  function roundForMode(mode: GoalDraft["mode"], n: number) {
-    if (!isFinite(n)) return 0;
-    return mode === "time" ? Number(n.toFixed(1)) : Math.round(n);
-  }
+    const nextMetrics = hasMetric
+      ? goal.metrics.filter((m) => m !== metric)
+      : [...goal.metrics, metric];
 
-  function increaseRange(
-    start: number,
-    weeks: number,
-    mode: GoalDraft["mode"],
-  ) {
-    const min = start * (1 + 0.01 * weeks);
-    const max = start * (1 + 0.05 * weeks);
-    const suggested = (min + max) / 2;
-    return {
-      min: roundForMode(mode, min),
-      max: roundForMode(mode, max),
-      suggested: roundForMode(mode, suggested),
-    };
-  }
-
-  function decreaseRange(
-    start: number,
-    weeks: number,
-    mode: GoalDraft["mode"],
-  ) {
-    const max = Math.max(0, start * (1 - 0.01 * weeks));
-    const min = Math.max(0, start * (1 - 0.05 * weeks));
-    const suggested = (min + max) / 2;
-    return {
-      min: roundForMode(mode, min),
-      max: roundForMode(mode, max),
-      suggested: roundForMode(mode, suggested),
-    };
-  }
-
-  function calcRangeForMode(
-    mode: GoalDraft["mode"],
-    start: number,
-    weeks: number,
-  ) {
-    return mode === "time"
-      ? decreaseRange(start, weeks, mode)
-      : increaseRange(start, weeks, mode);
-  }
-
-  function fmtForMode(mode: GoalDraft["mode"], n: number) {
-    return mode === "time" ? n.toFixed(1) : String(Math.round(n));
+    updateGoal(goal.exercise.id, { metrics: nextMetrics });
   }
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
 
     return deduped.filter(({ exercise }) => {
-      const nameOk = q.length === 0 || exercise.name.toLowerCase().includes(q);
-
-      const t = exercise.type ?? "strength";
-      const tabOk =
-        tab === "all" || (tab === "cardio" ? t === "cardio" : t !== "cardio");
-
-      return nameOk && tabOk;
+      return q.length === 0 || exercise.name.toLowerCase().includes(q);
     });
-  }, [deduped, query, tab]);
+  }, [deduped, query]);
 
-  const hasAtLeastOneGoal = goals.length >= 1;
-  const allGoalsFilled = goals.every(
-    (g) =>
-      g.start != null && g.start !== 0 && g.target != null && g.target !== 0,
-  );
-  const canContinue = hasAtLeastOneGoal && allGoalsFilled;
+  const canContinue =
+    goals.length >= 1 &&
+    goals.every(isGoalComplete) &&
+    goalErrors.size === 0;
 
   const openHelp = () => {
     Alert.alert(
-      "Goals",
+      "Plan goals",
       isFreeTier
         ? `You can currently track up to ${maxGoals} goals in this plan. Upgrade to MuscleMetric Pro to track up to ${proGoalCap}.`
         : `You can track up to ${maxGoals} goals in this plan with your current tier.`,
@@ -258,7 +216,7 @@ export default function Goals() {
           hitSlop={layout.hitSlop}
           style={s.headerIconBtn}
         >
-          <Text style={s.help}>?</Text>
+          <Text style={s.help}>i</Text>
         </Pressable>
       </View>
 
@@ -279,35 +237,102 @@ export default function Goals() {
         }}
         keyboardShouldPersistTaps="handled"
       >
-        <Text style={s.h1}>Pick goals</Text>
+        <Text style={s.h1}>Set plan goals</Text>
         <Text style={s.subTitle}>
-          Define specific targets for your key exercises.
+          Pick key exercises and choose realistic targets for weight, reps,
+          distance, time, or a combination.
         </Text>
 
-        {goalLimitMessage ? (
-          <View style={s.limitCard}>
-            <View style={s.limitHeader}>
-              <Icon name="lock-closed" size={18} color={colors.primary} />
-              <Text style={s.limitTitle}>Goal limit reached</Text>
-            </View>
+        <Text style={s.sectionTitle}>SELECTED GOALS</Text>
 
-            <Text style={s.limitBody}>{goalLimitMessage}</Text>
-
-            <Pressable
-              style={s.limitButton}
-              onPress={() => setPaywallOpen(true)}
-            >
-              <Text style={s.limitButtonText}>Unlock more goals</Text>
-            </Pressable>
+        {goals.length === 0 ? (
+          <View style={s.emptyCard}>
+            <Text style={s.emptyTitle}>No goals selected</Text>
+            <Text style={s.emptyText}>
+              Select 1–{maxGoals} exercises below to set targets.
+            </Text>
           </View>
-        ) : null}
+        ) : (
+          <View style={{ gap: layout.space.sm }}>
+            {goals.map((g) => {
+              const selectedContext = findWorkoutTitlesForExercise(
+                workouts,
+                g.exercise.id,
+              );
+              const errorText = goalErrors.get(g.exercise.id);
+
+              return (
+                <View key={g.exercise.id} style={s.goalCard}>
+                  <View style={s.goalHeader}>
+                    <View style={{ flex: 1, paddingRight: 10 }}>
+                      <Text style={s.goalName} numberOfLines={1}>
+                        {g.exercise.name}
+                      </Text>
+                      <Text style={s.goalMeta} numberOfLines={1}>
+                        {selectedContext || "In this plan"}
+                      </Text>
+                    </View>
+
+                    <Pressable
+                      onPress={() => toggleExercise(g.exercise)}
+                      hitSlop={layout.hitSlop}
+                    >
+                      <Text style={s.removeText}>✕</Text>
+                    </Pressable>
+                  </View>
+
+                  <View style={s.modeRow}>
+                    {availableMetricsForExercise(g.exercise).map((m) => {
+                      const active = g.metrics.includes(m);
+
+                      return (
+                        <Pressable
+                          key={m}
+                          onPress={() => toggleMetric(g, m)}
+                          style={[s.modePill, active && s.modePillActive]}
+                        >
+                          <Text
+                            style={[s.modeText, active && s.modeTextActive]}
+                          >
+                            {METRIC_LABEL[m]}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+
+                  <View
+                    style={{ marginTop: layout.space.sm, gap: layout.space.sm }}
+                  >
+                    {g.metrics.map((metric) => (
+                      <MetricInputRow
+                        key={metric}
+                        goal={g}
+                        metric={metric}
+                        updateGoal={updateGoal}
+                        colors={colors}
+                        s={s}
+                      />
+                    ))}
+                  </View>
+
+                  <Text style={s.recoText}>{goalSummary(g)}</Text>
+
+                  {errorText ? (
+                    <Text style={s.goalErrorText}>{errorText}</Text>
+                  ) : null}
+                </View>
+              );
+            })}
+          </View>
+        )}
 
         <View style={s.searchWrap}>
           <Text style={s.searchIcon}>⌕</Text>
           <TextInput
             value={query}
             onChangeText={setQuery}
-            placeholder="Search exercises..."
+            placeholder="Search exercises in this plan..."
             placeholderTextColor={colors.textMuted}
             style={s.searchInput}
             autoCorrect={false}
@@ -321,167 +346,7 @@ export default function Goals() {
           ) : null}
         </View>
 
-        <View style={s.tabsRow}>
-          <Chip
-            label="Strength"
-            active={tab === "strength"}
-            onPress={() => setTab("strength")}
-            s={s}
-          />
-          <Chip
-            label="Cardio"
-            active={tab === "cardio"}
-            onPress={() => setTab("cardio")}
-            s={s}
-          />
-          <Chip
-            label="All"
-            active={tab === "all"}
-            onPress={() => setTab("all")}
-            s={s}
-          />
-        </View>
-
-        <Text style={s.sectionTitle}>SELECTED EXERCISES</Text>
-
-        {goals.length === 0 ? (
-          <View style={s.emptyCard}>
-            <Text style={s.emptyTitle}>No goals selected</Text>
-            <Text style={s.emptyText}>
-              Select 1–{maxGoals} exercises below to set targets.
-            </Text>
-          </View>
-        ) : (
-          <View style={{ gap: layout.space.sm }}>
-            {goals.map((g) => {
-              const modes = modeOptionsForExercise(g.exercise);
-              const selectedContext = findWorkoutTitlesForExercise(
-                workouts,
-                g.exercise.id,
-              );
-
-              return (
-                <View key={g.exercise.id} style={s.goalCard}>
-                  <View style={s.goalHeader}>
-                    <View style={{ flex: 1, paddingRight: 10 }}>
-                      <Text style={s.goalName} numberOfLines={1}>
-                        {g.exercise.name}
-                      </Text>
-                      <Text style={s.goalMeta} numberOfLines={1}>
-                        {selectedContext || "—"}
-                      </Text>
-                    </View>
-
-                    <Pressable
-                      onPress={() => toggleExercise(g.exercise)}
-                      hitSlop={layout.hitSlop}
-                    >
-                      <Text style={s.removeText}>✕</Text>
-                    </Pressable>
-                  </View>
-
-                  <View style={s.modeRow}>
-                    {modes.map((m) => {
-                      const active = g.mode === m;
-                      return (
-                        <Pressable
-                          key={m}
-                          onPress={() => onChangeMode(g.exercise, g, m)}
-                          style={[s.modePill, active && s.modePillActive]}
-                        >
-                          <Text
-                            style={[s.modeText, active && s.modeTextActive]}
-                          >
-                            {labelForMode(m)}
-                          </Text>
-                        </Pressable>
-                      );
-                    })}
-                  </View>
-
-                  <View style={s.valueRow}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={s.fieldLabel}>Start</Text>
-                      <TextInput
-                        style={s.valueInput}
-                        placeholder="0"
-                        placeholderTextColor={colors.textMuted}
-                        keyboardType="numeric"
-                        value={g.start != null ? String(g.start) : ""}
-                        onChangeText={(v) => {
-                          const raw = v === "" ? null : Number(v);
-                          const val =
-                            raw == null ? null : roundForMode(g.mode, raw);
-
-                          if (val != null && planWeeks > 0) {
-                            const { suggested } = calcRangeForMode(
-                              g.mode,
-                              val,
-                              planWeeks,
-                            );
-                            updateGoal(g.exercise.id, {
-                              start: val,
-                              target: suggested,
-                              unit: MODE_UNIT[g.mode],
-                            });
-                          } else {
-                            updateGoal(g.exercise.id, {
-                              start: val,
-                              unit: MODE_UNIT[g.mode],
-                            });
-                          }
-                        }}
-                      />
-                    </View>
-
-                    <View style={s.unitPill}>
-                      <Text style={s.unitText}>{MODE_UNIT[g.mode]}</Text>
-                    </View>
-
-                    <View style={{ flex: 1 }}>
-                      <Text style={s.fieldLabel}>Target</Text>
-                      <TextInput
-                        style={s.valueInput}
-                        placeholder="0"
-                        placeholderTextColor={colors.textMuted}
-                        keyboardType="numeric"
-                        value={g.target != null ? String(g.target) : ""}
-                        onChangeText={(v) => {
-                          const raw = v === "" ? 0 : Number(v);
-                          const val = roundForMode(g.mode, raw);
-                          updateGoal(g.exercise.id, {
-                            target: val,
-                            unit: MODE_UNIT[g.mode],
-                          });
-                        }}
-                      />
-                    </View>
-                  </View>
-
-                  {g.start != null && planWeeks > 0 ? (
-                    <Text style={s.recoText}>
-                      {(() => {
-                        const { min, max } = calcRangeForMode(
-                          g.mode,
-                          g.start!,
-                          planWeeks,
-                        );
-                        return `Recommended: ${fmtForMode(
-                          g.mode,
-                          min,
-                        )}–${fmtForMode(g.mode, max)} ${MODE_UNIT[g.mode]}`;
-                      })()}
-                    </Text>
-                  ) : null}
-                </View>
-              );
-            })}
-          </View>
-        )}
-
-        <Text style={[s.sectionTitle, { marginTop: layout.space.lg }]}>
-          ALL EXERCISES
-        </Text>
+        <Text style={s.sectionTitle}>EXERCISES IN THIS PLAN</Text>
 
         <View style={{ gap: layout.space.sm }}>
           {filtered.map(({ exercise, workoutTitles }) => {
@@ -498,6 +363,7 @@ export default function Goals() {
                     showGoalLimit();
                     return;
                   }
+
                   toggleExercise(exercise);
                 }}
                 style={[
@@ -522,7 +388,10 @@ export default function Goals() {
                   ]}
                 >
                   <Text
-                    style={[s.pickBadgeText, selected && { color: "#fff" }]}
+                    style={[
+                      s.pickBadgeText,
+                      selected && { color: colors.onPrimary },
+                    ]}
                   >
                     {selected ? "Selected" : "Select"}
                   </Text>
@@ -539,9 +408,45 @@ export default function Goals() {
           disabled={!canContinue}
           onPress={() => router.push("/features/plans/create/review")}
         >
-          <Text style={s.ctaText}>Continue → Review</Text>
+          <Text style={s.ctaText}>Continue → Overview</Text>
         </Pressable>
       </View>
+
+      <Modal
+        visible={!!goalLimitMessage}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setGoalLimitMessage(null)}
+      >
+        <View style={s.goalLimitScrim}>
+          <View style={s.goalLimitModal}>
+            <View style={s.goalLimitIcon}>
+              <Icon name="lock-closed" size={22} color={colors.onPrimary} />
+            </View>
+
+            <Text style={s.goalLimitTitle}>Unlock more plan goals</Text>
+
+            <Text style={s.goalLimitText}>{goalLimitMessage}</Text>
+
+            <Pressable
+              style={s.goalLimitPrimary}
+              onPress={() => {
+                setGoalLimitMessage(null);
+                setPaywallOpen(true);
+              }}
+            >
+              <Text style={s.goalLimitPrimaryText}>See MuscleMetric Pro</Text>
+            </Pressable>
+
+            <Pressable
+              style={s.goalLimitSecondary}
+              onPress={() => setGoalLimitMessage(null)}
+            >
+              <Text style={s.goalLimitSecondaryText}>Not now</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
 
       <FeaturePaywallModal
         visible={paywallOpen}
@@ -552,61 +457,286 @@ export default function Goals() {
   );
 }
 
-/* ---------- helpers ---------- */
+function MetricInputRow({
+  goal,
+  metric,
+  updateGoal,
+  colors,
+  s,
+}: {
+  goal: GoalDraft;
+  metric: GoalMetric;
+  updateGoal: (exerciseId: string, patch: Partial<GoalDraft>) => void;
+  colors: any;
+  s: any;
+}) {
+  const startKey = metricStartKey(metric);
+  const targetKey = metricTargetKey(metric);
 
-function labelForMode(m: GoalDraft["mode"]) {
-  switch (m) {
-    case "exercise_weight":
-      return "Weight";
-    case "exercise_reps":
-      return "Reps";
+  return (
+    <View style={s.valueRow}>
+      <NumberBox
+        label={`Current ${METRIC_LABEL[metric].toLowerCase()}`}
+        value={goal[startKey]}
+        onChange={(n) =>
+          updateGoal(goal.exercise.id, {
+            [startKey]: n,
+          } as Partial<GoalDraft>)
+        }
+        placeholder="0"
+        colors={colors}
+        s={s}
+      />
+
+      <View style={s.unitPill}>
+        <Text style={s.unitText}>{METRIC_UNIT[metric]}</Text>
+      </View>
+
+      <NumberBox
+        label={`Goal ${METRIC_LABEL[metric].toLowerCase()}`}
+        value={goal[targetKey]}
+        onChange={(n) =>
+          updateGoal(goal.exercise.id, {
+            [targetKey]: n,
+          } as Partial<GoalDraft>)
+        }
+        placeholder="0"
+        colors={colors}
+        s={s}
+      />
+    </View>
+  );
+}
+
+function NumberBox({
+  label,
+  value,
+  onChange,
+  placeholder,
+  colors,
+  s,
+}: {
+  label: string;
+  value: number | null | undefined;
+  onChange: (n: number | null) => void;
+  placeholder: string;
+  colors: any;
+  s: any;
+}) {
+  return (
+    <View style={{ flex: 1 }}>
+      <Text style={s.fieldLabel}>{label}</Text>
+      <TextInput
+        style={s.valueInput}
+        placeholder={placeholder}
+        placeholderTextColor={colors.textMuted}
+        keyboardType="numeric"
+        value={value != null ? String(value) : ""}
+        onChangeText={(v) => {
+          const trimmed = v.trim();
+
+          if (!trimmed) {
+            onChange(null);
+            return;
+          }
+
+          const n = Number(trimmed);
+          onChange(Number.isFinite(n) ? n : null);
+        }}
+      />
+    </View>
+  );
+}
+
+function availableMetricsForExercise(ex: ExerciseRow): GoalMetric[] {
+  if (ex.type === "cardio") return ["distance", "time"];
+  if (ex.type === "mobility") return ["time", "reps"];
+  return ["weight", "reps", "time", "distance"];
+}
+
+function metricStartKey(metric: GoalMetric) {
+  switch (metric) {
+    case "weight":
+      return "start_weight";
+    case "reps":
+      return "start_reps";
     case "distance":
-      return "Distance";
+      return "start_distance";
     case "time":
-      return "Time";
+      return "start_time_seconds";
   }
 }
 
-function getWeeksBetween(startIso: string, endIso: string): number {
-  const start = new Date(startIso);
-  const end = new Date(endIso);
-  const diffMs = end.getTime() - start.getTime();
-  const weeks = diffMs / (1000 * 60 * 60 * 24 * 7);
-  return Math.max(1, Math.round(weeks));
+function metricTargetKey(metric: GoalMetric) {
+  switch (metric) {
+    case "weight":
+      return "target_weight";
+    case "reps":
+      return "target_reps";
+    case "distance":
+      return "target_distance";
+    case "time":
+      return "target_time_seconds";
+  }
+}
+
+function isGoalComplete(g: GoalDraft) {
+  if (!Array.isArray(g.metrics) || g.metrics.length === 0) return false;
+
+  return g.metrics.every((metric) => {
+    const start = g[metricStartKey(metric)];
+    const target = g[metricTargetKey(metric)];
+
+    return positive(start) && positive(target);
+  });
+}
+
+function validateGoalAttainability(goal: GoalDraft, weeks: number) {
+  if (!isGoalComplete(goal)) {
+    return { ok: false, message: "Complete all selected goal metrics first." };
+  }
+
+  const maxRatio = 1 + 0.025 * Math.max(1, weeks);
+  const startScore = performanceScore(goal, "start");
+  const targetScore = performanceScore(goal, "target");
+
+  if (!positive(startScore) || !positive(targetScore)) {
+    return {
+      ok: false,
+      message: "This goal needs valid start and target values.",
+    };
+  }
+
+  const ratio = targetScore / startScore;
+
+  if (ratio > maxRatio) {
+    const maxPct = Math.round((maxRatio - 1) * 100);
+
+    return {
+      ok: false,
+      message: `This target looks too aggressive for ${weeks} week${
+        weeks === 1 ? "" : "s"
+      }. Keep the total improvement to around ${maxPct}% or extend the plan.`,
+    };
+  }
+
+  return { ok: true, message: "" };
+}
+
+function performanceScore(goal: GoalDraft, side: "start" | "target") {
+  const weight = valueFor(goal, side, "weight");
+  const reps = valueFor(goal, side, "reps");
+  const distance = valueFor(goal, side, "distance");
+  const time = valueFor(goal, side, "time");
+
+  const hasWeight = goal.metrics.includes("weight");
+  const hasReps = goal.metrics.includes("reps");
+  const hasDistance = goal.metrics.includes("distance");
+  const hasTime = goal.metrics.includes("time");
+
+  if (hasWeight && hasReps && !hasDistance && !hasTime) {
+    return estimatedOneRepMax(weight, reps);
+  }
+
+  if (hasDistance && hasTime && !hasWeight && !hasReps) {
+    return safeDivide(distance, time);
+  }
+
+  if (hasWeight && hasDistance && hasTime) {
+    return safeDivide(weight * distance, time);
+  }
+
+  if (hasWeight && hasDistance) {
+    return weight * distance;
+  }
+
+  if (hasWeight && hasTime) {
+    const startTime = valueFor(goal, "start", "time");
+    const targetTime = valueFor(goal, "target", "time");
+
+    return targetTime < startTime ? safeDivide(weight, time) : weight * time;
+  }
+
+  if (hasReps && hasTime) {
+    const startTime = valueFor(goal, "start", "time");
+    const targetTime = valueFor(goal, "target", "time");
+
+    return targetTime < startTime ? safeDivide(reps, time) : reps * time;
+  }
+
+  if (hasReps && hasDistance) {
+    return reps * distance;
+  }
+
+  if (hasWeight) return weight;
+  if (hasReps) return reps;
+  if (hasDistance) return distance;
+
+  if (hasTime) {
+    const startTime = valueFor(goal, "start", "time");
+    const targetTime = valueFor(goal, "target", "time");
+
+    return targetTime >= startTime
+      ? targetTime
+      : safeDivide(startTime, targetTime);
+  }
+
+  return 0;
+}
+
+function estimatedOneRepMax(weight: number, reps: number) {
+  return weight * (1 + reps / 30);
+}
+
+function valueFor(
+  goal: GoalDraft,
+  side: "start" | "target",
+  metric: GoalMetric,
+) {
+  const key = side === "start" ? metricStartKey(metric) : metricTargetKey(metric);
+  const value = goal[key];
+
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function safeDivide(a: number, b: number) {
+  if (!positive(a) || !positive(b)) return 0;
+  return a / b;
+}
+
+function positive(n: number | null | undefined) {
+  return n != null && Number.isFinite(n) && n > 0;
+}
+
+function goalSummary(g: GoalDraft) {
+  const parts = g.metrics.map((metric) => {
+    const start = g[metricStartKey(metric)];
+    const target = g[metricTargetKey(metric)];
+    const unit = METRIC_UNIT[metric];
+
+    if (!positive(start) || !positive(target)) {
+      return `${METRIC_LABEL[metric]} target not complete`;
+    }
+
+    return `${start}${unit} → ${target}${unit}`;
+  });
+
+  return parts.join(" • ");
 }
 
 function findWorkoutTitlesForExercise(workouts: any[], exerciseId: string) {
   const titles: string[] = [];
+
   for (const w of workouts ?? []) {
     const hit = (w?.exercises ?? []).some(
       (x: any) => x?.exercise?.id === exerciseId,
     );
+
     if (hit) titles.push(String(w?.title ?? "Workout"));
   }
+
   return titles.join(", ");
 }
-
-function Chip({
-  label,
-  active,
-  onPress,
-  s,
-}: {
-  label: string;
-  active: boolean;
-  onPress: () => void;
-  s: any;
-}) {
-  return (
-    <Pressable onPress={onPress} style={[s.tabChip, active && s.tabChipActive]}>
-      <Text style={[s.tabChipText, active && s.tabChipTextActive]}>
-        {label}
-      </Text>
-    </Pressable>
-  );
-}
-
-/* ---------- styles ---------- */
 
 const makeStyles = (colors: any, typography: any, layout: any) =>
   StyleSheet.create({
@@ -636,7 +766,6 @@ const makeStyles = (colors: any, typography: any, layout: any) =>
       fontSize: 18,
       fontFamily: typography.fontFamily.bold,
     },
-
     progressWrap: {
       paddingHorizontal: layout.space.lg,
       paddingBottom: layout.space.sm,
@@ -666,7 +795,6 @@ const makeStyles = (colors: any, typography: any, layout: any) =>
       fontFamily: typography.fontFamily.medium,
       textAlign: "right",
     },
-
     h1: {
       color: colors.text,
       fontSize: typography.size.h1,
@@ -681,101 +809,6 @@ const makeStyles = (colors: any, typography: any, layout: any) =>
       lineHeight: typography.lineHeight.sub,
       fontFamily: typography.fontFamily.medium,
     },
-
-    limitCard: {
-      marginTop: layout.space.md,
-      backgroundColor: colors.surface,
-      borderRadius: layout.radius.lg,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: colors.border,
-      padding: layout.space.md,
-      gap: layout.space.sm,
-    },
-    limitHeader: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 8,
-    },
-    limitTitle: {
-      color: colors.text,
-      fontFamily: typography.fontFamily.bold,
-      fontSize: typography.size.sub,
-    },
-    limitBody: {
-      color: colors.textMuted,
-      fontFamily: typography.fontFamily.medium,
-      fontSize: typography.size.meta,
-      lineHeight: typography.lineHeight.meta + 2,
-    },
-    limitButton: {
-      alignSelf: "flex-start",
-      paddingHorizontal: 14,
-      paddingVertical: 10,
-      borderRadius: layout.radius.pill,
-      backgroundColor: colors.primary,
-    },
-    limitButtonText: {
-      color: colors.onPrimary,
-      fontFamily: typography.fontFamily.bold,
-      fontSize: typography.size.meta,
-    },
-
-    searchWrap: {
-      marginTop: layout.space.md,
-      flexDirection: "row",
-      alignItems: "center",
-      gap: layout.space.sm,
-      backgroundColor: colors.surface,
-      borderRadius: layout.radius.xl,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: colors.border,
-      paddingHorizontal: layout.space.md,
-      paddingVertical: 12,
-    },
-    searchIcon: {
-      color: colors.textMuted,
-      fontSize: 16,
-      fontFamily: typography.fontFamily.bold,
-    },
-    searchInput: {
-      flex: 1,
-      color: colors.text,
-      fontSize: typography.size.body,
-      lineHeight: typography.lineHeight.body,
-      fontFamily: typography.fontFamily.medium,
-    },
-    clear: {
-      color: colors.textMuted,
-      fontSize: 14,
-      fontFamily: typography.fontFamily.bold,
-    },
-
-    tabsRow: {
-      marginTop: layout.space.md,
-      flexDirection: "row",
-      gap: layout.space.sm,
-    },
-    tabChip: {
-      paddingHorizontal: 12,
-      paddingVertical: 8,
-      borderRadius: layout.radius.pill,
-      backgroundColor: colors.surface,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: colors.border,
-    },
-    tabChipActive: {
-      backgroundColor: colors.primary,
-      borderColor: colors.primary,
-    },
-    tabChipText: {
-      color: colors.text,
-      fontFamily: typography.fontFamily.semibold,
-      fontSize: typography.size.meta,
-    },
-    tabChipTextActive: {
-      color: colors.onPrimary,
-    },
-
     sectionTitle: {
       marginTop: layout.space.md,
       marginBottom: layout.space.sm,
@@ -784,7 +817,6 @@ const makeStyles = (colors: any, typography: any, layout: any) =>
       fontSize: 12,
       letterSpacing: 0.8,
     },
-
     emptyCard: {
       backgroundColor: colors.surface,
       borderRadius: layout.radius.lg,
@@ -803,7 +835,6 @@ const makeStyles = (colors: any, typography: any, layout: any) =>
       fontFamily: typography.fontFamily.medium,
       fontSize: typography.size.meta,
     },
-
     goalCard: {
       backgroundColor: colors.surface,
       borderRadius: layout.radius.lg,
@@ -833,7 +864,6 @@ const makeStyles = (colors: any, typography: any, layout: any) =>
       fontFamily: typography.fontFamily.bold,
       fontSize: 16,
     },
-
     modeRow: {
       flexDirection: "row",
       flexWrap: "wrap",
@@ -859,7 +889,6 @@ const makeStyles = (colors: any, typography: any, layout: any) =>
     modeTextActive: {
       color: colors.onPrimary,
     },
-
     valueRow: {
       marginTop: layout.space.sm,
       flexDirection: "row",
@@ -905,7 +934,42 @@ const makeStyles = (colors: any, typography: any, layout: any) =>
       fontFamily: typography.fontFamily.medium,
       fontSize: typography.size.meta,
     },
-
+    goalErrorText: {
+      marginTop: layout.space.sm,
+      color: colors.danger ?? "#ef4444",
+      fontFamily: typography.fontFamily.semibold,
+      fontSize: typography.size.meta,
+      lineHeight: typography.lineHeight.meta,
+    },
+    searchWrap: {
+      marginTop: layout.space.md,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: layout.space.sm,
+      backgroundColor: colors.surface,
+      borderRadius: layout.radius.xl,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      paddingHorizontal: layout.space.md,
+      paddingVertical: 12,
+    },
+    searchIcon: {
+      color: colors.textMuted,
+      fontSize: 16,
+      fontFamily: typography.fontFamily.bold,
+    },
+    searchInput: {
+      flex: 1,
+      color: colors.text,
+      fontSize: typography.size.body,
+      lineHeight: typography.lineHeight.body,
+      fontFamily: typography.fontFamily.medium,
+    },
+    clear: {
+      color: colors.textMuted,
+      fontSize: 14,
+      fontFamily: typography.fontFamily.bold,
+    },
     pickRow: {
       flexDirection: "row",
       alignItems: "center",
@@ -954,7 +1018,6 @@ const makeStyles = (colors: any, typography: any, layout: any) =>
       fontFamily: typography.fontFamily.bold,
       fontSize: typography.size.meta,
     },
-
     bottomDock: {
       position: "absolute",
       left: 0,
@@ -981,5 +1044,70 @@ const makeStyles = (colors: any, typography: any, layout: any) =>
       color: colors.onPrimary,
       fontFamily: typography.fontFamily.bold,
       fontSize: typography.size.body,
+    },
+    goalLimitScrim: {
+      flex: 1,
+      backgroundColor: colors.overlay,
+      alignItems: "center",
+      justifyContent: "center",
+      padding: layout.space.lg,
+    },
+    goalLimitModal: {
+      width: "100%",
+      backgroundColor: colors.surface,
+      borderRadius: layout.radius.xl,
+      padding: layout.space.lg,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      alignItems: "center",
+    },
+    goalLimitIcon: {
+      width: 48,
+      height: 48,
+      borderRadius: 24,
+      backgroundColor: colors.primary,
+      alignItems: "center",
+      justifyContent: "center",
+      marginBottom: layout.space.md,
+    },
+    goalLimitTitle: {
+      color: colors.text,
+      fontFamily: typography.fontFamily.bold,
+      fontSize: typography.size.h3,
+      textAlign: "center",
+    },
+    goalLimitText: {
+      marginTop: layout.space.sm,
+      color: colors.textMuted,
+      fontFamily: typography.fontFamily.medium,
+      fontSize: typography.size.sub,
+      lineHeight: typography.lineHeight.sub,
+      textAlign: "center",
+    },
+    goalLimitPrimary: {
+      marginTop: layout.space.lg,
+      height: 50,
+      alignSelf: "stretch",
+      borderRadius: layout.radius.xl,
+      backgroundColor: colors.primary,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    goalLimitPrimaryText: {
+      color: colors.onPrimary,
+      fontFamily: typography.fontFamily.bold,
+      fontSize: typography.size.sub,
+    },
+    goalLimitSecondary: {
+      marginTop: layout.space.sm,
+      height: 44,
+      alignSelf: "stretch",
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    goalLimitSecondaryText: {
+      color: colors.textMuted,
+      fontFamily: typography.fontFamily.semibold,
+      fontSize: typography.size.meta,
     },
   });

@@ -1,11 +1,53 @@
 // app/features/plans/create/Workout.tsx
-import React, { useMemo, useCallback } from "react";
-import { View, Text, Pressable, StyleSheet } from "react-native";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
+import {
+  View,
+  Text,
+  Pressable,
+  StyleSheet,
+  Modal,
+  ScrollView,
+  ActivityIndicator,
+  Alert,
+} from "react-native";
 import { router } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useAppTheme } from "@/lib/useAppTheme";
-import { usePlanDraft } from "./store";
+import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/lib/authContext";
+import {
+  usePlanDraft,
+  type ExerciseRow,
+  type WorkoutDraft,
+  type WorkoutExercise,
+} from "./store";
+
+type LooseWorkoutRow = {
+  id: string;
+  title: string;
+  notes: string | null;
+  created_at: string;
+  workout_exercises?: {
+    id: string;
+    exercise_id: string;
+    order_index: number;
+    target_sets: number | null;
+    target_reps: number | null;
+    target_weight: number | null;
+    target_time_seconds: number | null;
+    target_distance: number | null;
+    notes: string | null;
+    superset_group: string | null;
+    superset_index: number | null;
+    is_dropset: boolean | null;
+    exercises?: {
+      id: string;
+      name: string;
+      type: "strength" | "cardio" | "mobility" | null;
+    } | null;
+  }[];
+};
 
 function isWorkoutReady(w: any) {
   const titleOk = String(w?.title ?? "").trim().length > 0;
@@ -14,13 +56,21 @@ function isWorkoutReady(w: any) {
 }
 
 export default function PlanCreateWorkouts() {
+  const { session } = useAuth();
+  const userId = session?.user?.id ?? null;
+
   const { colors, typography, layout } = useAppTheme();
   const s = useMemo(
     () => makeStyles(colors, typography, layout),
-    [colors, typography, layout]
+    [colors, typography, layout],
   );
 
-  const { workoutsPerWeek, workouts } = usePlanDraft();
+  const { workoutsPerWeek, workouts, setWorkout } = usePlanDraft();
+
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerIndex, setPickerIndex] = useState<number | null>(null);
+  const [loadingLooseWorkouts, setLoadingLooseWorkouts] = useState(false);
+  const [looseWorkouts, setLooseWorkouts] = useState<LooseWorkoutRow[]>([]);
 
   const total = Math.max(0, Number(workoutsPerWeek ?? 0));
   const list = Array.isArray(workouts) ? workouts : [];
@@ -34,12 +84,15 @@ export default function PlanCreateWorkouts() {
   }, [total]);
 
   const openWorkout = useCallback((index: number) => {
-    // Uses your shared Plan Workout Editor screen (create/edit can both use it).
-    // Create this route at: app/features/plans/editor/workoutEditor.tsx
     router.push({
       pathname: "/features/plans/editor/workoutEditorWrapper",
       params: { index: String(index), mode: "create" },
     });
+  }, []);
+
+  const openStarterPicker = useCallback((index: number) => {
+    setPickerIndex(index);
+    setPickerOpen(true);
   }, []);
 
   const proceed = useCallback(() => {
@@ -47,10 +100,82 @@ export default function PlanCreateWorkouts() {
     router.push("/features/plans/create/goals");
   }, [allReady]);
 
+  useEffect(() => {
+    if (!pickerOpen || !userId) return;
+
+    let mounted = true;
+
+    async function loadLooseWorkouts() {
+      setLoadingLooseWorkouts(true);
+
+      const { data, error } = await supabase
+        .from("workouts")
+        .select(
+          `
+          id,
+          title,
+          notes,
+          created_at,
+          workout_exercises (
+            id,
+            exercise_id,
+            order_index,
+            target_sets,
+            target_reps,
+            target_weight,
+            target_time_seconds,
+            target_distance,
+            notes,
+            superset_group,
+            superset_index,
+            is_dropset,
+            exercises:exercise_id (
+              id,
+              name,
+              type
+            )
+          )
+        `,
+        )
+        .eq("user_id", userId)
+        .eq("counts_toward_template_limit", true)
+        .is("archived_at", null)
+        .is("deleted_at", null)
+        .order("created_at", { ascending: false });
+
+      if (!mounted) return;
+
+      if (error) {
+        console.error("Failed to load loose workouts:", error);
+        Alert.alert("Could not load workouts", error.message);
+        setLooseWorkouts([]);
+      } else {
+        setLooseWorkouts((data ?? []) as unknown as LooseWorkoutRow[]);
+      }
+
+      setLoadingLooseWorkouts(false);
+    }
+
+    loadLooseWorkouts();
+
+    return () => {
+      mounted = false;
+    };
+  }, [pickerOpen, userId]);
+
+  function applyLooseWorkout(row: LooseWorkoutRow) {
+    if (pickerIndex == null) return;
+
+    const draft = looseWorkoutToDraft(row, pickerIndex);
+
+    setWorkout(pickerIndex, draft);
+    setPickerOpen(false);
+    setPickerIndex(null);
+  }
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }}>
       <View style={s.page}>
-        {/* Header */}
         <View style={s.header}>
           <Pressable
             onPress={() => router.back()}
@@ -63,33 +188,26 @@ export default function PlanCreateWorkouts() {
           <View style={s.headerCenter}>
             <Text style={s.headerTitle}>Step 2 of 4</Text>
           </View>
-
-          <Pressable
-            onPress={() => router.back()}
-            hitSlop={layout.hitSlop}
-            style={s.headerIconBtn}
-          >
-            <Text style={s.help}>?</Text>
-          </Pressable>
         </View>
 
-        {/* Progress */}
         <View style={s.progressWrap}>
-          <Text style={s.progressLabel}>Wizard Progress</Text>
           <Text style={s.progressPct}>50%</Text>
         </View>
+
         <View style={s.progressBarTrack}>
           <View style={[s.progressBarFill, { width: "50%" }]} />
         </View>
 
-        {/* Title */}
         <View style={s.hero}>
           <Text style={s.h1}>Build your week</Text>
           <Text style={s.sub}>{subtitle}</Text>
         </View>
 
-        {/* Workouts list */}
-        <View style={s.list}>
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={s.list}
+          showsVerticalScrollIndicator={false}
+        >
           {Array.from({ length: total }, (_, i) => {
             const w = list[i];
             const ready = isWorkoutReady(w);
@@ -97,7 +215,6 @@ export default function PlanCreateWorkouts() {
               ? w.exercises.length
               : 0;
 
-            // styling matches your mock: first = ready chip, middle = “…” chip, etc.
             const leftBadge = ready ? (
               <View style={[s.badge, s.badgeReady]}>
                 <Text style={s.badgeReadyText}>✓</Text>
@@ -114,50 +231,61 @@ export default function PlanCreateWorkouts() {
                 onPress={() => openWorkout(i)}
                 style={[
                   s.workoutRow,
+                  ready && s.workoutRowReady,
                   !ready && exCount > 0 ? s.workoutRowActive : null,
                 ]}
               >
                 {leftBadge}
 
-                <View style={{ flex: 1 }}>
-                  <Text style={s.workoutTitle} numberOfLines={1}>
-                    {String(w?.title ?? `Workout ${i + 1}`)}
-                  </Text>
+                <View style={s.workoutContent}>
+                  <View style={s.workoutTopLine}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={s.workoutTitle} numberOfLines={1}>
+                        {String(w?.title ?? `Workout ${i + 1}`)}
+                      </Text>
 
-                  {ready ? (
-                    <Text style={s.workoutMetaReady}>Ready</Text>
-                  ) : exCount > 0 ? (
-                    <Text style={s.workoutMeta}>
-                      {exCount} exercise{exCount === 1 ? "" : "s"} added
-                    </Text>
-                  ) : (
-                    <Text style={s.workoutMeta}>Tap to add exercises</Text>
-                  )}
-                </View>
-
-                <View style={s.rightWrap}>
-                  {exCount > 0 && !ready ? (
-                    <View style={s.editPill}>
-                      <Text style={s.editPillText}>EDIT</Text>
+                      {ready ? (
+                        <Text style={s.workoutMetaReady}>
+                          Ready • {exCount} exercise{exCount === 1 ? "" : "s"}
+                        </Text>
+                      ) : exCount > 0 ? (
+                        <Text style={s.workoutMeta}>
+                          {exCount} exercise{exCount === 1 ? "" : "s"} added
+                        </Text>
+                      ) : (
+                        <Text style={s.workoutMeta}>Tap to add exercises</Text>
+                      )}
                     </View>
-                  ) : null}
-                  <Text style={s.chev}>›</Text>
+
+                    <Text style={s.chev}>›</Text>
+                  </View>
+
+                  <Pressable
+                    onPress={(event) => {
+                      event.stopPropagation();
+                      openStarterPicker(i);
+                    }}
+                    style={s.inlineStarterBtn}
+                  >
+                    <Text style={s.inlineStarterBtnText}>
+                      Start from existing workout
+                    </Text>
+                  </Pressable>
                 </View>
               </Pressable>
             );
           })}
 
-          {/* Optional “Add exercises” helper row when at least one workout is empty */}
           {!allReady ? (
             <View style={s.addHint}>
               <Text style={s.addHintText}>
-                Tip: open each workout and add exercises to enable Continue.
+                Use an existing workout as a starting point, then edit it for
+                this plan.
               </Text>
             </View>
           ) : null}
-        </View>
+        </ScrollView>
 
-        {/* Bottom CTA */}
         <View style={s.bottomDock}>
           <Pressable
             onPress={proceed}
@@ -166,6 +294,7 @@ export default function PlanCreateWorkouts() {
           >
             <Text style={s.ctaText}>Continue</Text>
           </Pressable>
+
           {!allReady ? (
             <Text style={s.bottomMeta}>
               {readyCount}/{total} workouts ready
@@ -173,8 +302,122 @@ export default function PlanCreateWorkouts() {
           ) : null}
         </View>
       </View>
+
+      <Modal
+        visible={pickerOpen}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setPickerOpen(false)}
+      >
+        <View style={s.modalScrim}>
+          <View style={s.modalCard}>
+            <View style={s.modalHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={s.modalTitle}>Use existing workout</Text>
+                <Text style={s.modalSub}>
+                  This copies it into the plan. You can still edit it after.
+                </Text>
+              </View>
+
+              <Pressable
+                onPress={() => setPickerOpen(false)}
+                hitSlop={layout.hitSlop}
+                style={s.closeBtn}
+              >
+                <Text style={s.closeText}>✕</Text>
+              </Pressable>
+            </View>
+
+            {loadingLooseWorkouts ? (
+              <View style={s.modalLoading}>
+                <ActivityIndicator color={colors.primary} />
+                <Text style={s.workoutMeta}>Loading workouts…</Text>
+              </View>
+            ) : looseWorkouts.length === 0 ? (
+              <View style={s.emptyState}>
+                <Text style={s.emptyTitle}>No loose workouts yet</Text>
+                <Text style={s.emptyText}>
+                  Build this workout from scratch for now. Saved standalone
+                  workouts will appear here later.
+                </Text>
+              </View>
+            ) : (
+              <ScrollView
+                contentContainerStyle={{
+                  gap: layout.space.sm,
+                  paddingBottom: 12,
+                }}
+                showsVerticalScrollIndicator={false}
+              >
+                {looseWorkouts.map((w) => {
+                  const exCount = Array.isArray(w.workout_exercises)
+                    ? w.workout_exercises.length
+                    : 0;
+
+                  return (
+                    <Pressable
+                      key={w.id}
+                      onPress={() => applyLooseWorkout(w)}
+                      style={s.templateRow}
+                    >
+                      <View style={{ flex: 1 }}>
+                        <Text style={s.templateTitle} numberOfLines={1}>
+                          {w.title || "Untitled Workout"}
+                        </Text>
+                        <Text style={s.templateMeta}>
+                          {exCount} exercise{exCount === 1 ? "" : "s"}
+                        </Text>
+                      </View>
+
+                      <Text style={s.chev}>›</Text>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+            )}
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
+}
+
+function looseWorkoutToDraft(
+  row: LooseWorkoutRow,
+  index: number,
+): WorkoutDraft {
+  const sortedExercises = [...(row.workout_exercises ?? [])].sort(
+    (a, b) => Number(a.order_index ?? 0) - Number(b.order_index ?? 0),
+  );
+
+  const exercises: WorkoutExercise[] = sortedExercises
+    .filter((we) => !!we.exercises?.id)
+    .map((we, idx) => {
+      const exercise: ExerciseRow = {
+        id: String(we.exercises!.id),
+        name: String(we.exercises!.name),
+        type: we.exercises!.type ?? null,
+      };
+
+      return {
+        exercise,
+        order_index: idx,
+        supersetGroup: we.superset_group ?? null,
+        isDropset: !!we.is_dropset,
+        target_sets: we.target_sets ?? null,
+        target_reps: we.target_reps ?? null,
+        target_weight: we.target_weight ?? null,
+        target_time_seconds: we.target_time_seconds ?? null,
+        target_distance: we.target_distance ?? null,
+        notes: we.notes ?? null,
+      };
+    });
+
+  return {
+    title: row.title?.trim() || `Workout ${index + 1}`,
+    notes: row.notes ?? null,
+    exercises,
+  };
 }
 
 const makeStyles = (colors: any, typography: any, layout: any) =>
@@ -192,7 +435,7 @@ const makeStyles = (colors: any, typography: any, layout: any) =>
       paddingBottom: layout.space.sm,
       flexDirection: "row",
       alignItems: "center",
-      justifyContent: "space-between",
+      justifyContent: "flex-start",
     },
     headerIconBtn: {
       width: 44,
@@ -226,7 +469,7 @@ const makeStyles = (colors: any, typography: any, layout: any) =>
       paddingHorizontal: layout.space.lg,
       flexDirection: "row",
       alignItems: "center",
-      justifyContent: "space-between",
+      justifyContent: "flex-end",
       marginTop: 2,
     },
     progressLabel: {
@@ -282,17 +525,6 @@ const makeStyles = (colors: any, typography: any, layout: any) =>
       paddingTop: layout.space.sm,
     },
 
-    workoutRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: layout.space.md,
-      paddingVertical: 14,
-      paddingHorizontal: 14,
-      borderRadius: layout.radius.xl,
-      backgroundColor: colors.surface,
-      borderWidth: 1,
-      borderColor: colors.border,
-    },
     workoutRowActive: {
       borderColor: colors.primary,
       backgroundColor: colors.surface,
@@ -419,5 +651,181 @@ const makeStyles = (colors: any, typography: any, layout: any) =>
       fontFamily: typography.fontFamily.medium,
       fontSize: typography.size.meta,
       lineHeight: typography.lineHeight.meta,
+    },
+
+    workoutCardWrap: {
+      gap: layout.space.sm,
+    },
+    rowActions: {
+      flexDirection: "row",
+      gap: layout.space.sm,
+      paddingHorizontal: 2,
+    },
+    secondaryBtn: {
+      flex: 1,
+      minHeight: 42,
+      borderRadius: layout.radius.lg,
+      backgroundColor: colors.surface,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      alignItems: "center",
+      justifyContent: "center",
+      paddingHorizontal: layout.space.md,
+    },
+    secondaryBtnText: {
+      color: colors.primary,
+      fontFamily: typography.fontFamily.semibold,
+      fontSize: typography.size.meta,
+      textAlign: "center",
+    },
+    editBtn: {
+      minHeight: 42,
+      borderRadius: layout.radius.lg,
+      backgroundColor: colors.primary,
+      alignItems: "center",
+      justifyContent: "center",
+      paddingHorizontal: layout.space.lg,
+    },
+    editBtnText: {
+      color: colors.onPrimary,
+      fontFamily: typography.fontFamily.bold,
+      fontSize: typography.size.meta,
+    },
+    modalScrim: {
+      flex: 1,
+      backgroundColor: colors.overlay,
+      justifyContent: "flex-end",
+    },
+    modalCard: {
+      maxHeight: "78%",
+      backgroundColor: colors.bg,
+      borderTopLeftRadius: layout.radius.xl,
+      borderTopRightRadius: layout.radius.xl,
+      padding: layout.space.lg,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+    },
+    modalHeader: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      gap: layout.space.md,
+      marginBottom: layout.space.md,
+    },
+    modalTitle: {
+      color: colors.text,
+      fontFamily: typography.fontFamily.bold,
+      fontSize: typography.size.h3,
+      lineHeight: typography.lineHeight.h3,
+    },
+    modalSub: {
+      marginTop: 4,
+      color: colors.textMuted,
+      fontFamily: typography.fontFamily.medium,
+      fontSize: typography.size.meta,
+      lineHeight: typography.lineHeight.meta,
+    },
+    closeBtn: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: colors.surface,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+    },
+    closeText: {
+      color: colors.textMuted,
+      fontFamily: typography.fontFamily.bold,
+      fontSize: 14,
+    },
+    modalLoading: {
+      minHeight: 140,
+      alignItems: "center",
+      justifyContent: "center",
+      gap: layout.space.sm,
+    },
+    emptyState: {
+      backgroundColor: colors.surface,
+      borderRadius: layout.radius.lg,
+      padding: layout.space.md,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+    },
+    emptyTitle: {
+      color: colors.text,
+      fontFamily: typography.fontFamily.bold,
+      fontSize: typography.size.sub,
+    },
+    emptyText: {
+      marginTop: 4,
+      color: colors.textMuted,
+      fontFamily: typography.fontFamily.medium,
+      fontSize: typography.size.meta,
+      lineHeight: typography.lineHeight.meta,
+    },
+    templateRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: layout.space.md,
+      backgroundColor: colors.surface,
+      borderRadius: layout.radius.lg,
+      padding: layout.space.md,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+    },
+    templateTitle: {
+      color: colors.text,
+      fontFamily: typography.fontFamily.semibold,
+      fontSize: typography.size.body,
+    },
+    templateMeta: {
+      marginTop: 3,
+      color: colors.textMuted,
+      fontFamily: typography.fontFamily.medium,
+      fontSize: typography.size.meta,
+    },
+
+    workoutRow: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      gap: layout.space.md,
+      paddingVertical: 14,
+      paddingHorizontal: 14,
+      borderRadius: layout.radius.xl,
+      backgroundColor: colors.surface,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+
+    workoutRowReady: {
+      borderColor: colors.success,
+    },
+
+    workoutContent: {
+      flex: 1,
+      gap: layout.space.sm,
+    },
+
+    workoutTopLine: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: layout.space.sm,
+    },
+
+    inlineStarterBtn: {
+      alignSelf: "flex-start",
+      paddingVertical: 7,
+      paddingHorizontal: 11,
+      borderRadius: layout.radius.pill,
+      backgroundColor: colors.bg,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+    },
+
+    inlineStarterBtnText: {
+      color: colors.primary,
+      fontFamily: typography.fontFamily.semibold,
+      fontSize: typography.size.meta,
     },
   });
