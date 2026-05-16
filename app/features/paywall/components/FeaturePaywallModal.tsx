@@ -74,7 +74,7 @@ export default function FeaturePaywallModal({
       onOpenTerms={() => {
         void openExternalUrl(TERMS_OF_USE_URL);
       }}
-      purchaseDisabled={!canStartPurchase || busy}
+      purchaseDisabled={busy}
       purchaseStatusText={getPurchaseStatusText(purchaseUnavailableReason)}
       initialPlan="yearly"
     />

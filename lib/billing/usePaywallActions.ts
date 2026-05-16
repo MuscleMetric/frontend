@@ -74,18 +74,19 @@ export function usePaywallActions(onClose?: () => void) {
       return;
     }
 
-    if (error) {
-      Alert.alert(
-        "Purchases unavailable",
-        "We couldn’t load purchase options right now. Please try again.",
-      );
-      return;
-    }
+    if (error || !defaultPackage) {
+      try {
+        setBusy(true);
+        await refresh();
+      } catch {
+        // ignore here; show clean user-facing message below
+      } finally {
+        setBusy(false);
+      }
 
-    if (!defaultPackage) {
       Alert.alert(
         "Purchases unavailable",
-        "Purchase options are not available right now.",
+        "We couldn’t load purchase options right now. Please check your connection and try again.",
       );
       return;
     }
