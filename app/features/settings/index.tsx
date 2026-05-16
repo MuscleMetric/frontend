@@ -33,6 +33,7 @@ import { ConfirmDeleteAccountModal } from "./modals/ConfirmDeleteAccountModal";
 import { useAuth } from "@/lib/authContext";
 
 import { log } from "@/lib/logger";
+import { SubscriptionSettingsCard } from "./components/SubscriptionSettingsCard";
 
 type Visibility = "public" | "followers" | "private";
 
@@ -398,6 +399,24 @@ export default function SettingsScreen() {
               last
             />
           </SettingsCard>
+
+          <SectionHeader title="ACCOUNT" />
+          <SettingsCard>
+            <SettingsRow
+              label="Username"
+              value={handle}
+              onPress={() => setOpenUsername(true)}
+            />
+            <SettingsRow
+              label="Personal Info"
+              value={personalInfoLabel}
+              onPress={() => setOpenPersonal(true)}
+              last
+            />
+          </SettingsCard>
+
+          <SectionHeader title="SUBSCRIPTION" />
+          <SubscriptionSettingsCard />
 
           <SectionHeader title="TRAINING" />
           <SettingsCard>

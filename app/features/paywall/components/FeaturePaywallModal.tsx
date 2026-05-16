@@ -47,13 +47,8 @@ export default function FeaturePaywallModal({
   reason,
   onClose,
 }: FeaturePaywallModalProps) {
-  const {
-    startDefaultPurchase,
-    restore,
-    busy,
-    canStartPurchase,
-    purchaseUnavailableReason,
-  } = usePaywallActions(onClose);
+  const { startPurchaseForPlan, restore, busy, purchaseUnavailableReason } =
+    usePaywallActions(onClose);
 
   return (
     <PaywallModal
@@ -62,7 +57,7 @@ export default function FeaturePaywallModal({
       onClose={onClose}
       onStartTrial={(plan: PaywallPlan) => {
         if (busy) return;
-        void startDefaultPurchase();
+        void startPurchaseForPlan(plan);
       }}
       onRestorePurchases={() => {
         if (busy) return;

@@ -7,6 +7,7 @@ import {
 } from "./revenuecat";
 import { useAuth } from "@/lib/authContext";
 import { useBilling } from "./BillingProvider";
+import type { PaywallPlan } from "@/app/features/paywall/components/PaywallContent";
 
 type PurchaseUnavailableReason =
   | "loading"
@@ -22,7 +23,10 @@ export function usePaywallActions(onClose?: () => void) {
   const monthly = useMemo(
     () =>
       offering?.monthly ??
-      offering?.availablePackages.find((p) => p.packageType === "MONTHLY") ??
+      offering?.availablePackages.find((p) => p.identifier === "$rc_monthly") ??
+      offering?.availablePackages.find(
+        (p) => p.product.identifier === "mm_pro_monthly",
+      ) ??
       null,
     [offering],
   );
@@ -30,10 +34,25 @@ export function usePaywallActions(onClose?: () => void) {
   const annual = useMemo(
     () =>
       offering?.annual ??
-      offering?.availablePackages.find((p) => p.packageType === "ANNUAL") ??
+      offering?.availablePackages.find((p) => p.identifier === "$rc_annual") ??
+      offering?.availablePackages.find(
+        (p) => p.product.identifier === "mm_pro_annual",
+      ) ??
       null,
     [offering],
   );
+
+  console.log("[paywall] offering packages", {
+    offeringId: offering?.identifier,
+    packages: offering?.availablePackages?.map((p) => ({
+      identifier: p.identifier,
+      packageType: p.packageType,
+      productId: p.product.identifier,
+      price: p.product.priceString,
+    })),
+    monthlyPackage: monthly?.identifier,
+    annualPackage: annual?.identifier,
+  });
 
   const defaultPackage = useMemo(
     () => annual ?? monthly ?? null,
@@ -64,6 +83,41 @@ export function usePaywallActions(onClose?: () => void) {
     } finally {
       setBusy(false);
     }
+  };
+
+  const startPurchaseForPlan = async (plan: PaywallPlan) => {
+    if (busy) return;
+
+    const selectedPackage = plan === "monthly" ? monthly : annual;
+
+    console.log("[paywall] selected plan", {
+      plan,
+      selectedPackageId: selectedPackage?.identifier,
+      productId: selectedPackage?.product.identifier,
+    });
+
+    if (loading) {
+      Alert.alert("Please wait", "We’re still loading purchase options.");
+      return;
+    }
+
+    if (error) {
+      Alert.alert(
+        "Purchases unavailable",
+        "We couldn’t load purchase options right now. Please try again.",
+      );
+      return;
+    }
+
+    if (!selectedPackage) {
+      Alert.alert(
+        "Purchases unavailable",
+        `The ${plan} subscription option is not available right now.`,
+      );
+      return;
+    }
+
+    await purchaseSelected(selectedPackage);
   };
 
   const startDefaultPurchase = async () => {
@@ -122,6 +176,7 @@ export function usePaywallActions(onClose?: () => void) {
     canStartPurchase,
     purchaseSelected,
     startDefaultPurchase,
+    startPurchaseForPlan,
     restore,
   };
 }
