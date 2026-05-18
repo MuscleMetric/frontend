@@ -69,16 +69,43 @@ export function usePaywallActions(onClose?: () => void) {
   }, [loading, error, defaultPackage]);
 
   const canStartPurchase = !busy && !purchaseUnavailableReason;
-
+  
   const purchaseSelected = async (pkg: PurchasesPackage) => {
     try {
       setBusy(true);
-      await purchaseRevenueCatPackage(pkg);
+
+      console.log("[paywall] purchase starting", {
+        packageId: pkg.identifier,
+        productId: pkg.product.identifier,
+        price: pkg.product.priceString,
+      });
+
+      const result = await purchaseRevenueCatPackage(pkg);
+
+      console.log("[paywall] purchase complete", {
+        productId: pkg.product.identifier,
+        activeEntitlements: Object.keys(
+          result.customerInfo.entitlements.active,
+        ),
+      });
+
       await refreshEntitlements();
+      await refresh();
+
       Alert.alert("Success", "MuscleMetric Pro is now active.");
       onClose?.();
     } catch (err: any) {
-      if (err?.userCancelled) return;
+      if (err?.userCancelled) {
+        console.log("[paywall] purchase cancelled by user");
+        return;
+      }
+
+      console.warn("[paywall] purchase failed", {
+        message: err?.message,
+        code: err?.code,
+        underlyingErrorMessage: err?.underlyingErrorMessage,
+      });
+
       Alert.alert("Purchase failed", err?.message ?? "Please try again.");
     } finally {
       setBusy(false);
@@ -94,6 +121,8 @@ export function usePaywallActions(onClose?: () => void) {
       plan,
       selectedPackageId: selectedPackage?.identifier,
       productId: selectedPackage?.product.identifier,
+      loading,
+      error,
     });
 
     if (loading) {
@@ -101,19 +130,19 @@ export function usePaywallActions(onClose?: () => void) {
       return;
     }
 
-    if (error) {
-      Alert.alert(
-        "Purchases unavailable",
-        "We couldn’t load purchase options right now. Please try again.",
-      );
-      return;
-    }
+    if (error || !selectedPackage) {
+      try {
+        setBusy(true);
+        await refresh();
+      } finally {
+        setBusy(false);
+      }
 
-    if (!selectedPackage) {
       Alert.alert(
         "Purchases unavailable",
-        `The ${plan} subscription option is not available right now.`,
+        "We couldn’t load purchase options right now. Please check your connection and try again.",
       );
+
       return;
     }
 

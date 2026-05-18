@@ -8,6 +8,7 @@ import React, {
 } from "react";
 import type { PurchasesOffering } from "react-native-purchases";
 import { log } from "@/lib/logger";
+import { useAuth } from "@/lib/authContext";
 import { getRevenueCatOfferings } from "./revenuecat";
 
 type BillingContextValue = {
@@ -20,11 +21,20 @@ type BillingContextValue = {
 const BillingContext = createContext<BillingContextValue | null>(null);
 
 export function BillingProvider({ children }: { children: React.ReactNode }) {
+  const { billingReady, userId } = useAuth();
+
   const [offering, setOffering] = useState<PurchasesOffering | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
+    if (!billingReady || !userId) {
+      setOffering(null);
+      setLoading(false);
+      setError(null);
+      return;
+    }
+
     try {
       setLoading(true);
       setError(null);
@@ -37,16 +47,17 @@ export function BillingProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [billingReady, userId]);
 
   useEffect(() => {
     void refresh();
   }, [refresh]);
 
   useEffect(() => {
+    log("RevenueCat billingReady:", billingReady);
     log("RevenueCat offering:", offering);
     log("Available packages:", offering?.availablePackages);
-  }, [offering]);
+  }, [billingReady, offering]);
 
   const value = useMemo<BillingContextValue>(
     () => ({
@@ -65,8 +76,10 @@ export function BillingProvider({ children }: { children: React.ReactNode }) {
 
 export function useBilling() {
   const ctx = useContext(BillingContext);
+
   if (!ctx) {
     throw new Error("useBilling must be used within BillingProvider");
   }
+
   return ctx;
 }

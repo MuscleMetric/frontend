@@ -14,9 +14,12 @@ type FeaturePaywallModalProps = {
 function getPurchaseStatusText(
   reason: "loading" | "offerings_error" | "no_packages" | null,
 ) {
-  if (reason === "loading") return "Loading purchase options...";
-  if (reason === "offerings_error" || reason === "no_packages") {
-    return "Purchase options are unavailable right now.";
+  if (reason === "loading") return "Loading subscription options...";
+  if (reason === "offerings_error") {
+    return "Subscription options could not be loaded. Please check your connection and try again.";
+  }
+  if (reason === "no_packages") {
+    return "Subscription options are still loading. Please wait a moment.";
   }
   return null;
 }
@@ -47,8 +50,13 @@ export default function FeaturePaywallModal({
   reason,
   onClose,
 }: FeaturePaywallModalProps) {
-  const { startPurchaseForPlan, restore, busy, purchaseUnavailableReason } =
-    usePaywallActions(onClose);
+  const {
+    startPurchaseForPlan,
+    restore,
+    busy,
+    canStartPurchase,
+    purchaseUnavailableReason,
+  } = usePaywallActions(onClose);
 
   return (
     <PaywallModal
@@ -69,7 +77,7 @@ export default function FeaturePaywallModal({
       onOpenTerms={() => {
         void openExternalUrl(TERMS_OF_USE_URL);
       }}
-      purchaseDisabled={busy}
+      purchaseDisabled={!canStartPurchase}
       purchaseStatusText={getPurchaseStatusText(purchaseUnavailableReason)}
       initialPlan="yearly"
     />

@@ -82,6 +82,7 @@ type AuthValue = {
   refreshProfile: () => Promise<void>;
   refreshEntitlements: () => Promise<void>;
   signOut: () => Promise<void>;
+  billingReady: boolean;
 };
 
 const FREE_CAPABILITIES: Capabilities = {
@@ -175,6 +176,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // prevent stale writes if multiple fetches overlap
   const profileReqId = useRef(0);
   const entitlementReqId = useRef(0);
+
+  const [billingReady, setBillingReady] = useState(false);
 
   const fetchProfile = useCallback(async (userId: string) => {
     const reqId = ++profileReqId.current;
@@ -316,14 +319,42 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [session?.user?.id]);
 
   useEffect(() => {
-    const uid = session?.user?.id;
+    let cancelled = false;
 
-    if (!uid) {
-      void logoutRevenueCat();
-      return;
+    async function setupRevenueCat() {
+      const uid = session?.user?.id;
+
+      setBillingReady(false);
+
+      if (!uid) {
+        try {
+          await logoutRevenueCat();
+        } catch (e) {
+          console.warn("logoutRevenueCat failed:", e);
+        }
+        return;
+      }
+
+      try {
+        await configureRevenueCat(uid);
+
+        if (!cancelled) {
+          setBillingReady(true);
+        }
+      } catch (e) {
+        console.warn("configureRevenueCat failed:", e);
+
+        if (!cancelled) {
+          setBillingReady(false);
+        }
+      }
     }
 
-    void configureRevenueCat(uid);
+    void setupRevenueCat();
+
+    return () => {
+      cancelled = true;
+    };
   }, [session?.user?.id]);
 
   useEffect(() => {
@@ -431,6 +462,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       refreshProfile,
       refreshEntitlements,
       signOut,
+      billingReady,
     };
   }, [
     session,
@@ -442,6 +474,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     refreshProfile,
     refreshEntitlements,
     signOut,
+    billingReady,
   ]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
