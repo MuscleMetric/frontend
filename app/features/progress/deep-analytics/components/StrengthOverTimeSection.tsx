@@ -45,7 +45,7 @@ export function StrengthOverTimeSection({ payload }: Props) {
             lineHeight: 18,
           }}
         >
-          Tracks your top estimated strength across sessions.
+          Shows estimated strength from your logged sets across sessions.
         </Text>
       </View>
 

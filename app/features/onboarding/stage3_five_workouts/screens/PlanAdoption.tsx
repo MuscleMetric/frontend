@@ -45,7 +45,7 @@ export default function PlanAdoption({
   const { colors, typography, layout } = useAppTheme();
   const styles = useMemo(
     () => makeStyles(colors, typography, layout),
-    [colors, typography, layout]
+    [colors, typography, layout],
   );
 
   useEffect(() => {
@@ -57,7 +57,7 @@ export default function PlanAdoption({
   const exName =
     payload?.spotlight_exercise_name ?? ui.spotlightTitle ?? "Your lift";
   const current = Number(
-    payload?.spotlight_current_1rm ?? payload?.milestone_current_value ?? NaN
+    payload?.spotlight_current_1rm ?? payload?.milestone_current_value ?? NaN,
   );
 
   const delta = pickTargetDelta(current, unit);
@@ -90,27 +90,33 @@ export default function PlanAdoption({
       </Text>
 
       <Text style={styles.sub}>
-        The fastest way to keep improving is a structured plan — clear sessions,
-        targets, and progress you can measure.
+        Use a structured plan to organise sessions, logged targets, and progress
+        summaries.
       </Text>
 
       <View style={{ marginTop: layout.space.md }}>
         <PlanPreviewCard
-          title="Train with direction"
-          statusText={payload?.milestone_on_track ? "ON TRACK" : "BUILDING"}
+          title="Plan overview"
+          statusText={
+            payload?.milestone_on_track ? "LOGGED TREND" : "IN PROGRESS"
+          }
           days={schedule as any}
           milestoneTitle={String(exName)}
           targetLabel={fmtWeight(target, unit)}
           currentLabel={fmtWeight(current, unit)}
           progressPct={progressPct}
-          footerLeft={`${Math.round(progressPct)}% Complete`}
-          footerRight={footerRight}
+          footerLeft={`${Math.round(progressPct)}% logged`}
+          footerRight={
+            Number.isFinite(target) && Number.isFinite(current)
+              ? `${fmtWeight(target - current, unit)} difference`
+              : ""
+          }
         />
       </View>
 
       <Text style={styles.footer}>
-        Create a plan and we’ll set targets automatically — you can edit
-        anything later.
+        Create a plan with editable logged targets — you can change anything
+        later.
       </Text>
     </View>
   );

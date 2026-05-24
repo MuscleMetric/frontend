@@ -38,8 +38,8 @@ export function generatePrimaryInsight(
   if (e1rms.length < 3) {
     return {
       type: "not_enough_data",
-      title: "More sessions needed",
-      description: `Log a few more ${exerciseName} sessions before MuscleMetric can give a reliable trend.`,
+      title: "More logged sessions needed",
+      description: `A few more logged ${exerciseName} sessions are needed before a trend summary is shown.`,
       confidence: "low",
     };
   }
@@ -53,7 +53,7 @@ export function generatePrimaryInsight(
   if (hasPlateaued(e1rms, 4)) {
     return {
       type: "plateau",
-      title: "Progress has slowed",
+      title: "Recent estimate is level",
       description: `Your ${exerciseName} estimated strength has not beaten its previous best across the recent sessions.`,
       confidence,
     };
@@ -62,7 +62,7 @@ export function generatePrimaryInsight(
   if (trend === "up") {
     return {
       type: "improving",
-      title: "Strength is improving",
+      title: "Estimated strength trend is higher",
       description:
         change == null
           ? `${exerciseName} is trending upward across your recent sessions.`
@@ -76,7 +76,7 @@ export function generatePrimaryInsight(
   if (trend === "down") {
     return {
       type: "regressing",
-      title: "Strength is dipping",
+      title: "Estimated strength trend is lower",
       description:
         change == null
           ? `${exerciseName} has trended down recently.`
@@ -89,7 +89,7 @@ export function generatePrimaryInsight(
 
   return {
     type: "stable",
-    title: "Strength is stable",
+    title: "Estimated strength is steady",
     description: `${exerciseName} performance has stayed fairly consistent recently.`,
     confidence,
   };
@@ -111,7 +111,7 @@ export function generateVolumeInsight(
   if (change > 10) {
     return {
       type: "volume_up",
-      title: "Volume is building",
+      title: "Logged volume trend is higher",
       description: `Recent volume is up ${formatPercent(
         change,
       )}, from ${formatVolume(first)} to ${formatVolume(last)}.`,
@@ -122,7 +122,7 @@ export function generateVolumeInsight(
   if (change < -10) {
     return {
       type: "volume_down",
-      title: "Volume has dropped",
+      title: "Logged volume trend is lower",
       description: `Recent volume is down ${formatPercent(
         Math.abs(change),
       )}, from ${formatVolume(first)} to ${formatVolume(last)}.`,

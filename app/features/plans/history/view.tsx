@@ -1093,29 +1093,14 @@ export default function PlanHistoryViewScreen() {
     };
   }
 
-  function suggestGoalTweakLabel(goal: Stats["goalSummaries"][number] | null) {
+  function getGoalProgressLabel(goal: Stats["goalSummaries"][number] | null) {
     if (!goal) return null;
 
     const p = clamp01(goal.progress);
-    // Heuristic: if they’re close, bump next target; if far, shrink the jump.
-    if (p >= 0.85) {
-      if (goal.type === "exercise_weight") return "Next target: +2.5–5 kg";
-      if (goal.type === "exercise_reps") return "Next target: +1–2 reps";
-      if (goal.type === "distance") return "Next target: +0.5–1.0 km";
-      if (goal.type === "time") return "Next target: +30–60s";
-      return "Next target: small increase";
-    }
 
-    if (p <= 0.35) {
-      if (goal.type === "exercise_weight")
-        return "Tip: smaller jump (+1–2.5 kg)";
-      if (goal.type === "exercise_reps") return "Tip: smaller jump (+1 rep)";
-      if (goal.type === "distance") return "Tip: build in smaller steps";
-      if (goal.type === "time") return "Tip: build in smaller steps";
-      return "Tip: reduce the jump";
-    }
-
-    return "Keep pushing — steady progress";
+    if (p >= 0.85) return "Logged progress: near target";
+    if (p <= 0.35) return "Logged progress: early stage";
+    return "Logged progress: in progress";
   }
 
   const personalisedInsights = useMemo(() => {
@@ -1127,54 +1112,45 @@ export default function PlanHistoryViewScreen() {
     const pct = clamp01(completed / planned);
     const pctLabel = `${Math.round(pct * 100)}%`;
 
-    // Verdict copy — short and punchy
-    let verdictTitle = "Consistency";
-    let verdictBody = `${completed}/${planned} sessions (${pctLabel})`;
-
-    if (pct >= 0.9)
-      verdictBody = `${completed}/${planned} sessions (${pctLabel}) — elite consistency`;
-    else if (pct >= 0.75)
-      verdictBody = `${completed}/${planned} sessions (${pctLabel}) — strong`;
-    else if (pct >= 0.5)
-      verdictBody = `${completed}/${planned} sessions (${pctLabel}) — decent, room to improve`;
-    else
-      verdictBody = `${completed}/${planned} sessions (${pctLabel}) — next plan should be easier to stick to`;
+// Neutral logged-data copy for App Review 1.4.1 safety.
+    let verdictTitle = "Logged sessions";
+    let verdictBody = `${completed}/${planned} planned sessions logged (${pctLabel})`;
 
     const keep =
       stats.workoutCounts?.most && stats.workoutCounts.most.count > 0
-        ? `Keep: ${stats.workoutCounts.most.title} (${stats.workoutCounts.most.count}×)`
+        ? `Most logged workout: ${stats.workoutCounts.most.title} (${stats.workoutCounts.most.count}×)`
         : null;
 
     const fix = stats.workoutCounts?.least
-      ? `Fix: ${stats.workoutCounts.least.title} (${stats.workoutCounts.least.count}×) — shorten it or move it earlier in the week`
+      ? `Least logged workout: ${stats.workoutCounts.least.title} (${stats.workoutCounts.least.count}×)`
       : null;
 
     // ---- B (2): biggest session implication ----
     const biggest =
       stats.biggestSession && stats.biggestSession.volume > 0
         ? {
-            title: `Biggest session: ${stats.biggestSession.title}`,
+            title: `Largest logged session: ${stats.biggestSession.title}`,
             body: `${Math.round(
               stats.biggestSession.volume
-            )} kg volume — this is where you pushed hardest, ensure this continues.`,
+            )} kg logged volume in this session.`,
           }
         : null;
 
     // ---- C (3): goal extremes + suggestion ----
     const { closest, furthest } = pickGoalExtremes(stats.goalSummaries);
     const closestLine = closest
-      ? `Closest goal: ${closest.name} (${Math.round(
+      ? `Nearest goal by logged progress: ${closest.name} (${Math.round(
           clamp01(closest.progress) * 100
         )}%)`
       : null;
 
     const furthestLine = furthest
-      ? `Furthest goal: ${furthest.name} (${Math.round(
+      ? `Lowest goal by logged progress: ${furthest.name} (${Math.round(
           clamp01(furthest.progress) * 100
         )}%)`
       : null;
 
-    const tweakLine = suggestGoalTweakLabel(closest ?? furthest);
+    const progressLine = getGoalProgressLabel(closest ?? furthest);
 
     // We’ll return three grouped “rows” so the UI can render cleanly.
     return {
@@ -1188,7 +1164,7 @@ export default function PlanHistoryViewScreen() {
       c: {
         closestLine,
         furthestLine,
-        tweakLine,
+        progressLine,
       },
     };
   }, [stats]);
@@ -1245,11 +1221,10 @@ export default function PlanHistoryViewScreen() {
               {weekCompleteActive ? (
                 <View style={styles.restBox}>
                   <Text style={styles.restTitle}>
-                    You’ve completed your workouts for the week
+                    Weekly target logged
                   </Text>
                   <Text style={styles.muted}>
-                    Time to rest and recover — come back fresh for the next
-                    week.
+                    Your weekly target has been logged for this plan.
                   </Text>
                 </View>
               ) : null}
@@ -1264,7 +1239,7 @@ export default function PlanHistoryViewScreen() {
               <View style={{ gap: layout.space.sm }}>
                 <Text style={styles.sectionLabel}>Where you’re at</Text>
                 <Text style={styles.muted}>
-                  Keep logging sessions — this screen becomes the full breakdown
+                  Keep logging sessions. This screen will show a fuller summary
                   once the plan is completed.
                 </Text>
 
@@ -1451,10 +1426,10 @@ export default function PlanHistoryViewScreen() {
 
             <Card>
               <View style={{ gap: layout.space.sm }}>
-                <Text style={styles.sectionLabel}>You improved most in</Text>
+                <Text style={styles.sectionLabel}>Logged changes</Text>
 
                 <View style={styles.block}>
-                  <Text style={styles.kpiLabel}>Strength</Text>
+                  <Text style={styles.kpiLabel}>Load change</Text>
                   <Text style={styles.bigValue} numberOfLines={2}>
                     {stats?.mostImproved?.name ?? "—"}
                   </Text>
@@ -1471,7 +1446,7 @@ export default function PlanHistoryViewScreen() {
                         )} (+${Math.round(
                           (stats.mostImproved.pct ?? 0) * 100
                         )}%)`
-                      : "No improvement data yet."}
+                      : "No change data yet."}
                   </Text>
                 </View>
 
@@ -1515,7 +1490,7 @@ export default function PlanHistoryViewScreen() {
                     / session
                   </Text>
                   <Text style={styles.muted}>
-                    Biggest session:{" "}
+                    Largest logged session:{" "}
                     <Text style={styles.strong}>
                       {stats?.biggestSession
                         ? `${stats.biggestSession.title} · ${Math.round(
@@ -1620,13 +1595,13 @@ export default function PlanHistoryViewScreen() {
 
             <Card>
               <View style={{ gap: layout.space.sm }}>
-                <Text style={styles.sectionLabel}>Personalised insights</Text>
+                <Text style={styles.sectionLabel}>Plan summary</Text>
 
                 {!personalisedInsights ? (
-                  <Text style={styles.muted}>No insights available yet.</Text>
+                  <Text style={styles.muted}>No summary available yet.</Text>
                 ) : (
                   <View style={{ gap: layout.space.sm }}>
-                    {/* A (3): Consistency verdict + Keep + Fix */}
+                    {/* A: Logged session count + most/least logged workouts */}
                     <View style={styles.block}>
                       <Text style={styles.rowTitle}>Consistency</Text>
                       <Text style={styles.muted}>
@@ -1650,7 +1625,7 @@ export default function PlanHistoryViewScreen() {
                       ) : null}
                     </View>
 
-                    {/* B (2): Biggest session + implication */}
+                    {/* B: Largest logged session volume */}
                     {personalisedInsights.b ? (
                       <View style={styles.block}>
                         <Text style={styles.rowTitle}>
@@ -1662,7 +1637,7 @@ export default function PlanHistoryViewScreen() {
                       </View>
                     ) : null}
 
-                    {/* C (3): Closest + Furthest + Suggested tweak */}
+                    {/* C: Closest + furthest logged goal progress */}
                     <View style={styles.block}>
                       <Text style={styles.rowTitle}>Goals</Text>
 
@@ -1686,10 +1661,10 @@ export default function PlanHistoryViewScreen() {
                         </Text>
                       ) : null}
 
-                      {personalisedInsights.c.tweakLine ? (
+                      {personalisedInsights.c.progressLine ? (
                         <View style={{ marginTop: 4 }}>
                           <Pill
-                            label={personalisedInsights.c.tweakLine}
+                            label={personalisedInsights.c.progressLine}
                             tone="neutral"
                           />
                         </View>
@@ -1700,8 +1675,8 @@ export default function PlanHistoryViewScreen() {
                     {showStartNewPlanCta ? (
                       <View style={{ marginTop: 2 }}>
                         <Text style={styles.muted}>
-                          Use these insights to make your next plan easier to
-                          stick to.
+                          This summary is based only on workouts logged in this
+                          plan.
                         </Text>
                       </View>
                     ) : null}

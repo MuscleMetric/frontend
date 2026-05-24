@@ -10,7 +10,7 @@ type Tone = "success" | "warning" | "neutral";
 
 function pctChange(curr: number, prev: number) {
   if (!isFinite(curr) || !isFinite(prev) || prev <= 0) return null;
-  return Math.round(((curr - prev) / prev) * 1000) / 10; // 1dp
+  return Math.round(((curr - prev) / prev) * 1000) / 10;
 }
 
 function formatDeltaInt(curr: number, prev: number) {
@@ -21,57 +21,75 @@ function formatDeltaInt(curr: number, prev: number) {
 }
 
 function workoutsBand(n: number): { label: string; tone: Tone; hint: string } {
-  if (n >= 13)
+  if (n >= 13) {
     return {
-      label: "Elite month",
+      label: "High log count",
       tone: "success",
-      hint: "You’re training very consistently.",
+      hint: "This month includes a high number of logged workouts.",
     };
-  if (n >= 8)
+  }
+
+  if (n >= 8) {
     return {
-      label: "Strong",
+      label: "Active month",
       tone: "success",
-      hint: "This is a great pace for progress.",
+      hint: "This month includes regular logged workouts.",
     };
-  if (n >= 4)
+  }
+
+  if (n >= 4) {
     return {
-      label: "Building",
+      label: "Logged activity",
       tone: "warning",
-      hint: "Good base — aim for 2–3/week.",
+      hint: "This month includes several logged workouts.",
     };
-  if (n >= 1)
+  }
+
+  if (n >= 1) {
     return {
-      label: "Starting",
+      label: "Started logging",
       tone: "neutral",
-      hint: "One more session this week makes it real.",
+      hint: "This month includes your first logged workouts.",
     };
+  }
+
   return {
     label: "No data yet",
     tone: "neutral",
-    hint: "Log your first workout to start tracking.",
+    hint: "Log a workout to start building your progress summary.",
   };
 }
 
-function intensityBand(avgVol: number): { label: string; tone: Tone; hint: string } {
-  if (avgVol >= 10000)
+function volumeBand(avgVol: number): { label: string; tone: Tone; hint: string } {
+  if (avgVol >= 10000) {
     return {
-      label: "High intensity",
+      label: "Higher logged volume",
       tone: "success",
-      hint: "You’re pushing hard per session.",
+      hint: "Average logged volume per workout is higher in this period.",
     };
-  if (avgVol >= 5000)
+  }
+
+  if (avgVol >= 5000) {
     return {
-      label: "Moderate intensity",
+      label: "Moderate logged volume",
       tone: "neutral",
-      hint: "Solid workload per workout.",
+      hint: "Average logged volume per workout is in the middle range.",
     };
-  if (avgVol > 0)
+  }
+
+  if (avgVol > 0) {
     return {
-      label: "Light intensity",
+      label: "Lower logged volume",
       tone: "warning",
-      hint: "Consider adding a set or two on key lifts.",
+      hint: "Average logged volume per workout is lower in this period.",
     };
-  return { label: "—", tone: "neutral", hint: "" };
+  }
+
+  return {
+    label: "No volume data",
+    tone: "neutral",
+    hint: "Volume appears after logged weighted sets.",
+  };
 }
 
 function toneChipStyle(colors: any, tone: Tone) {
@@ -89,6 +107,7 @@ function toneChipStyle(colors: any, tone: Tone) {
       borderColor: (colors.success ?? colors.primary) + "55",
     };
   }
+
   if (tone === "warning") {
     return {
       ...base,
@@ -96,6 +115,7 @@ function toneChipStyle(colors: any, tone: Tone) {
       borderColor: (colors.warning ?? colors.primary) + "55",
     };
   }
+
   return {
     ...base,
     backgroundColor: colors.surface,
@@ -109,6 +129,27 @@ function toneChipText(colors: any, tone: Tone) {
   return colors.textMuted;
 }
 
+function formatPercentDelta(value: number | null) {
+  if (value == null || !Number.isFinite(value)) return "—";
+  return `${value > 0 ? "+" : ""}${value}%`;
+}
+
+function safeHeadline(momentum: ProgressOverview["momentum"]) {
+  if (momentum.status === "new_user") {
+    return "Your progress summary starts here";
+  }
+
+  if (momentum.status === "returning") {
+    return "Your recent workout summary";
+  }
+
+  if (momentum.status === "on_fire") {
+    return "Your recent logged activity";
+  }
+
+  return "Your progress overview";
+}
+
 export default function MomentumHeroSection({
   momentum,
 }: {
@@ -118,12 +159,12 @@ export default function MomentumHeroSection({
 
   const badge =
     momentum.status === "on_fire"
-      ? "ON FIRE"
+      ? "ACTIVE PERIOD"
       : momentum.status === "returning"
-      ? "WELCOME BACK"
-      : momentum.status === "new_user"
-      ? "GET STARTED"
-      : "STEADY";
+        ? "RECENT RETURN"
+        : momentum.status === "new_user"
+          ? "GET STARTED"
+          : "SUMMARY";
 
   const w = momentum.workouts_30d ?? 0;
   const wPrev = momentum.workouts_prev_30d ?? 0;
@@ -136,11 +177,10 @@ export default function MomentumHeroSection({
 
   const workouts = useMemo(() => workoutsBand(w), [w]);
   const avgVol = w > 0 ? vol / w : 0;
-  const intensity = useMemo(() => intensityBand(avgVol), [avgVol]);
+  const volume = useMemo(() => volumeBand(avgVol), [avgVol]);
 
   return (
     <ProgressSection>
-      {/* Top row */}
       <View
         style={{
           flexDirection: "row",
@@ -150,7 +190,6 @@ export default function MomentumHeroSection({
       >
         <Pill label={badge} />
 
-        {/* ✅ custom chip (no Pill variant typing issues) */}
         <View style={toneChipStyle(colors, workouts.tone)}>
           <Text
             style={{
@@ -165,7 +204,6 @@ export default function MomentumHeroSection({
         </View>
       </View>
 
-      {/* Headline */}
       <Text
         style={{
           color: colors.text,
@@ -175,42 +213,39 @@ export default function MomentumHeroSection({
           marginTop: 10,
         }}
       >
-        {momentum.headline}
+        {safeHeadline(momentum)}
       </Text>
 
-      {/* Context */}
       <Text style={{ color: colors.textMuted, marginTop: 4 }}>
         {workouts.hint}
       </Text>
 
-      {/* KPI grid */}
       <View style={{ flexDirection: "row", gap: 10, marginTop: 12 }}>
         <Kpi
-          title="Workouts (30d)"
+          title="Workouts logged (30d)"
           value={`${w}`}
           sub={
             wPrev > 0
-              ? `${wDelta ?? "—"} (${wPct}%) vs prev 30d`
-              : "Baseline month"
+              ? `${wDelta ?? "—"} (${formatPercentDelta(wPct)}) vs previous 30d`
+              : "First 30-day comparison period"
           }
-          meaning="Consistency predicts progress more than any single workout."
+          meaning="Shows the number of workouts logged in this period."
           tone={workouts.tone}
         />
 
         <Kpi
-          title="Volume (30d)"
+          title="Volume logged (30d)"
           value={formatKg(vol)}
           sub={
             volPrev > 0
-              ? `${volPct == null ? "—" : `${volPct > 0 ? "+" : ""}${volPct}%`} vs prev 30d`
-              : "Baseline month"
+              ? `${formatPercentDelta(volPct)} vs previous 30d`
+              : "First 30-day comparison period"
           }
-          meaning="Volume = total work (weight × reps)."
-          tone={intensity.tone}
+          meaning="Volume is calculated from logged weight and reps."
+          tone={volume.tone}
         />
       </View>
 
-      {/* Supporting metric: per-workout intensity */}
       <View
         style={{
           marginTop: 10,
@@ -224,15 +259,14 @@ export default function MomentumHeroSection({
           gap: 10,
         }}
       >
-        {/* ✅ replace zap with flash (more likely in your icon set) */}
         <Icon name="flash" size={18} color={colors.text} />
 
         <View style={{ flex: 1 }}>
           <Text style={{ color: colors.text, fontWeight: "900" }}>
-            {intensity.label}
+            {volume.label}
           </Text>
           <Text style={{ color: colors.textMuted }}>
-            Avg per workout: {formatKg(avgVol)} · {intensity.hint}
+            Avg logged volume per workout: {formatKg(avgVol)} · {volume.hint}
           </Text>
         </View>
       </View>
@@ -259,8 +293,8 @@ function Kpi({
     tone === "success"
       ? colors.success ?? colors.primary
       : tone === "warning"
-      ? colors.warning ?? colors.primary
-      : colors.border;
+        ? colors.warning ?? colors.primary
+        : colors.border;
 
   return (
     <View

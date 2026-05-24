@@ -36,7 +36,7 @@ export function ConsistencyStep({
   errors: ErrorMap;
   onChange: <K extends keyof OnboardingDraft>(
     key: K,
-    value: OnboardingDraft[K]
+    value: OnboardingDraft[K],
   ) => void;
   onFinish: () => void;
   loading?: boolean;
@@ -82,13 +82,17 @@ export function ConsistencyStep({
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          <Stepper label={stepLabel} progress={progress} rightLabel={rightLabel} />
+          <Stepper
+            label={stepLabel}
+            progress={progress}
+            rightLabel={rightLabel}
+          />
 
           <View style={styles.header}>
             <Text style={styles.h1}>Define your consistency</Text>
             <Text style={styles.sub}>
-              Set your weekly goals. We'll use these to calibrate training intensity
-              and reminders.
+              Set your weekly targets. We'll use these for reminders and
+              progress summaries.
             </Text>
           </View>
 
@@ -96,11 +100,16 @@ export function ConsistencyStep({
           <View style={styles.rowHeader}>
             <Text style={styles.rowTitle}>Workouts per week</Text>
             <View style={styles.badge}>
-              <Text style={styles.badgeText}>RECOMMENDED</Text>
+              <Text style={styles.badgeText}>COMMON</Text>
             </View>
           </View>
 
-          <View style={[styles.weekPill, errors.workoutsPerWeek && styles.errorBorder]}>
+          <View
+            style={[
+              styles.weekPill,
+              errors.workoutsPerWeek && styles.errorBorder,
+            ]}
+          >
             {workoutChoices.map((n) => {
               const active = draft.workoutsPerWeek === n;
               return (
@@ -109,7 +118,9 @@ export function ConsistencyStep({
                   onPress={() => onChange("workoutsPerWeek", n)}
                   style={[styles.weekItem, active && styles.weekItemActive]}
                 >
-                  <Text style={[styles.weekText, active && styles.weekTextActive]}>
+                  <Text
+                    style={[styles.weekText, active && styles.weekTextActive]}
+                  >
                     {n}
                   </Text>
                 </Pressable>
@@ -130,25 +141,49 @@ export function ConsistencyStep({
           </View>
 
           <View style={styles.stepsGrid}>
-            <StepTile label="8k" sub="steps" active={stepsGoal === 8000} onPress={() => setSteps(8000)} />
-            <StepTile label="10k" sub="steps" active={stepsGoal === 10000} onPress={() => setSteps(10000)} />
-            <StepTile label="12k" sub="steps" active={stepsGoal === 12000} onPress={() => setSteps(12000)} />
             <StepTile
-              label={isPresetSteps ? "Custom" : `${Math.round(stepsGoal / 100) / 10}k`}
+              label="8k"
+              sub="steps"
+              active={stepsGoal === 8000}
+              onPress={() => setSteps(8000)}
+            />
+            <StepTile
+              label="10k"
+              sub="steps"
+              active={stepsGoal === 10000}
+              onPress={() => setSteps(10000)}
+            />
+            <StepTile
+              label="12k"
+              sub="steps"
+              active={stepsGoal === 12000}
+              onPress={() => setSteps(12000)}
+            />
+            <StepTile
+              label={
+                isPresetSteps
+                  ? "Custom"
+                  : `${Math.round(stepsGoal / 100) / 10}k`
+              }
               sub={isPresetSteps ? "" : "custom"}
               active={!isPresetSteps}
               onPress={openCustom}
             />
           </View>
 
-          {errors.stepsGoal ? <Text style={styles.error}>{errors.stepsGoal}</Text> : null}
+          {errors.stepsGoal ? (
+            <Text style={styles.error}>{errors.stepsGoal}</Text>
+          ) : null}
 
           <View style={styles.infoCard}>
             <View style={styles.infoIcon}>
-              <Text style={{ color: colors.primary, fontWeight: "900" }}>i</Text>
+              <Text style={{ color: colors.primary, fontWeight: "900" }}>
+                i
+              </Text>
             </View>
             <Text style={styles.infoText}>
-              Used for reminders and weekly targets. You can adjust these anytime in settings.
+              Used for reminders and weekly targets. You can adjust these
+              anytime in settings.
             </Text>
           </View>
         </ScrollView>
@@ -168,7 +203,10 @@ export function ConsistencyStep({
         visible={customOpen}
         onRequestClose={() => setCustomOpen(false)}
       >
-        <Pressable style={styles.modalBackdrop} onPress={() => setCustomOpen(false)} />
+        <Pressable
+          style={styles.modalBackdrop}
+          onPress={() => setCustomOpen(false)}
+        />
 
         <KeyboardAvoidingView
           behavior={Platform.select({ ios: "padding", android: undefined })}
@@ -176,7 +214,9 @@ export function ConsistencyStep({
         >
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>Custom daily steps</Text>
-            <Text style={styles.modalSub}>Pick a target between 1,000 and 50,000.</Text>
+            <Text style={styles.modalSub}>
+              Enter a daily step target between 1,000 and 50,000.
+            </Text>
 
             <TextInput
               value={customText}
@@ -195,13 +235,18 @@ export function ConsistencyStep({
                   onPress={() => setCustomText(String(n))}
                   style={styles.quickChip}
                 >
-                  <Text style={styles.quickChipText}>{(n / 1000).toFixed(0)}k</Text>
+                  <Text style={styles.quickChipText}>
+                    {(n / 1000).toFixed(0)}k
+                  </Text>
                 </Pressable>
               ))}
             </View>
 
             <View style={styles.modalActions}>
-              <Pressable onPress={() => setCustomOpen(false)} style={styles.modalBtnGhost}>
+              <Pressable
+                onPress={() => setCustomOpen(false)}
+                style={styles.modalBtnGhost}
+              >
                 <Text style={styles.modalBtnGhostText}>Cancel</Text>
               </Pressable>
 
@@ -236,11 +281,15 @@ function StepTile({
       style={[styles.stepTile, active && styles.stepTileActive]}
     >
       <View style={{ flexDirection: "row", alignItems: "baseline", gap: 6 }}>
-        <Text style={[styles.stepTileMain, active && styles.stepTileMainActive]}>
+        <Text
+          style={[styles.stepTileMain, active && styles.stepTileMainActive]}
+        >
           {label}
         </Text>
         {sub ? (
-          <Text style={[styles.stepTileSub, active && styles.stepTileSubActive]}>
+          <Text
+            style={[styles.stepTileSub, active && styles.stepTileSubActive]}
+          >
             {sub}
           </Text>
         ) : null}
@@ -377,7 +426,12 @@ const makeStyles = (colors: any) =>
       justifyContent: "center",
       marginTop: 2,
     },
-    infoText: { flex: 1, color: colors.textMuted, fontWeight: "700", lineHeight: 18 },
+    infoText: {
+      flex: 1,
+      color: colors.textMuted,
+      fontWeight: "700",
+      lineHeight: 18,
+    },
 
     error: { marginTop: 10, color: "#ef4444", fontSize: 12, fontWeight: "800" },
     errorBorder: { borderColor: "rgba(239,68,68,0.7)" },

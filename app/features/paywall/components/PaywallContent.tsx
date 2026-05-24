@@ -133,7 +133,7 @@ function getContent(reason: PaywallReason): PaywallContentModel {
           },
           {
             icon: Sparkles,
-            title: "Train with more intent",
+            title: "View more detailed workout breakdowns",
             description:
               "Keep more of your training focused around real outcomes, not guesswork.",
           },
@@ -181,7 +181,7 @@ function getContent(reason: PaywallReason): PaywallContentModel {
         eyebrow: "MuscleMetric Pro",
         title: "Unlock Advanced Analytics",
         subtitle:
-          "Track your progress, improve faster, and train smarter with premium insights.",
+          "Track your progress, review more training trends, and organise your training setup with premium insights.",
         metricLabel: "Volume (kg)",
         metricValue: "14,250",
         benefits: [

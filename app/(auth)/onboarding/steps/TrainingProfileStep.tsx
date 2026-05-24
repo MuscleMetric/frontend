@@ -26,7 +26,7 @@ export function TrainingProfileStep({
   draft: OnboardingDraft;
   onChange: <K extends keyof OnboardingDraft>(
     key: K,
-    value: OnboardingDraft[K]
+    value: OnboardingDraft[K],
   ) => void;
   onNext: () => void;
   stepLabel?: string;
@@ -87,7 +87,8 @@ export function TrainingProfileStep({
           <View style={styles.header}>
             <Text style={styles.h1}>Training Profile</Text>
             <Text style={styles.sub}>
-              Help us customize your workout intensity and volume.
+              Help us organise your workout experience based on your training
+              background.
             </Text>
           </View>
 

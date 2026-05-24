@@ -205,17 +205,17 @@ export function PrimaryGoalModal({
     {
       key: "get_stronger",
       title: "Get Stronger",
-      desc: "Prioritize strength and progressive overload.",
+      desc: "Focus on tracking strength-based workouts.",
     },
     {
       key: "build_muscle",
       title: "Build Muscle",
-      desc: "Hypertrophy focused training and volume.",
+      desc: "Focus on tracking muscle-building workouts.",
     },
     {
       key: "lose_fat",
       title: "Lose Fat",
-      desc: "Support fat loss with training consistency.",
+      desc: "Focus on tracking consistent workouts over time.",
     },
     {
       key: "improve_endurance",
@@ -245,7 +245,7 @@ export function PrimaryGoalModal({
             <View style={styles.header}>
               <Text style={styles.headerTitle}>Primary Goal</Text>
               <Text style={styles.subtitle}>
-                Used across plans, insights, and coaching.
+                Used to organise your plans and progress summaries.
               </Text>
             </View>
 

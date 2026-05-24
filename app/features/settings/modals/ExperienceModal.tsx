@@ -205,12 +205,12 @@ export function ExperienceModal({
     {
       key: "intermediate",
       title: "Intermediate",
-      desc: "Consistent training, building strength and volume.",
+      desc: "Consistent training with more logged workout history.",
     },
     {
       key: "advanced",
       title: "Advanced",
-      desc: "Highly consistent, strong technique and progression.",
+      desc: "Regular training with detailed workout tracking experience.",
     },
   ];
 
@@ -230,7 +230,7 @@ export function ExperienceModal({
             <View style={styles.header}>
               <Text style={styles.title}>Experience Level</Text>
               <Text style={styles.subtitle}>
-                Used to tailor plans and recommendations.
+                Used to organise your app experience and plan setup.
               </Text>
             </View>
 
