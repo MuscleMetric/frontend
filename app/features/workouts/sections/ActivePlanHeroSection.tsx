@@ -95,7 +95,7 @@ export function ActivePlanHeroSection({
                 marginBottom: 6,
               }}
             >
-              You’ve completed your workouts for the week
+              Weekly plan complete
             </Text>
 
             <Text
@@ -106,7 +106,7 @@ export function ActivePlanHeroSection({
                 color: colors.textMuted,
               }}
             >
-              It’s time to rest and recover — come back fresh for the next week.
+              All workouts currently scheduled for this week have been logged.
             </Text>
           </View>
         </View>

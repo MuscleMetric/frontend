@@ -3,20 +3,8 @@ import { View, Text, StyleSheet, Pressable } from "react-native";
 import { router } from "expo-router";
 
 import { useAppTheme } from "@/lib/useAppTheme";
-import { Card, Pill, MiniRing } from "@/ui";
+import { Card, MiniRing } from "@/ui";
 import type { ProfileOverview } from "../data/profileTypes";
-
-function trackLabel(pct: number) {
-  if (pct >= 70) return "On Track";
-  if (pct >= 40) return "Catch Up";
-  return "Behind";
-}
-
-function trackTone(pct: number): "success" | "warning" | "danger" | "neutral" {
-  if (pct >= 70) return "success";
-  if (pct >= 40) return "warning";
-  return "danger";
-}
 
 export default function ActivePlanCard({ data }: { data: ProfileOverview }) {
   const { colors, typography, layout } = useAppTheme();
@@ -40,9 +28,6 @@ export default function ActivePlanCard({ data }: { data: ProfileOverview }) {
 
   const weeksTotal = plan.weeks_total ?? null;
   const weekIndex = plan.week_index ?? null;
-
-  const label = trackLabel(weeklyPct);
-  const tone = trackTone(weeklyPct);
 
   const styles = useMemo(
     () =>

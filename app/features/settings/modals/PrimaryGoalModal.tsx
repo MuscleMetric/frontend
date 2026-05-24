@@ -220,12 +220,12 @@ export function PrimaryGoalModal({
     {
       key: "improve_endurance",
       title: "Improve Endurance",
-      desc: "Performance and conditioning focus.",
+      desc: "Track endurance and conditioning-style workouts.",
     },
     {
       key: "general_fitness",
       title: "General Fitness",
-      desc: "Balanced approach for overall health.",
+      desc: "Track a mix of workout types and activity summaries.",
     },
   ];
 

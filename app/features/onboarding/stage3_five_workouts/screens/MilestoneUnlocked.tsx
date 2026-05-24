@@ -16,17 +16,19 @@ export default function MilestoneUnlocked({
   const { colors, typography, layout } = useAppTheme();
   const styles = useMemo(
     () => makeStyles(colors, typography, layout),
-    [colors, typography, layout]
+    [colors, typography, layout],
   );
 
   // These should already be nicely formatted by the rpc → ui mapper
   const workoutsValue = ui.workoutsTotalLabel || "5";
 
-  // Use the existing ui copy you already generate
-  // Example: "You improved your estimated strength by 12%."
-  const highlight = ui.heroStatLabel || "You improved your estimated strength by 12%.";
+  const highlight =
+    ui.heroStatLabel ||
+    "Your logged workout history now includes estimated strength summaries.";
+
   const supporting =
-    ui.heroStatSub || "You’ve built enough history to unlock advanced insights.";
+    ui.heroStatSub ||
+    "You’ve logged enough workouts to view more progress summaries.";
 
   return (
     <View style={styles.page}>
@@ -36,7 +38,7 @@ export default function MilestoneUnlocked({
 
       <MilestoneRing value={workoutsValue} label="WORKOUTS" />
 
-      <Text style={styles.h1}>You’ve built{"\n"}real momentum.</Text>
+      <Text style={styles.h1}>Your workout{"\n"}history is growing.</Text>
 
       <View style={{ height: layout.space.lg }} />
 

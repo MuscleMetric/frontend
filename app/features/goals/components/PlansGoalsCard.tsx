@@ -9,7 +9,11 @@ import {
 } from "react-native";
 import { router } from "expo-router";
 
-import { usePlanGoals, type GoalMetric, type GoalRow } from "../hooks/usePlanGoals";
+import {
+  usePlanGoals,
+  type GoalMetric,
+  type GoalRow,
+} from "../hooks/usePlanGoals";
 import PlanGoalsGraph from "./PlanGoalsGraph";
 import { useAppTheme } from "../../../../lib/useAppTheme";
 
@@ -92,22 +96,35 @@ function goalShortLabel(g: GoalRow) {
   return g.metrics.map((m) => METRIC_LABEL[m]).join(" + ");
 }
 
-function statusFromPoint(point: {
-  goalValue: number;
-  actualValue?: number | null;
-} | null) {
+function statusFromPoint(
+  point: {
+    goalValue: number;
+    actualValue?: number | null;
+  } | null,
+) {
   if (!point || point.actualValue == null) return null;
 
   const diff = point.actualValue - point.goalValue;
 
-  if (diff >= 5) return { label: "Ahead", detail: `+${Math.round(diff)}% ahead` };
-  if (diff <= -5) return { label: "Behind", detail: `${Math.abs(Math.round(diff))}% behind` };
-  return { label: "On track", detail: "Close to expected progress" };
+  if (diff >= 5)
+    return {
+      label: "Above line",
+      detail: `+${Math.round(diff)}% vs plan line`,
+    };
+  if (diff <= -5)
+    return {
+      label: "Below line",
+      detail: `${Math.abs(Math.round(diff))}% vs plan line`,
+    };
+  return { label: "Near line", detail: "Close to the plan line" };
 }
 
 export default function PlanGoalsCard({ userId }: Props) {
   const { colors, typography } = useAppTheme();
-  const styles = useMemo(() => makeStyles(colors, typography), [colors, typography]);
+  const styles = useMemo(
+    () => makeStyles(colors, typography),
+    [colors, typography],
+  );
 
   const { loading, error, plan, planTitle, goals } = usePlanGoals(userId);
 
@@ -234,7 +251,9 @@ export default function PlanGoalsCard({ userId }: Props) {
                 <Text style={styles.focusTitle}>
                   {selectedGoal.exercises?.name ?? "Goal exercise"}
                 </Text>
-                <Text style={styles.focusMeta}>{goalSummary(selectedGoal)}</Text>
+                <Text style={styles.focusMeta}>
+                  {goalSummary(selectedGoal)}
+                </Text>
               </View>
 
               <View style={styles.focusPill}>
@@ -270,83 +289,95 @@ export default function PlanGoalsCard({ userId }: Props) {
                   }}
                 />
 
-                {selectedPoint && viewMode === "twoWeeks" ? (
-                  (() => {
-                    const isFuture =
-                      selectedPoint.date.getTime() > now.getTime() + 60 * 1000;
+                {selectedPoint && viewMode === "twoWeeks"
+                  ? (() => {
+                      const isFuture =
+                        selectedPoint.date.getTime() >
+                        now.getTime() + 60 * 1000;
 
-                    if (isFuture) {
-                      return (
-                        <View style={[styles.pointBubble, styles.pointBubbleFuture]}>
-                          <View style={styles.pointBubbleHeaderRow}>
-                            <Text style={styles.pointBubbleTitle}>
-                              {selectedPoint.workoutTitle || "Workout"}
-                            </Text>
+                      if (isFuture) {
+                        return (
+                          <View
+                            style={[
+                              styles.pointBubble,
+                              styles.pointBubbleFuture,
+                            ]}
+                          >
+                            <View style={styles.pointBubbleHeaderRow}>
+                              <Text style={styles.pointBubbleTitle}>
+                                {selectedPoint.workoutTitle || "Workout"}
+                              </Text>
 
-                            <View style={styles.plannedPill}>
-                              <Text style={styles.plannedPillText}>Planned</Text>
+                              <View style={styles.plannedPill}>
+                                <Text style={styles.plannedPillText}>
+                                  Planned
+                                </Text>
+                              </View>
                             </View>
-                          </View>
 
-                          <Text style={styles.pointBubbleDate}>
-                            {selectedPoint.date.toLocaleDateString("en-US", {
-                              month: "short",
-                              day: "numeric",
-                            })}
-                          </Text>
-
-                          <Text style={styles.pointBubbleGoal}>
-                            Expected progress: {Math.round(selectedPoint.goalValue)}%
-                          </Text>
-                        </View>
-                      );
-                    }
-
-                    return (
-                      <View style={styles.pointBubble}>
-                        <View style={styles.pointBubbleRow}>
-                          <View style={styles.pointBubbleLeft}>
-                            <Text style={styles.pointBubbleTitle}>
-                              {selectedPoint.workoutTitle || "Workout"}
-                            </Text>
                             <Text style={styles.pointBubbleDate}>
                               {selectedPoint.date.toLocaleDateString("en-US", {
                                 month: "short",
                                 day: "numeric",
                               })}
                             </Text>
-                          </View>
 
-                          <View style={styles.pointBubbleRight}>
-                            <Text style={styles.pointBubbleActual}>
-                              {selectedPoint.actualValue != null
-                                ? `${Math.round(selectedPoint.actualValue)}%`
-                                : "—"}
-                            </Text>
                             <Text style={styles.pointBubbleGoal}>
-                              Expected: {Math.round(selectedPoint.goalValue)}%
+                              Plan line: {Math.round(selectedPoint.goalValue)}%
                             </Text>
                           </View>
-                        </View>
+                        );
+                      }
 
-                        {selectedStatus ? (
-                          <View style={styles.statusRow}>
-                            <Text style={styles.statusLabel}>
-                              {selectedStatus.label}
-                            </Text>
-                            <Text style={styles.statusDetail}>
-                              {selectedStatus.detail}
-                            </Text>
+                      return (
+                        <View style={styles.pointBubble}>
+                          <View style={styles.pointBubbleRow}>
+                            <View style={styles.pointBubbleLeft}>
+                              <Text style={styles.pointBubbleTitle}>
+                                {selectedPoint.workoutTitle || "Workout"}
+                              </Text>
+                              <Text style={styles.pointBubbleDate}>
+                                {selectedPoint.date.toLocaleDateString(
+                                  "en-US",
+                                  {
+                                    month: "short",
+                                    day: "numeric",
+                                  },
+                                )}
+                              </Text>
+                            </View>
+
+                            <View style={styles.pointBubbleRight}>
+                              <Text style={styles.pointBubbleActual}>
+                                {selectedPoint.actualValue != null
+                                  ? `${Math.round(selectedPoint.actualValue)}%`
+                                  : "—"}
+                              </Text>
+                              <Text style={styles.pointBubbleGoal}>
+                                Plan line: {Math.round(selectedPoint.goalValue)}
+                                %
+                              </Text>
+                            </View>
                           </View>
-                        ) : null}
-                      </View>
-                    );
-                  })()
-                ) : null}
+
+                          {selectedStatus ? (
+                            <View style={styles.statusRow}>
+                              <Text style={styles.statusLabel}>
+                                {selectedStatus.label}
+                              </Text>
+                              <Text style={styles.statusDetail}>
+                                {selectedStatus.detail}
+                              </Text>
+                            </View>
+                          ) : null}
+                        </View>
+                      );
+                    })()
+                  : null}
               </>
             ) : (
               <Text style={styles.subtle}>
-                Select a goal below to view the trajectory.
+                Select a goal below to view the goal chart.
               </Text>
             )}
           </View>

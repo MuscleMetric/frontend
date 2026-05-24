@@ -31,7 +31,7 @@ export function DeepAnalyticsHeader({ payload }: Props) {
           fontSize: 14,
         }}
       >
-        Deep analytics · Estimated strength, volume and set trends
+        Logged trends · Estimated strength, volume and set summaries
       </Text>
     </View>
   );

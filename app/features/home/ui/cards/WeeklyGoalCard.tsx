@@ -39,7 +39,7 @@ export function WeeklyGoalCard({
         fill: colors.success,
         tint: "rgba(34,197,94,0.14)",
         border: "rgba(34,197,94,0.25)",
-        label: "On fire",
+        label: "Complete",
       };
     }
     if (tone === "on_track") {
@@ -47,7 +47,7 @@ export function WeeklyGoalCard({
         fill: colors.primary,
         tint: "rgba(37,99,235,0.14)",
         border: "rgba(37,99,235,0.25)",
-        label: "On track",
+        label: "In Progress",
       };
     }
     // behind
@@ -55,14 +55,14 @@ export function WeeklyGoalCard({
       fill: colors.warning,
       tint: "rgba(245,158,11,0.14)",
       border: "rgba(245,158,11,0.25)",
-      label: "Catch up",
+      label: "Logged Activity",
     };
   }, [tone, colors]);
 
   const hint =
     target > 0
       ? `${pct}% of your weekly goal`
-      : "Set a weekly goal to track progress";
+      : "Set a weekly goal to show a weekly summary";
 
   return (
     <Card style={styles.card}>

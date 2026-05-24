@@ -1,11 +1,5 @@
 import React, { useMemo } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  Pressable,
-  ScrollView,
-} from "react-native";
+import { View, Text, StyleSheet, Pressable, ScrollView } from "react-native";
 import {
   TrendingUp,
   LineChart,
@@ -73,7 +67,7 @@ function getContent(reason: PaywallReason): PaywallContentModel {
         eyebrow: "MuscleMetric Pro",
         title: "Create More Workout Templates",
         subtitle:
-          "Save more workouts, build a bigger training library, and keep your programming organised.",
+          "Save more workouts, build a larger template library, and keep your workout setup organised.",
         metricLabel: "Template limit",
         metricValue: "5 → 15",
         benefits: [
@@ -81,25 +75,24 @@ function getContent(reason: PaywallReason): PaywallContentModel {
             icon: CalendarPlus,
             title: "Save more workout templates",
             description:
-              "Build a deeper library of workouts for different goals, splits, and training phases.",
+              "Build a larger library of workouts for different routines and plan setups.",
           },
           {
             icon: TrendingUp,
             title: "Keep long-term programming organised",
             description:
-              "Store more variations as your training evolves instead of deleting older templates.",
+              "Store more workout variations instead of deleting older templates.",
           },
           {
             icon: Target,
-            title: "Unlock more goals per plan",
-            description:
-              "Track more target lifts and training outcomes inside each plan.",
+            title: "Add more goals per plan",
+            description: "Add more goal fields inside each plan.",
           },
           {
             icon: Sparkles,
             title: "Access Pro planning tools",
             description:
-              "Get expanded planning limits and premium training surfaces as you grow.",
+              "Get expanded planning limits and more Pro app surfaces.",
           },
         ],
       };
@@ -109,7 +102,7 @@ function getContent(reason: PaywallReason): PaywallContentModel {
         eyebrow: "MuscleMetric Pro",
         title: "Track More Goals",
         subtitle:
-          "Set more goals inside each plan so your progress is clearer and your training stays focused.",
+          "Add more goals inside each plan so your logged progress is easier to review.",
         metricLabel: "Goals per plan",
         metricValue: "2 → 5",
         benefits: [
@@ -117,25 +110,25 @@ function getContent(reason: PaywallReason): PaywallContentModel {
             icon: Target,
             title: "Track more targets per plan",
             description:
-              "Set multiple exercise and performance goals without running into free limits.",
+              "Add multiple exercise, distance, time, or rep goals without running into free limits.",
           },
           {
             icon: TrendingUp,
             title: "Measure progress more clearly",
             description:
-              "Keep strength, volume, and milestone targets in one structured place.",
+              "Keep goal values and logged updates in one structured place.",
           },
           {
             icon: LineChart,
-            title: "Connect goals to deeper insights",
+            title: "Connect goals to more summaries",
             description:
-              "Use premium analytics to understand whether your plan is moving you forward.",
+              "Use Pro analytics to view more detailed plan and workout summaries.",
           },
           {
             icon: Sparkles,
             title: "View more detailed workout breakdowns",
             description:
-              "Keep more of your training focused around real outcomes, not guesswork.",
+              "Keep more goal records connected to your logged workouts.",
           },
         ],
       };
@@ -145,7 +138,7 @@ function getContent(reason: PaywallReason): PaywallContentModel {
         eyebrow: "MuscleMetric Pro",
         title: "Unlock More Active Plans",
         subtitle:
-          "Run more plans at once for different goals, phases, or training styles.",
+          "Use more active plans at once for different routines, phases, or workout styles.",
         metricLabel: "Active plans",
         metricValue: "1 → 3",
         benefits: [
@@ -153,25 +146,24 @@ function getContent(reason: PaywallReason): PaywallContentModel {
             icon: CalendarPlus,
             title: "Create more active plans",
             description:
-              "Manage more than one plan at a time for different priorities and phases.",
+              "Manage more than one plan at a time for different routines or phases.",
           },
           {
             icon: Target,
             title: "Separate goals more cleanly",
-            description:
-              "Keep hypertrophy, strength, or special-focus blocks organised properly.",
+            description: "Keep different plan types organised separately.",
           },
           {
             icon: TrendingUp,
             title: "Plan ahead with less friction",
             description:
-              "Build future phases without needing to archive what you are currently using.",
+              "Create upcoming plans without archiving the plan you are currently using.",
           },
           {
             icon: Sparkles,
             title: "Use advanced planning limits",
             description:
-              "MuscleMetric Pro gives you more room to train seriously and structure better.",
+              "MuscleMetric Pro gives you expanded plan, template, and goal limits.",
           },
         ],
       };
@@ -181,33 +173,33 @@ function getContent(reason: PaywallReason): PaywallContentModel {
         eyebrow: "MuscleMetric Pro",
         title: "Unlock Advanced Analytics",
         subtitle:
-          "Track your progress, review more training trends, and organise your training setup with premium insights.",
+          "Review more logged trends, workout summaries, and plan breakdowns with Pro.",
         metricLabel: "Volume (kg)",
         metricValue: "14,250",
         benefits: [
           {
             icon: TrendingUp,
-            title: "Track strength and progress over time",
+            title: "View logged strength trends over time",
             description:
-              "Visualise changes in performance and spot improvement trends faster.",
+              "See estimated strength changes based on your logged sets.",
           },
           {
             icon: LineChart,
-            title: "Get deeper insights into your workouts",
+            title: "View more workout summaries",
             description:
-              "Go beyond basic history with premium progress views and richer breakdowns.",
+              "Go beyond basic history with additional progress views and breakdowns.",
           },
           {
             icon: CalendarPlus,
             title: "Create more plans, templates, and goals",
             description:
-              "Unlock expanded limits so your training setup can grow with you.",
+              "Unlock expanded limits for plans, templates, and goals.",
           },
           {
             icon: Sparkles,
-            title: "Build smarter training plans",
+            title: "Use expanded planning tools",
             description:
-              "Use premium planning features and advanced surfaces designed for long-term progress.",
+              "Use Pro planning features for more detailed plan organisation.",
           },
         ],
       };
@@ -218,7 +210,7 @@ function getContent(reason: PaywallReason): PaywallContentModel {
         eyebrow: "MuscleMetric Pro",
         title: "Unlock More With Pro",
         subtitle:
-          "Get deeper insights, advanced planning, and expanded limits as your training grows.",
+          "Get more workout summaries, expanded planning, and higher app limits with Pro.",
         metricLabel: "Pro unlock",
         metricValue: "Active",
         benefits: [
@@ -226,19 +218,19 @@ function getContent(reason: PaywallReason): PaywallContentModel {
             icon: TrendingUp,
             title: "See deeper analytics",
             description:
-              "Understand your training progress more clearly with premium insights.",
+              "Review more of your logged workout trends with Pro analytics.",
           },
           {
             icon: CalendarPlus,
             title: "Use expanded planning limits",
             description:
-              "Create more plans, templates, and goals without hitting free restrictions.",
+              "Create more plans, templates, and goals without free-tier limits.",
           },
           {
             icon: Sparkles,
-            title: "Train with better structure",
+            title: "Organise more of your workout setup",
             description:
-              "Build a setup that supports long-term progress instead of patching things together.",
+              "Use expanded Pro limits for a larger workout and plan setup.",
           },
         ],
       };
@@ -566,7 +558,9 @@ export default function PaywallContent({
                   ) : null}
                 </View>
 
-                <View style={[styles.planBottomRow, { marginTop: layout.space.md }]}>
+                <View
+                  style={[styles.planBottomRow, { marginTop: layout.space.md }]}
+                >
                   <View>
                     <Text
                       style={[
@@ -601,14 +595,18 @@ export default function PaywallContent({
                     style={[
                       styles.radioOuter,
                       {
-                        borderColor: isSelected ? colors.primary : colors.border,
+                        borderColor: isSelected
+                          ? colors.primary
+                          : colors.border,
                         backgroundColor: isSelected
                           ? colors.cardPressed
                           : "transparent",
                       },
                     ]}
                   >
-                    {isSelected ? <Check size={16} color={colors.primary} /> : null}
+                    {isSelected ? (
+                      <Check size={16} color={colors.primary} />
+                    ) : null}
                   </View>
                 </View>
               </Pressable>

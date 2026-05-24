@@ -11,10 +11,6 @@ export const QUOTES: Quote[] = [
   },
   { text: "To live is the rarest thing in the world.", author: "Oscar Wilde" },
   {
-    text: "Pain is inevitable. Suffering is optional.",
-    author: "Haruki Murakami",
-  },
-  {
     text: "Whatever the mind of man can conceive and believe, it can achieve.",
     author: "Napoleon Hill",
   },

@@ -3,18 +3,18 @@
 import React from "react";
 import { View, Text } from "react-native";
 import { useAppTheme } from "@/lib/useAppTheme";
-import { getCoachTipForToday } from "../data/coachTips";
+import { getWorkoutNoteForToday } from "../data/coachTips";
 
 export function CoachsTipCard({
   userId,
   tip,
 }: {
   userId?: string | null;
-  tip?: string | null; // allow override if you ever want to pass one in
+  tip?: string | null;
 }) {
   const { colors, typography, layout } = useAppTheme();
 
-  const text = tip?.trim() || getCoachTipForToday({ userId });
+  const text = tip?.trim() || getWorkoutNoteForToday({ userId });
 
   if (!text) return null;
 
@@ -36,7 +36,7 @@ export function CoachsTipCard({
           color: colors.text,
         }}
       >
-        Coach’s Tip:{" "}
+        Workout note:{" "}
         <Text
           style={{
             fontFamily: typography.fontFamily.regular,

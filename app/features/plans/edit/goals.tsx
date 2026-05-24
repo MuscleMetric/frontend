@@ -607,23 +607,29 @@ export default function EditGoals() {
                     </View>
 
                     {g.start != null && planWeeks > 0 ? (
-                      <Text style={s.recoText}>
-                        {(() => {
-                          const { min, max } = calcRangeForMode(
-                            g.mode,
-                            g.start!,
-                            planWeeks,
-                          );
-                          return `Recommended target: ${fmtForMode(g.mode, min)}–${fmtForMode(
-                            g.mode,
-                            max,
-                          )} ${MODE_UNIT[g.mode]}`;
-                        })()}
-                      </Text>
+                      <>
+                        <Text style={s.recoText}>
+                          {(() => {
+                            const { min, max } = calcRangeForMode(
+                              g.mode,
+                              g.start!,
+                              planWeeks,
+                            );
+                            return `Goal planning range: ${fmtForMode(g.mode, min)}–${fmtForMode(
+                              g.mode,
+                              max,
+                            )} ${MODE_UNIT[g.mode]}`;
+                          })()}
+                        </Text>
+
+                        <Text style={s.recoMuted}>
+                          Based on your entered starting value and selected plan
+                          length.
+                        </Text>
+                      </>
                     ) : (
                       <Text style={s.recoMuted}>
-                        Tip: enter a start value to get an auto-recommended
-                        target.
+                        Enter a starting value to generate a planning range.
                       </Text>
                     )}
                   </View>

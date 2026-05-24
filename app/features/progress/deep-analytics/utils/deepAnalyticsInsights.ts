@@ -1,7 +1,4 @@
-import type {
-  DeepAnalyticsInsight,
-  DeepAnalyticsPayload,
-} from "../types";
+import type { DeepAnalyticsInsight, DeepAnalyticsPayload } from "../types";
 
 import {
   calculatePercentChange,
@@ -53,8 +50,8 @@ export function generatePrimaryInsight(
   if (hasPlateaued(e1rms, 4)) {
     return {
       type: "plateau",
-      title: "Recent estimate is level",
-      description: `Your ${exerciseName} estimated strength has not beaten its previous best across the recent sessions.`,
+      title: "Recent estimate is similar",
+      description: `${exerciseName} estimated strength is similar across recent logged sessions.`,
       confidence,
     };
   }
@@ -90,7 +87,7 @@ export function generatePrimaryInsight(
   return {
     type: "stable",
     title: "Estimated strength is steady",
-    description: `${exerciseName} performance has stayed fairly consistent recently.`,
+    description: `${exerciseName} logged values have stayed fairly consistent recently.`,
     confidence,
   };
 }
@@ -132,8 +129,8 @@ export function generateVolumeInsight(
 
   return {
     type: "stable",
-    title: "Volume is stable",
-    description: "Recent training volume has stayed fairly consistent.",
+    title: "Logged volume is steady",
+    description: "Recent logged volume has stayed fairly consistent.",
     confidence: values.length >= 6 ? "high" : "medium",
   };
 }

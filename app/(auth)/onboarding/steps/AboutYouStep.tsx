@@ -304,7 +304,7 @@ export function AboutYouStep({
 
             <View style={styles.optionalRow}>
               <Text style={styles.helper}>
-                Used only to improve age-based training estimates.
+                Used only to improve workout metric estimates.
               </Text>
 
               {!!draft.dob && (
@@ -328,7 +328,7 @@ export function AboutYouStep({
 
             <View style={styles.optionalRow}>
               <Text style={styles.helper}>
-                Optional. Used only to improve training recommendations.
+                Optional. Used only to improve workout metric estimates.
               </Text>
 
               {!!draft.gender && (

@@ -19,8 +19,8 @@ function normalizeUnlock(card: any): UnlockItem[] {
           it?.subtitle != null
             ? String(it.subtitle)
             : it?.desc != null
-            ? String(it.desc)
-            : null,
+              ? String(it.desc)
+              : null,
       } as UnlockItem;
     })
     .filter(Boolean) as UnlockItem[];
@@ -29,31 +29,33 @@ function normalizeUnlock(card: any): UnlockItem[] {
 function niceDesc(title: string) {
   const t = title.toLowerCase();
 
-  if (t.includes("weekly")) return "Stay on track each week with a clear goal bar.";
-  if (t.includes("pr")) return "Spot new personal bests and celebrate progress.";
+  if (t.includes("weekly"))
+    return "View your weekly workout summary in one place.";
+  if (t.includes("pr"))
+    return "See logged personal bests from completed workouts.";
   if (t.includes("consistency") || t.includes("calendar"))
-    return "Build momentum with streaks and training history.";
-  if (t.includes("volume")) return "See your training load trend over time.";
-  if (t.includes("goal")) return "Set targets and track them automatically.";
-  return "More insights to keep you progressing.";
+    return "Review your workout history across calendar views.";
+  if (t.includes("volume")) return "See logged volume changes over time.";
+  if (t.includes("goal")) return "View goals and logged updates in one place.";
+  return "More workout summaries based on your logged activity.";
 }
 
 export function UnlockPreviewCard({ card }: { card: any; summary?: any }) {
   const { colors, typography, layout } = useAppTheme();
   const styles = useMemo(
     () => makeStyles(colors, typography, layout),
-    [colors, typography, layout]
+    [colors, typography, layout],
   );
 
   const items = useMemo(() => normalizeUnlock(card), [card]);
 
   if (!items.length) return null;
 
-  // Keep this very “not paywall” + motivational.
+  // Keep this factual and based on logged activity. Avoid language that could feel like pressure or sales.
   const title = String(card?.title ?? "What’s coming next");
   const subtitle = String(
     card?.subtitle ??
-      "After your first 5 workouts, Home adds deeper progress tracking — automatically."
+      "After your first 5 workouts, Home adds more progress summaries based on your logged activity.",
   );
 
   return (
@@ -101,7 +103,7 @@ export function UnlockPreviewCard({ card }: { card: any; summary?: any }) {
         {/* Bottom nudge (motivational, not pressure) */}
         <View style={styles.footerNudge}>
           <Text style={styles.footerText} numberOfLines={2}>
-            You’re close — log a few sessions and your Home screen levels up with insights.
+            After a few logged sessions, Home can show more workout summaries.
           </Text>
         </View>
       </View>
