@@ -30,6 +30,7 @@ import { ExperienceModal } from "./modals/ExperienceModal";
 import { PrimaryGoalModal } from "./modals/PrimaryGoalModal";
 import { ConfirmLogoutModal } from "./modals/ConfirmLogoutModal";
 import { ConfirmDeleteAccountModal } from "./modals/ConfirmDeleteAccountModal";
+import { SourcesMethodologyModal } from "./modals/SourcesMethodologyModal";
 import { useAuth } from "@/lib/authContext";
 
 import { log } from "@/lib/logger";
@@ -203,6 +204,7 @@ export default function SettingsScreen() {
   const [openGoal, setOpenGoal] = useState(false);
   const [openLogout, setOpenLogout] = useState(false);
   const [openDelete, setOpenDelete] = useState(false);
+  const [openSources, setOpenSources] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -400,23 +402,18 @@ export default function SettingsScreen() {
             />
           </SettingsCard>
 
-          <SectionHeader title="ACCOUNT" />
+          <SectionHeader title="SUBSCRIPTION" />
+          <SubscriptionSettingsCard />
+
+          <SectionHeader title="APP INFORMATION" />
           <SettingsCard>
             <SettingsRow
-              label="Username"
-              value={handle}
-              onPress={() => setOpenUsername(true)}
-            />
-            <SettingsRow
-              label="Personal Info"
-              value={personalInfoLabel}
-              onPress={() => setOpenPersonal(true)}
+              label="Sources & Methodology"
+              value="How metrics are calculated"
+              onPress={() => setOpenSources(true)}
               last
             />
           </SettingsCard>
-
-          <SectionHeader title="SUBSCRIPTION" />
-          <SubscriptionSettingsCard />
 
           <SectionHeader title="TRAINING" />
           <SettingsCard>
@@ -509,6 +506,11 @@ export default function SettingsScreen() {
           onSaved={async () => {
             await load();
           }}
+        />
+
+        <SourcesMethodologyModal
+          open={openSources}
+          onClose={() => setOpenSources(false)}
         />
 
         <ExperienceModal

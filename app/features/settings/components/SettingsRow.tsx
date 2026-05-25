@@ -36,13 +36,13 @@ export function SettingsRow({
         left: { flex: 1 },
         label: {
           color: tone === "danger" ? colors.danger : colors.text,
-          fontFamily: typography.fontFamily.medium,
+          fontFamily: typography.fontFamily.semibold,
           fontSize: typography.size.body,
         },
         right: { flexDirection: "row", alignItems: "center", gap: 8 },
         value: {
           color: colors.textMuted,
-          fontFamily: typography.fontFamily.medium,
+          fontFamily: typography.fontFamily.regular,
           fontSize: typography.size.meta,
         },
         chevron: { opacity: 0.6 },
