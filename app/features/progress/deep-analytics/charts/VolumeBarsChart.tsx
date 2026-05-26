@@ -13,10 +13,11 @@ type Props = {
 
 const WIDTH = 320;
 const PADDING_X = 28;
-const PADDING_TOP = 18;
+const LABEL_TOP = 14;
+const PADDING_TOP = 42;
 const PADDING_BOTTOM = 32;
 
-export function VolumeBarsChart({ data, height = 180 }: Props) {
+export function VolumeBarsChart({ data, height = 190 }: Props) {
   const { colors, typography } = useAppTheme();
 
   const chart = useMemo(() => {
@@ -28,7 +29,10 @@ export function VolumeBarsChart({ data, height = 180 }: Props) {
     const innerWidth = WIDTH - PADDING_X * 2;
     const innerHeight = height - PADDING_TOP - PADDING_BOTTOM;
     const gap = 6;
-    const barWidth = Math.max(8, (innerWidth - gap * (points.length - 1)) / points.length);
+    const barWidth = Math.max(
+      8,
+      (innerWidth - gap * (points.length - 1)) / points.length,
+    );
 
     return {
       points,
@@ -44,7 +48,12 @@ export function VolumeBarsChart({ data, height = 180 }: Props) {
   if (!chart) {
     return (
       <View style={{ height, alignItems: "center", justifyContent: "center" }}>
-        <Text style={{ color: colors.textMuted, fontFamily: typography.fontFamily.regular }}>
+        <Text
+          style={{
+            color: colors.textMuted,
+            fontFamily: typography.fontFamily.regular,
+          }}
+        >
           Not enough volume data yet
         </Text>
       </View>
@@ -54,11 +63,11 @@ export function VolumeBarsChart({ data, height = 180 }: Props) {
   return (
     <Svg width="100%" height={height} viewBox={`0 0 ${WIDTH} ${height}`}>
       <SvgText
-        x={WIDTH - PADDING_X}
-        y={PADDING_TOP}
+        x={WIDTH - PADDING_X * 3}
+        y={LABEL_TOP}
         fontSize={11}
         fill={colors.textMuted}
-        textAnchor="end"
+        textAnchor="start"
       >
         Peak {formatVolume(chart.max)}
       </SvgText>

@@ -56,11 +56,11 @@ export function SetContributionBarsChart({ data, height = 170 }: Props) {
   return (
     <Svg width="100%" height={height} viewBox={`0 0 ${WIDTH} ${height}`}>
       <SvgText
-        x={WIDTH - PADDING_X}
-        y={PADDING_TOP}
+        x={WIDTH / 2 - PADDING_X}
+        y={PADDING_TOP - 6}
         fontSize={11}
         fill={colors.textMuted}
-        textAnchor="end"
+        textAnchor="start"
       >
         Total {Math.round(chart.total).toLocaleString("en-GB")}kg
       </SvgText>

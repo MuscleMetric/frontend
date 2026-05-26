@@ -33,7 +33,7 @@ export function DeepAnalyticsInsightCard({ insight }: Props) {
             letterSpacing: 0.8,
           }}
         >
-          Training insight
+          LOGGED TREND SUMMARY
         </Text>
 
         <Text
