@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo } from "react";
 import { ScrollView, View, RefreshControl } from "react-native";
 import { router } from "expo-router";
 import { Screen } from "@/ui";
@@ -8,7 +8,6 @@ import { mapOverview } from "../data/progress.mapper";
 
 import ProgressSkeleton from "../components/ProgressSkeleton";
 import ProgressErrorState from "../components/ProgressErrorState";
-import LockedExerciseSummaryCard from "../components/LockedExerciseSummaryCard";
 
 import MomentumHeroSection from "../sections/MomentumHeroSection";
 import ConsistencySection from "../sections/ConsistencySection";
@@ -17,15 +16,11 @@ import ExerciseSummarySection from "../sections/ExerciseSummarySection";
 import RecentActivitySection from "../sections/RecentActivitySection";
 
 import { NewUserProgressCard } from "@/app/features/home/ui/cards/NewUserProgressCard";
-import { useAuth } from "@/lib/authContext";
-import FeaturePaywallModal from "@/app/features/paywall/components/FeaturePaywallModal";
 
 const UNLOCK_TARGET = 5;
 
 export default function ProgressScreen() {
   const { data, loading, error, refresh } = useProgressOverview();
-  const { capabilities } = useAuth();
-  const [paywallOpen, setPaywallOpen] = useState(false);
 
   const vm = useMemo(() => (data ? mapOverview(data) : null), [data]);
 
@@ -35,15 +30,10 @@ export default function ProgressScreen() {
   if (loading) return <ProgressSkeleton />;
 
   const handleOpenDeepAnalytics = (exerciseId: string) => {
-    if (capabilities.canViewDeepAnalytics) {
-      router.push({
-        pathname: "/features/progress/screens/deep-analytics",
-        params: { exerciseId },
-      });
-      return;
-    }
-
-    setPaywallOpen(true);
+    router.push({
+      pathname: "/features/progress/screens/deep-analytics",
+      params: { exerciseId },
+    });
   };
 
   return (
@@ -95,21 +85,10 @@ export default function ProgressScreen() {
                   onOpenExercise={handleOpenDeepAnalytics}
                 />
 
-                {capabilities.canViewDeepAnalytics ? (
-                  <ExerciseSummarySection
-                    exerciseSummary={vm.exerciseSummary}
-                    onOpenExercise={(exerciseId) =>
-                      router.push({
-                        pathname: "/features/progress/screens/deep-analytics",
-                        params: { exerciseId },
-                      })
-                    }
-                  />
-                ) : (
-                  <LockedExerciseSummaryCard
-                    onPress={() => setPaywallOpen(true)}
-                  />
-                )}
+                <ExerciseSummarySection
+                  exerciseSummary={vm.exerciseSummary}
+                  onOpenExercise={handleOpenDeepAnalytics}
+                />
 
                 <RecentActivitySection
                   recent={vm.recent}
@@ -128,12 +107,6 @@ export default function ProgressScreen() {
               </>
             )}
           </ScrollView>
-
-          <FeaturePaywallModal
-            visible={paywallOpen}
-            reason="deep_analytics"
-            onClose={() => setPaywallOpen(false)}
-          />
         </>
       )}
     </Screen>
