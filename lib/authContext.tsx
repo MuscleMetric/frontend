@@ -86,12 +86,12 @@ type AuthValue = {
 };
 
 const FREE_CAPABILITIES: Capabilities = {
-  maxTemplates: 5,
+  maxTemplates: 15,
   maxActivePlans: 1,
   maxGoalsPerPlan: 2,
-  canViewDeepAnalytics: false,
-  canUseAdvancedPlanning: false,
-  canUseSmartSuggestions: false,
+  canViewDeepAnalytics: true,
+  canUseAdvancedPlanning: true,
+  canUseSmartSuggestions: true,
 };
 
 const AuthContext = createContext<AuthValue | undefined>(undefined);
@@ -446,7 +446,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, [fetchEntitlements, fetchProfile]);
 
-  const capabilities = entitlements?.capabilities ?? FREE_CAPABILITIES;
+  const capabilities: Capabilities = {
+    ...(entitlements?.capabilities ?? FREE_CAPABILITIES),
+    maxTemplates: 15,
+    canViewDeepAnalytics: true,
+    canUseAdvancedPlanning: true,
+    canUseSmartSuggestions: true,
+  };
 
   const value = useMemo<AuthValue>(() => {
     const userId = session?.user?.id ?? null;
