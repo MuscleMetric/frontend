@@ -1,24 +1,22 @@
 // app/features/workouts/sections/OptionalSessionsSection.tsx
 
 import React from "react";
-import { View, Text } from "react-native";
+import { Alert, View, Text } from "react-native";
 import { useAppTheme } from "@/lib/useAppTheme";
-import { useAuth } from "@/lib/authContext";
 import { ListRow, Button, WorkoutCover } from "@/ui";
-import { router } from "expo-router";
 
 import { log } from "@/lib/logger";
 
 type OptionalSessions = {
   title: string;
   actionCreate: boolean;
-  items: Array<{
+  items: {
     workoutId: string;
     title: string;
     imageKey: string | null;
     previewText: string;
     lastDoneAt: string | null;
-  }>;
+  }[];
 };
 
 function lastDoneLabel(iso: string | null) {
@@ -37,23 +35,18 @@ export function OptionalSessionsSection({
   onOpenCreate,
   onQuickStart,
   onPressWorkout,
-  onTemplateLimitReached,
 }: {
   optional: OptionalSessions;
   onOpenCreate: () => void;
   onQuickStart?: () => void;
   onPressWorkout?: (workoutId: string) => void;
-  onTemplateLimitReached?: () => void;
 }) {
   const { colors, typography, layout } = useAppTheme();
-  const { capabilities } = useAuth();
 
   const items = optional.items ?? [];
-  const maxTemplates = capabilities.maxTemplates;
+  const maxTemplates = 15;
   const templateCount = items.length;
   const isAtTemplateLimit = templateCount >= maxTemplates;
-
-  if (items.length === 0 && !onQuickStart) return null;
 
   React.useEffect(() => {
     console.group("🟦 Optional Sessions — Rendered Workouts");
@@ -75,9 +68,14 @@ export function OptionalSessionsSection({
     console.groupEnd();
   }, [optional.items, templateCount, maxTemplates, isAtTemplateLimit]);
 
+  if (items.length === 0 && !onQuickStart) return null;
+
   const handleCreatePress = () => {
     if (isAtTemplateLimit) {
-      onTemplateLimitReached?.();
+      Alert.alert(
+        "Workout limit reached",
+        "You can save up to 15 workouts. Delete one before creating another.",
+      );
       return;
     }
 
