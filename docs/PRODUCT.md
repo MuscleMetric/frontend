@@ -62,19 +62,6 @@ The product tracks steps/step goals, workout consistency and achievements.
 
 ## Product areas — PLANNED
 
-### Readiness and adaptive recommendations
-The agreed development order is:
-1. Store readiness form.
-2. Calculate systemic fatigue.
-3. Calculate muscle fatigue by muscle.
-4. Predict today's e1RM.
-5. Recommend working weight.
-6. Store prediction vs actual.
-7. Show prediction accuracy.
-8. Train user-specific coefficients after enough data.
-
-This is specified separately in `PREDICTION_ENGINE.md`.
-
 ### Feedback loop
 A simple in-app path for users to submit product suggestions is planned. It should be easy to reach and should not interrupt training.
 
@@ -90,7 +77,7 @@ The future Coach platform is a separate expansion of MuscleMetrics, not a reason
 - **Workout history** — a persisted completed session.
 - **Exercise history** — exercise instances within a completed workout.
 - **Set history** — actual set performance within exercise history.
-- **e1RM** — estimated one-repetition maximum.
+- **e1RM** — estimated one-repetition maximum, currently calculated using the Epley formula. See `ANALYTICS_ENGINE.md` for the implemented analytics rules.
 
 ## Change rule
 When product behaviour changes, update this document in the same PR when the change materially alters a product area, product principle, user journey or feature status.
