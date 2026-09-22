@@ -19,7 +19,7 @@ The living product and engineering specifications are in [`docs/`](./docs/):
 - [Design system](./docs/DESIGN_SYSTEM.md)
 - [Architecture](./docs/ARCHITECTURE.md)
 - [Database guide](./docs/DATABASE.md)
-- [Prediction engine](./docs/PREDICTION_ENGINE.md)
+- [Analytics engine](./docs/ANALYTICS_ENGINE.md)
 - [Coach / PT platform](./docs/COACH_PLATFORM.md)
 - [Roadmap](./docs/ROADMAP.md)
 - [Website specification](./docs/WEBSITE_SPEC.md)
