@@ -11,6 +11,21 @@
 
 This repository contains the mobile frontend, built with **Expo + React Native + TypeScript**.
 
+## Documentation
+
+The living product and engineering specifications are in [`docs/`](./docs/):
+
+- [Product specification](./docs/PRODUCT.md)
+- [Design system](./docs/DESIGN_SYSTEM.md)
+- [Architecture](./docs/ARCHITECTURE.md)
+- [Database guide](./docs/DATABASE.md)
+- [Prediction engine](./docs/PREDICTION_ENGINE.md)
+- [Coach / PT platform](./docs/COACH_PLATFORM.md)
+- [Roadmap](./docs/ROADMAP.md)
+- [Website specification](./docs/WEBSITE_SPEC.md)
+
+Use the current code/database as the source of truth for **LIVE** behaviour. Planned work must be labelled **PLANNED/FUTURE** until shipped.
+
 ## Product overview
 
 MuscleMetrics is designed for users who want **more than basic workout logs**.
