@@ -28,16 +28,10 @@
 4. Establish this documentation as the development source of truth.
 5. Build/redesign the official MuscleMetrics product website while preserving legal routes.
 
-## NEXT — adaptive training foundations
-Implement in order:
-1. readiness storage;
-2. systemic fatigue;
-3. muscle fatigue;
-4. today's e1RM prediction;
-5. working-weight recommendation;
-6. prediction vs actual storage;
-7. accuracy;
-8. user-specific coefficient learning.
+## NEXT
+- User feedback/suggestions flow and iteration from real usage.
+- Continued analytics, history and workout UX improvements where usage supports them.
+- Website launch/polish and product communication.
 
 ## LATER — Coach / PT
 - Coach mode.
@@ -50,12 +44,13 @@ Implement in order:
 - Coach analytics.
 
 ## EXPLORE
-- Apple Health-assisted readiness/sleep inputs.
 - Apple Watch/expanded wearable experience.
-- More adaptive training intelligence.
 - Video/form analysis where technically and scientifically justified.
 
 ## Roadmap discipline
 A new idea should not automatically become NOW. Record it in the relevant specification, decide whether it supports the current product objective, then place it in sequence.
 
 Update this document when a feature meaningfully changes status.
+
+## Previously explored R&D
+Readiness scoring, systemic/muscle fatigue modelling, daily e1RM prediction, working-weight recommendations and personalised prediction coefficients were explored previously but did not become an approved product system. They are not current roadmap commitments.
