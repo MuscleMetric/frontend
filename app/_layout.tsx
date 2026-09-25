@@ -24,7 +24,6 @@ import { saveDeviceToken } from "@/lib/notifications/saveDeviceToken";
 import { ResumeWorkoutGate } from "@/app/features/workouts/components/ResumeWorkoutGate";
 import { ActiveWorkoutSessionProvider } from "@/app/features/workouts/live/session/ActiveWorkoutSessionProvider";
 import { ActiveWorkoutBar } from "@/app/features/workouts/live/session/ActiveWorkoutBar";
-import { BillingProvider } from "@/lib/billing/BillingProvider";
 
 initSentry();
 
@@ -44,12 +43,10 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <AuthProvider>
-        <BillingProvider>
           <ThemeProvider value={theme}>
             <StatusBar style={scheme === "dark" ? "light" : "dark"} />
             <RootNavigator />
           </ThemeProvider>
-        </BillingProvider>
       </AuthProvider>
     </GestureHandlerRootView>
   );
