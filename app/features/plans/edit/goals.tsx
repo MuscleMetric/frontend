@@ -19,11 +19,7 @@ import { useAuth } from "../../../../lib/authContext";
 import { useAppTheme } from "../../../../lib/useAppTheme";
 import { ScreenHeader, Icon } from "@/ui";
 
-import PaywallModal from "@/app/features/paywall/components/PaywallModal";
 import { useEditPlan, type ExerciseRow, type GoalDraft } from "./store";
-
-import { log } from "@/lib/logger";
-import FeaturePaywallModal from "../../paywall/components/FeaturePaywallModal";
 
 /** Helpers for mode <-> unit */
 const MODE_UNIT: Record<GoalDraft["mode"], string> = {
@@ -141,7 +137,7 @@ function pickStartForMode(mode: GoalDraft["mode"], last?: LastMetric) {
 export default function EditGoals() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { session, capabilities, entitlements } = useAuth();
+  const { session } = useAuth();
   const userId = session?.user?.id ?? null;
 
   const { colors, typography, layout } = useAppTheme() as any;
@@ -152,13 +148,8 @@ export default function EditGoals() {
 
   const { workouts, goals: storeGoals, setGoals, endDate } = useEditPlan();
 
-  const maxGoals = capabilities.maxGoalsPerPlan;
-  const proGoalCap = 5;
-
   const [localGoals, setLocalGoals] = useState<GoalDraft[]>(storeGoals ?? []);
   const [lastMap, setLastMap] = useState<Record<string, LastMetric>>({});
-  const [paywallOpen, setPaywallOpen] = useState(false);
-  const [goalLimitMessage, setGoalLimitMessage] = useState<string | null>(null);
 
   useEffect(() => {
     setLocalGoals(storeGoals ?? []);
@@ -307,27 +298,11 @@ export default function EditGoals() {
     return deduped.filter((d) => !selectedIds.has(String(d.exercise.id)));
   }, [deduped, localGoals]);
 
-  const isAtGoalLimit = localGoals.length >= maxGoals;
-
-  const showGoalLimit = useCallback(() => {
-    setGoalLimitMessage(
-      `You’ve reached your goal limit. Your current plan allows up to ${maxGoals} goal${
-        maxGoals === 1 ? "" : "s"
-      } per plan. Upgrade to MuscleMetric Pro to track up to ${proGoalCap}.`,
-    );
-  }, [maxGoals]);
-
   function toggleExercise(ex: ExerciseRow) {
     const exists = findGoal(ex.id);
 
     if (exists) {
       setLocalGoals(localGoals.filter((g) => g.exercise.id !== ex.id));
-      setGoalLimitMessage(null);
-      return;
-    }
-
-    if (localGoals.length >= maxGoals) {
-      showGoalLimit();
       return;
     }
 
@@ -350,7 +325,6 @@ export default function EditGoals() {
     };
 
     setLocalGoals([...localGoals, newGoal]);
-    setGoalLimitMessage(null);
   }
 
   function updateGoal(
@@ -386,11 +360,6 @@ export default function EditGoals() {
   }
 
   function onSave() {
-    if (localGoals.length > maxGoals) {
-      showGoalLimit();
-      return;
-    }
-
     const cleaned = localGoals.map((g) => ({
       ...g,
       start: g.start == null ? null : Number(g.start),
@@ -437,37 +406,17 @@ export default function EditGoals() {
         }}
       >
         <View style={{ gap: 6 }}>
-          <Text style={s.h1}>Track up to {maxGoals} goals</Text>
+          <Text style={s.h1}>Choose your goals</Text>
           <Text style={s.sub}>
             We’ll auto-fill the starting value from your last logged session
             where possible.
           </Text>
         </View>
 
-        {goalLimitMessage ? (
-          <View style={s.limitCard}>
-            <View style={s.limitHeader}>
-              <Icon name="lock-closed" size={18} color={colors.primary} />
-              <Text style={s.limitTitle}>Goal limit reached</Text>
-            </View>
-
-            <Text style={s.limitBody}>{goalLimitMessage}</Text>
-
-            <Pressable
-              style={s.limitButton}
-              onPress={() => setPaywallOpen(true)}
-            >
-              <Text style={s.limitButtonText}>Unlock more goals</Text>
-            </Pressable>
-          </View>
-        ) : null}
-
         <View style={{ gap: layout.space.sm }}>
           <View style={s.sectionRow}>
             <Text style={s.sectionLabel}>SELECTED</Text>
-            <Text style={s.sectionMeta}>
-              {selectedGoals.length}/{maxGoals}
-            </Text>
+            <Text style={s.sectionMeta}>{selectedGoals.length} goals</Text>
           </View>
 
           {selectedGoals.length === 0 ? (
@@ -659,18 +608,13 @@ export default function EditGoals() {
                 const contextText =
                   workoutTitles.length > 0 ? workoutTitles.join(", ") : "—";
 
-                const disabled = selectedGoals.length >= maxGoals;
-
                 return (
                   <Pressable
                     key={exercise.id}
-                    onPress={() =>
-                      !disabled ? toggleExercise(exercise) : showGoalLimit()
-                    }
+                    onPress={() => toggleExercise(exercise)}
                     style={({ pressed }) => [
                       s.pickRow,
-                      pressed && !disabled ? { opacity: 0.9 } : null,
-                      disabled ? { opacity: 0.55 } : null,
+                      pressed ? { opacity: 0.9 } : null,
                     ]}
                   >
                     <View style={{ flex: 1 }}>
@@ -701,7 +645,7 @@ export default function EditGoals() {
 
           {deduped.length > 0 ? (
             <Text style={s.hint}>
-              {selectedGoals.length}/{maxGoals} goals selected
+              {selectedGoals.length} goals selected
               {isDirty ? " • Unsaved changes" : ""}
             </Text>
           ) : null}
@@ -731,12 +675,6 @@ export default function EditGoals() {
           </Pressable>
         </View>
       </View>
-
-      <FeaturePaywallModal
-        visible={paywallOpen}
-        reason="goal_limit"
-        onClose={() => setPaywallOpen(false)}
-      />
     </SafeAreaView>
   );
 }
