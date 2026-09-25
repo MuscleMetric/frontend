@@ -34,7 +34,6 @@ import { SourcesMethodologyModal } from "./modals/SourcesMethodologyModal";
 import { useAuth } from "@/lib/authContext";
 
 import { log } from "@/lib/logger";
-import { SubscriptionSettingsCard } from "./components/SubscriptionSettingsCard";
 
 type Visibility = "public" | "followers" | "private";
 
@@ -401,9 +400,6 @@ export default function SettingsScreen() {
               last
             />
           </SettingsCard>
-
-          <SectionHeader title="SUBSCRIPTION" />
-          <SubscriptionSettingsCard />
 
           <SectionHeader title="APP INFORMATION" />
           <SettingsCard>
