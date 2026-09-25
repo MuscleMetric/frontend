@@ -1,4 +1,5 @@
 // lib/authContext.tsx
+
 import React, {
   createContext,
   useCallback,
@@ -10,12 +11,9 @@ import React, {
 } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { AppState } from "react-native";
+
 import { supabase } from "./supabase";
 import { syncPendingWorkouts } from "./pendingWorkoutSync";
-import {
-  configureRevenueCat,
-  logoutRevenueCat,
-} from "@/lib/billing/revenuecat";
 
 export type UserRole = "user" | "pt" | "admin";
 
@@ -85,99 +83,54 @@ type AuthValue = {
   billingReady: boolean;
 };
 
+/**
+ * MuscleMetric is currently free.
+ *
+ * Keep the existing capability shape so older screens do not need to be
+ * rewritten at the same time, but do not derive access from subscriptions.
+ *
+ * The numeric limits are deliberately high so legacy limit checks cannot
+ * block normal app usage.
+ */
 const FREE_CAPABILITIES: Capabilities = {
-  maxTemplates: 15,
-  maxActivePlans: 1,
-  maxGoalsPerPlan: 2,
+  maxTemplates: Number.MAX_SAFE_INTEGER,
+  maxActivePlans: Number.MAX_SAFE_INTEGER,
+  maxGoalsPerPlan: Number.MAX_SAFE_INTEGER,
   canViewDeepAnalytics: true,
   canUseAdvancedPlanning: true,
   canUseSmartSuggestions: true,
 };
 
+/**
+ * Compatibility snapshot for screens that still inspect entitlement data.
+ * This does not represent a subscription and performs no billing lookup.
+ */
+const FREE_ENTITLEMENTS: EntitlementSnapshot = {
+  tier: "free",
+  status: "free",
+  source: "none",
+  productCode: null,
+  effectiveFrom: null,
+  effectiveUntil: null,
+  nextRenewalAt: null,
+  trialEndsAt: null,
+  cancelledAt: null,
+  lastVerifiedAt: null,
+  capabilities: FREE_CAPABILITIES,
+};
+
 const AuthContext = createContext<AuthValue | undefined>(undefined);
-
-function normaliseCapabilities(raw: unknown): Capabilities {
-  const obj =
-    raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
-
-  return {
-    maxTemplates:
-      typeof obj.maxTemplates === "number"
-        ? obj.maxTemplates
-        : typeof obj.max_templates === "number"
-          ? (obj.max_templates as number)
-          : FREE_CAPABILITIES.maxTemplates,
-
-    maxActivePlans:
-      typeof obj.maxActivePlans === "number"
-        ? obj.maxActivePlans
-        : typeof obj.max_active_plans === "number"
-          ? (obj.max_active_plans as number)
-          : FREE_CAPABILITIES.maxActivePlans,
-
-    maxGoalsPerPlan:
-      typeof obj.maxGoalsPerPlan === "number"
-        ? obj.maxGoalsPerPlan
-        : typeof obj.max_goals_per_plan === "number"
-          ? (obj.max_goals_per_plan as number)
-          : FREE_CAPABILITIES.maxGoalsPerPlan,
-
-    canViewDeepAnalytics:
-      typeof obj.canViewDeepAnalytics === "boolean"
-        ? obj.canViewDeepAnalytics
-        : typeof obj.can_view_deep_analytics === "boolean"
-          ? (obj.can_view_deep_analytics as boolean)
-          : FREE_CAPABILITIES.canViewDeepAnalytics,
-
-    canUseAdvancedPlanning:
-      typeof obj.canUseAdvancedPlanning === "boolean"
-        ? obj.canUseAdvancedPlanning
-        : typeof obj.can_use_advanced_planning === "boolean"
-          ? (obj.can_use_advanced_planning as boolean)
-          : FREE_CAPABILITIES.canUseAdvancedPlanning,
-
-    canUseSmartSuggestions:
-      typeof obj.canUseSmartSuggestions === "boolean"
-        ? obj.canUseSmartSuggestions
-        : typeof obj.can_use_smart_suggestions === "boolean"
-          ? (obj.can_use_smart_suggestions as boolean)
-          : FREE_CAPABILITIES.canUseSmartSuggestions,
-  };
-}
-
-function normaliseEntitlementsRow(row: any): EntitlementSnapshot {
-  return {
-    tier: (row?.tier ?? "free") as EntitlementTier,
-    status: (row?.status ?? "free") as EntitlementStatus,
-    source: (row?.source ?? "none") as EntitlementSource,
-    productCode: row?.productCode ?? row?.product_code ?? null,
-    effectiveFrom: row?.effectiveFrom ?? row?.effective_from ?? null,
-    effectiveUntil: row?.effectiveUntil ?? row?.effective_until ?? null,
-    nextRenewalAt: row?.nextRenewalAt ?? row?.next_renewal_at ?? null,
-    trialEndsAt: row?.trialEndsAt ?? row?.trial_ends_at ?? null,
-    cancelledAt: row?.cancelledAt ?? row?.cancelled_at ?? null,
-    lastVerifiedAt: row?.lastVerifiedAt ?? row?.last_verified_at ?? null,
-    capabilities: normaliseCapabilities(row?.capabilities),
-  };
-}
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
-  const [entitlements, setEntitlements] = useState<EntitlementSnapshot | null>(
-    null,
-  );
   const [loading, setLoading] = useState(true);
-  const [entitlementsLoading, setEntitlementsLoading] = useState(false);
 
   const syncRunning = useRef(false);
   const lastSyncAt = useRef(0);
 
-  // prevent stale writes if multiple fetches overlap
+  // Prevent stale profile writes if multiple fetches overlap.
   const profileReqId = useRef(0);
-  const entitlementReqId = useRef(0);
-
-  const [billingReady, setBillingReady] = useState(false);
 
   const fetchProfile = useCallback(async (userId: string) => {
     const reqId = ++profileReqId.current;
@@ -211,79 +164,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setProfile(safe);
   }, []);
 
-  const fetchEntitlements = useCallback(async (userId: string) => {
-    const reqId = ++entitlementReqId.current;
-    setEntitlementsLoading(true);
-
-    try {
-      const { data, error } = await supabase.rpc("get_my_entitlements");
-
-      if (reqId !== entitlementReqId.current) return;
-
-      if (error) {
-        console.warn("get_my_entitlements failed:", error);
-        setEntitlements(null);
-        return;
-      }
-
-      if (!data) {
-        setEntitlements(null);
-        return;
-      }
-
-      // Depending on function return type, Supabase may give object or 1-row array
-      const row = Array.isArray(data) ? data[0] : data;
-
-      if (!row) {
-        setEntitlements(null);
-        return;
-      }
-
-      setEntitlements(normaliseEntitlementsRow(row));
-    } catch (err) {
-      if (reqId !== entitlementReqId.current) return;
-      console.warn("fetchEntitlements exception:", err);
-      setEntitlements(null);
-    } finally {
-      if (reqId === entitlementReqId.current) {
-        setEntitlementsLoading(false);
-      }
-    }
-  }, []);
-
   const refreshProfile = useCallback(async () => {
     const uid = session?.user?.id;
+
     if (!uid) {
       setProfile(null);
       return;
     }
+
     await fetchProfile(uid);
   }, [fetchProfile, session?.user?.id]);
 
+  /**
+   * Kept for compatibility with screens that still call refreshEntitlements().
+   * MuscleMetric no longer needs to contact Supabase or RevenueCat to
+   * determine feature access.
+   */
   const refreshEntitlements = useCallback(async () => {
-    const uid = session?.user?.id;
-    if (!uid) {
-      setEntitlements(null);
-      return;
-    }
-    await fetchEntitlements(uid);
-  }, [fetchEntitlements, session?.user?.id]);
+    return;
+  }, []);
 
   const signOut = useCallback(async () => {
     profileReqId.current += 1;
-    entitlementReqId.current += 1;
 
     setSession(null);
     setProfile(null);
-    setEntitlements(null);
-    setEntitlementsLoading(false);
     setLoading(false);
-
-    try {
-      await logoutRevenueCat();
-    } catch (e) {
-      console.warn("logoutRevenueCat failed:", e);
-    }
 
     try {
       const { error } = await supabase.auth.signOut({ scope: "local" });
@@ -303,6 +209,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!uid) return;
 
     const now = Date.now();
+
     if (now - lastSyncAt.current < 15_000) return;
     if (syncRunning.current) return;
 
@@ -318,78 +225,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [session?.user?.id]);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    async function setupRevenueCat() {
-      const uid = session?.user?.id;
-
-      setBillingReady(false);
-
-      if (!uid) {
-        try {
-          await logoutRevenueCat();
-        } catch (e) {
-          console.warn("logoutRevenueCat failed:", e);
-        }
-        return;
-      }
-
-      try {
-        await configureRevenueCat(uid);
-
-        if (!cancelled) {
-          setBillingReady(true);
-        }
-      } catch (e) {
-        console.warn("configureRevenueCat failed:", e);
-
-        if (!cancelled) {
-          setBillingReady(false);
-        }
-      }
-    }
-
-    void setupRevenueCat();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [session?.user?.id]);
-
+  // Sync pending workouts when a signed-in user becomes available.
   useEffect(() => {
     if (session?.user?.id) {
-      trySync();
+      void trySync();
     }
   }, [session?.user?.id, trySync]);
 
+  // Sync pending workouts when the app returns to the foreground.
   useEffect(() => {
     const sub = AppState.addEventListener("change", (state) => {
       if (state === "active") {
-        trySync();
-
-        const uid = session?.user?.id;
-        if (uid) {
-          void fetchEntitlements(uid);
-        }
+        void trySync();
       }
     });
 
     return () => sub.remove();
-  }, [fetchEntitlements, session?.user?.id, trySync]);
+  }, [trySync]);
 
+  // Load the initial Supabase session and listen for auth changes.
   useEffect(() => {
     let mounted = true;
 
     async function load() {
       try {
         const { data, error } = await supabase.auth.getSession();
+
         if (!mounted) return;
 
         const sess = error ? null : (data.session ?? null);
-        setSession(sess);
 
-        if (!mounted) return;
+        setSession(sess);
         setLoading(false);
 
         if (sess?.user?.id) {
@@ -398,17 +264,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setTimeout(() => {
             if (!mounted) return;
             void fetchProfile(uid);
-            void fetchEntitlements(uid);
           }, 500);
         } else {
           setProfile(null);
-          setEntitlements(null);
         }
       } catch {
         if (!mounted) return;
+
         setSession(null);
         setProfile(null);
-        setEntitlements(null);
         setLoading(false);
       }
     }
@@ -428,15 +292,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setTimeout(() => {
             if (!mounted) return;
             void fetchProfile(uid);
-            void fetchEntitlements(uid);
           }, 500);
         } else {
           setProfile(null);
-          setEntitlements(null);
         }
-
-        if (!mounted) return;
-        setLoading(false);
       },
     );
 
@@ -444,15 +303,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       mounted = false;
       listener.subscription.unsubscribe();
     };
-  }, [fetchEntitlements, fetchProfile]);
-
-  const capabilities: Capabilities = {
-    ...(entitlements?.capabilities ?? FREE_CAPABILITIES),
-    maxTemplates: 15,
-    canViewDeepAnalytics: true,
-    canUseAdvancedPlanning: true,
-    canUseSmartSuggestions: true,
-  };
+  }, [fetchProfile]);
 
   const value = useMemo<AuthValue>(() => {
     const userId = session?.user?.id ?? null;
@@ -460,27 +311,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return {
       session,
       profile,
-      entitlements,
-      capabilities,
+
+      // Compatibility values only. No subscription lookup occurs.
+      entitlements: FREE_ENTITLEMENTS,
+      capabilities: FREE_CAPABILITIES,
+      entitlementsLoading: false,
+      billingReady: true,
+
       loading,
-      entitlementsLoading,
       userId,
       refreshProfile,
       refreshEntitlements,
       signOut,
-      billingReady,
     };
   }, [
     session,
     profile,
-    entitlements,
-    capabilities,
     loading,
-    entitlementsLoading,
     refreshProfile,
     refreshEntitlements,
     signOut,
-    billingReady,
   ]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
@@ -488,8 +338,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
 export function useAuth() {
   const ctx = useContext(AuthContext);
+
   if (!ctx) {
     throw new Error("useAuth must be used within <AuthProvider>");
   }
+
   return ctx;
 }
