@@ -5,13 +5,13 @@ import { Button } from "@/ui/buttons/Button";
 import { submitFeedback } from "../data/feedback.mutations";
 import type { FeedbackFormProps } from "../types";
 import {
-  ChoiceChips,
   FeedbackError,
   FeedbackFormContainer,
   FeedbackHeader,
   FeedbackSuccess,
   FeedbackTextArea,
   FormSection,
+  MultiChoiceChips,
   StarRating,
 } from "./FeedbackFormParts";
 
@@ -99,16 +99,7 @@ export function AppRatingFeedbackForm({ sourceScreen, onSubmitted }: FeedbackFor
 
       {rating ? (
         <FormSection label={rating >= 4 ? "What do you like most?" : "What should we improve?"} optional>
-          <View style={{ gap: 8 }}>
-            {tagOptions.map((option) => (
-              <ChoiceChips
-                key={option.value}
-                options={[option]}
-                value={tags.includes(option.value) ? option.value : undefined}
-                onChange={toggleTag}
-              />
-            ))}
-          </View>
+          <MultiChoiceChips options={tagOptions} values={tags} onToggle={toggleTag} />
         </FormSection>
       ) : null}
 

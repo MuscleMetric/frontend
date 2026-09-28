@@ -31,6 +31,7 @@ revoke all on public.app_feedback from anon;
 grant insert on public.app_feedback to authenticated;
 grant all on public.app_feedback to service_role;
 
+drop policy if exists "Users can submit their own feedback" on public.app_feedback;
 create policy "Users can submit their own feedback"
 on public.app_feedback
 for insert

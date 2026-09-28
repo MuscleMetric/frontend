@@ -163,6 +163,55 @@ export function ChoiceChips({
   );
 }
 
+export function MultiChoiceChips({
+  options,
+  values,
+  onToggle,
+}: {
+  options: readonly ChoiceOption[];
+  values: string[];
+  onToggle: (value: string) => void;
+}) {
+  const { colors, typography, layout } = useAppTheme();
+
+  return (
+    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: layout.space.sm }}>
+      {options.map((option) => {
+        const selected = values.includes(option.value);
+        return (
+          <Pressable
+            key={option.value}
+            onPress={() => onToggle(option.value)}
+            style={({ pressed }) => ({
+              minHeight: 42,
+              paddingHorizontal: 14,
+              borderRadius: layout.radius.pill,
+              borderWidth: 1,
+              borderColor: selected ? colors.primary : colors.border,
+              backgroundColor: selected ? colors.cardPressed : colors.surface,
+              alignItems: "center",
+              justifyContent: "center",
+              opacity: pressed ? 0.88 : 1,
+            })}
+          >
+            <Text
+              style={{
+                color: selected ? colors.primary : colors.text,
+                fontFamily: selected
+                  ? typography.fontFamily.semibold
+                  : typography.fontFamily.medium,
+                fontSize: typography.size.sub,
+              }}
+            >
+              {option.label}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
 export function FeedbackTextArea({
   value,
   onChangeText,
