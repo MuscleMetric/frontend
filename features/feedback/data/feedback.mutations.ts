@@ -1,4 +1,5 @@
 import Constants from "expo-constants";
+import * as Application from "expo-application";
 import * as Device from "expo-device";
 import { Platform } from "react-native";
 
@@ -14,7 +15,7 @@ function clean(value?: string) {
 
 function getDiagnostics() {
   return {
-    app_version: Constants.nativeAppVersion ?? Constants.expoConfig?.version ?? null,
+    app_version: Application.nativeApplicationVersion ?? Constants.expoConfig?.version ?? null,
     platform: Platform.OS,
     os_version: Device.osVersion ?? String(Platform.Version ?? ""),
     device_model: Device.modelName ?? null,

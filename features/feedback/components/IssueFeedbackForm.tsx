@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import { View } from "react-native";
 
 import { Button } from "@/ui/buttons/Button";
@@ -34,16 +34,19 @@ export function IssueFeedbackForm({ sourceScreen, onSubmitted }: FeedbackFormPro
   const [message, setMessage] = useState("");
   const [expected, setExpected] = useState("");
   const [impact, setImpact] = useState<FeedbackImpact>();
+  const submitLock = useRef(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function handleSubmit() {
+    if (submitLock.current) return;
     if (!category || !message.trim()) {
       setError("Choose an area and tell us what went wrong.");
       return;
     }
 
+    submitLock.current = true;
     try {
       setSubmitting(true);
       setError(null);
@@ -60,6 +63,7 @@ export function IssueFeedbackForm({ sourceScreen, onSubmitted }: FeedbackFormPro
     } catch {
       setError("We couldn't send this issue. Please try again.");
     } finally {
+      submitLock.current = false;
       setSubmitting(false);
     }
   }
