@@ -450,6 +450,13 @@ export default function SettingsScreen() {
             />
           </SettingsCard>
 
+          <SectionHeader title="FEEDBACK" />
+          <SettingsCard>
+            <SettingsRow label="Report an issue" onPress={() => router.push("/features/feedback/issue")} />
+            <SettingsRow label="Suggest an improvement" onPress={() => router.push("/features/feedback/improvement")} />
+            <SettingsRow label="Rate MuscleMetric" onPress={() => router.push("/features/feedback/rating")} last />
+          </SettingsCard>
+
           <SectionHeader title="LEGAL" />
           <SettingsCard>
             <SettingsRow label="Privacy Policy" onPress={openPrivacyPolicy} />

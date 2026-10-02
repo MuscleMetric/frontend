@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useRef } from "react";
 import { View } from "react-native";
 
 import { Button } from "@/ui/buttons/Button";
@@ -35,6 +35,7 @@ export function AppRatingFeedbackForm({ sourceScreen, onSubmitted }: FeedbackFor
   const [rating, setRating] = useState(0);
   const [tags, setTags] = useState<string[]>([]);
   const [message, setMessage] = useState("");
+  const submitLock = useRef(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -58,11 +59,13 @@ export function AppRatingFeedbackForm({ sourceScreen, onSubmitted }: FeedbackFor
   }
 
   async function handleSubmit() {
+    if (submitLock.current) return;
     if (!rating) {
       setError("Choose a rating before submitting.");
       return;
     }
 
+    submitLock.current = true;
     try {
       setSubmitting(true);
       setError(null);
@@ -78,6 +81,7 @@ export function AppRatingFeedbackForm({ sourceScreen, onSubmitted }: FeedbackFor
     } catch {
       setError("We couldn't send your rating. Please try again.");
     } finally {
+      submitLock.current = false;
       setSubmitting(false);
     }
   }
