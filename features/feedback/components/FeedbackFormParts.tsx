@@ -1,6 +1,7 @@
 import React from "react";
 import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
 
+import { Button } from "@/ui/buttons/Button";
 import { useAppTheme } from "@/lib/useAppTheme";
 import { Icon, type IconName } from "@/ui/icons/Icon";
 
@@ -14,10 +15,14 @@ export function FeedbackFormContainer({ children }: { children: React.ReactNode 
 
   return (
     <ScrollView
+      style={{ flex: 1, backgroundColor: colors.bg }}
       keyboardShouldPersistTaps="handled"
       contentContainerStyle={{
         padding: layout.space.lg,
         paddingBottom: layout.space.xxl,
+        width: "100%",
+        maxWidth: 560,
+        alignSelf: "center",
         gap: layout.space.lg,
         backgroundColor: colors.bg,
       }}
@@ -42,7 +47,7 @@ export function FeedbackHeader({
   const toneColor = colors[tone];
 
   return (
-    <View style={{ flexDirection: "row", gap: layout.space.md, alignItems: "center" }}>
+    <View style={{ gap: layout.space.md, alignItems: "center", paddingVertical: layout.space.md }}>
       <View
         style={{
           width: 52,
@@ -55,9 +60,10 @@ export function FeedbackHeader({
       >
         <Icon name={icon} size={26} color={toneColor} />
       </View>
-      <View style={{ flex: 1, gap: 2 }}>
+      <View style={{ width: "100%", gap: 6 }}>
         <Text
           style={{
+            textAlign: "center",
             color: colors.text,
             fontFamily: typography.fontFamily.bold,
             fontSize: typography.size.h2,
@@ -68,6 +74,7 @@ export function FeedbackHeader({
         </Text>
         <Text
           style={{
+            textAlign: "center",
             color: colors.textMuted,
             fontFamily: typography.fontFamily.regular,
             fontSize: typography.size.sub,
@@ -126,7 +133,7 @@ export function ChoiceChips({
   const { colors, typography, layout } = useAppTheme();
 
   return (
-    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: layout.space.sm }}>
+    <View style={{ flexDirection: "row", flexWrap: "wrap", justifyContent: "center", gap: layout.space.sm }}>
       {options.map((option) => {
         const selected = option.value === value;
         return (
@@ -175,7 +182,7 @@ export function MultiChoiceChips({
   const { colors, typography, layout } = useAppTheme();
 
   return (
-    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: layout.space.sm }}>
+    <View style={{ flexDirection: "row", flexWrap: "wrap", justifyContent: "center", gap: layout.space.sm }}>
       {options.map((option) => {
         const selected = values.includes(option.value);
         return (
@@ -334,7 +341,7 @@ export function FeedbackError({ message }: { message?: string | null }) {
   );
 }
 
-export function FeedbackSuccess({ message }: { message: string }) {
+export function FeedbackSuccess({ message, onReturn }: { message: string; onReturn?: () => void }) {
   const { colors, typography, layout } = useAppTheme();
 
   return (
@@ -381,6 +388,11 @@ export function FeedbackSuccess({ message }: { message: string }) {
       >
         {message}
       </Text>
+      {onReturn ? (
+        <View style={{ width: "100%", maxWidth: 400, marginTop: layout.space.lg }}>
+          <Button title="Back to previous page" onPress={onReturn} />
+        </View>
+      ) : null}
     </View>
   );
 }

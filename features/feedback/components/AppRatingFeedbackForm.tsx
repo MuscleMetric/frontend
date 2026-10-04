@@ -31,7 +31,7 @@ const IMPROVEMENT_TAGS = [
   { value: "hard_to_use", label: "Hard to use" },
 ] as const;
 
-export function AppRatingFeedbackForm({ sourceScreen, onSubmitted }: FeedbackFormProps) {
+export function AppRatingFeedbackForm({ sourceScreen, onSubmitted, onReturn }: FeedbackFormProps) {
   const [rating, setRating] = useState(0);
   const [tags, setTags] = useState<string[]>([]);
   const [message, setMessage] = useState("");
@@ -87,7 +87,7 @@ export function AppRatingFeedbackForm({ sourceScreen, onSubmitted }: FeedbackFor
   }
 
   if (submitted) {
-    return <FeedbackSuccess message="Your rating has been saved. It helps us understand where MuscleMetric is working well and where it needs to improve." />;
+    return <FeedbackSuccess onReturn={onReturn} message="Your rating has been saved. It helps us understand where MuscleMetric is working well and where it needs to improve." />;
   }
 
   return (
