@@ -29,7 +29,7 @@ const IMPACT_OPTIONS = [
   { value: "blocked", label: "Stops me using it" },
 ] as const;
 
-export function IssueFeedbackForm({ sourceScreen, onSubmitted }: FeedbackFormProps) {
+export function IssueFeedbackForm({ sourceScreen, onSubmitted, onReturn }: FeedbackFormProps) {
   const [category, setCategory] = useState<string>();
   const [message, setMessage] = useState("");
   const [expected, setExpected] = useState("");
@@ -69,7 +69,7 @@ export function IssueFeedbackForm({ sourceScreen, onSubmitted }: FeedbackFormPro
   }
 
   if (submitted) {
-    return <FeedbackSuccess message="Your report has been saved and can be reviewed by the MuscleMetric team." />;
+    return <FeedbackSuccess onReturn={onReturn} message="Your report has been saved and can be reviewed by the MuscleMetric team." />;
   }
 
   return (

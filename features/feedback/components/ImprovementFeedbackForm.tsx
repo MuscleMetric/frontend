@@ -23,7 +23,7 @@ const APP_AREAS = [
   { value: "other", label: "Other" },
 ] as const;
 
-export function ImprovementFeedbackForm({ sourceScreen, onSubmitted }: FeedbackFormProps) {
+export function ImprovementFeedbackForm({ sourceScreen, onSubmitted, onReturn }: FeedbackFormProps) {
   const [category, setCategory] = useState<string>();
   const [message, setMessage] = useState("");
   const [whyHelpful, setWhyHelpful] = useState("");
@@ -61,7 +61,7 @@ export function ImprovementFeedbackForm({ sourceScreen, onSubmitted }: FeedbackF
   }
 
   if (submitted) {
-    return <FeedbackSuccess message="Your suggestion has been saved and will be available when we review what to build next." />;
+    return <FeedbackSuccess onReturn={onReturn} message="Your suggestion has been saved and will be available when we review what to build next." />;
   }
 
   return (

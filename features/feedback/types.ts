@@ -16,4 +16,5 @@ export type FeedbackSubmission = {
 export type FeedbackFormProps = {
   sourceScreen?: string;
   onSubmitted?: () => void;
+  onReturn?: () => void;
 };
