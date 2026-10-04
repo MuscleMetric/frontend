@@ -23,6 +23,8 @@ import { useReviewData } from "./useReviewData";
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
+import WorkoutSavedScreen from "@/features/workoutShare/WorkoutSavedScreen";
+
 import { log } from "@/lib/logger";
 
 // ✅ Your save function (the one that calls save_completed_workout_v1)
@@ -105,6 +107,8 @@ export default function ReviewWorkoutScreen() {
   const [draft, setDraft] = useState<LiveWorkoutDraft | null>(null);
 
   const [saving, setSaving] = useState(false);
+  const [savedWorkoutId, setSavedWorkoutId] = useState<string | null>(null);
+  const saveLock = useRef(false);
 
   const clientSaveIdRef = useRef<string>(newClientSaveId());
 
@@ -149,7 +153,7 @@ export default function ReviewWorkoutScreen() {
   }, [vm]);
 
   async function doSave() {
-    if (!uid || !draft || !vm) return;
+    if (!uid || !draft || !vm || saveLock.current || savedWorkoutId) return;
 
     if (!canSave) {
       Alert.alert(
@@ -167,6 +171,9 @@ export default function ReviewWorkoutScreen() {
         {
           text: "Save",
           onPress: async () => {
+            if (saveLock.current) return;
+            saveLock.current = true;
+            let completedWorkoutId: string | null = null;
             try {
               setSaving(true);
 
@@ -181,7 +188,7 @@ export default function ReviewWorkoutScreen() {
               const durationSeconds = durationSecondsFromDraft(draft);
               const completedAt = new Date();
 
-              await saveCompletedWorkoutFromLiveDraft({
+              const saved = await saveCompletedWorkoutFromLiveDraft({
                 clientSaveId,
                 draft,
                 workoutId: draft.workoutId ?? workoutId ?? null,
@@ -190,6 +197,7 @@ export default function ReviewWorkoutScreen() {
                 planWorkoutIdToComplete:
                   draft.planWorkoutId ?? planWorkoutId ?? undefined,
               });
+              completedWorkoutId = saved.workoutHistoryId;
               // ✅ only clear AFTER successful save
               log("[resume-debug] save succeeded -> clearing…", {
                 uid,
@@ -225,19 +233,32 @@ export default function ReviewWorkoutScreen() {
               await dumpLiveStorage("AFTER stop/clear", uid);
 
               // Leave review screen + live screen
-              router.replace("/");
+              setSavedWorkoutId(completedWorkoutId);
             } catch (e: any) {
+              if (completedWorkoutId) {
+                // Cleanup failures must never turn a saved session into a failed save.
+                log("Post-save cleanup failed", e);
+                setSavedWorkoutId(completedWorkoutId);
+                return;
+              }
               Alert.alert(
                 "Save failed",
                 e?.message ?? "Something went wrong while saving.",
               );
             } finally {
+              saveLock.current = false;
               setSaving(false);
             }
           },
         },
       ],
     );
+  }
+
+  if (savedWorkoutId && draft && vm) {
+    return <WorkoutSavedScreen title={draft.title} sets={vm.summary.setsCompleted} exercises={vm.summary.exercisesWithCompletedSets}
+      onSkip={() => router.replace("/")}
+      onShare={() => router.replace({ pathname: "/features/social/create", params: { type: "workout", workoutHistoryId: savedWorkoutId, source: "workout_complete" } })} />;
   }
 
   if (!uid) {

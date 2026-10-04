@@ -34,7 +34,6 @@ import { SourcesMethodologyModal } from "./modals/SourcesMethodologyModal";
 import { useAuth } from "@/lib/authContext";
 
 import { log } from "@/lib/logger";
-import { SubscriptionSettingsCard } from "./components/SubscriptionSettingsCard";
 
 type Visibility = "public" | "followers" | "private";
 
@@ -402,9 +401,6 @@ export default function SettingsScreen() {
             />
           </SettingsCard>
 
-          <SectionHeader title="SUBSCRIPTION" />
-          <SubscriptionSettingsCard />
-
           <SectionHeader title="APP INFORMATION" />
           <SettingsCard>
             <SettingsRow
@@ -452,6 +448,13 @@ export default function SettingsScreen() {
               ]}
               onChange={onChangeVisibility}
             />
+          </SettingsCard>
+
+          <SectionHeader title="FEEDBACK" />
+          <SettingsCard>
+            <SettingsRow label="Report an issue" onPress={() => router.push("/features/feedback/issue")} />
+            <SettingsRow label="Suggest an improvement" onPress={() => router.push("/features/feedback/improvement")} />
+            <SettingsRow label="Rate MuscleMetric" onPress={() => router.push("/features/feedback/rating")} last />
           </SettingsCard>
 
           <SectionHeader title="LEGAL" />

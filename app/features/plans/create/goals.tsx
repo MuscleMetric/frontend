@@ -7,13 +7,11 @@ import {
   ScrollView,
   StyleSheet,
   Alert,
-  Modal,
 } from "react-native";
 import { router } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useAppTheme } from "../../../../lib/useAppTheme";
-import { useAuth } from "../../../../lib/authContext";
 import {
   usePlanDraft,
   createEmptyGoal,
@@ -23,7 +21,6 @@ import {
 } from "./store";
 
 import { Icon } from "@/ui";
-import FeaturePaywallModal from "../../paywall/components/FeaturePaywallModal";
 
 type DedupExercise = {
   exercise: ExerciseRow;
@@ -46,7 +43,6 @@ const METRIC_UNIT: Record<GoalMetric, string> = {
 
 export default function Goals() {
   const { colors, typography, layout } = useAppTheme();
-  const { capabilities } = useAuth();
 
   const s = useMemo(
     () => makeStyles(colors, typography, layout),
@@ -57,12 +53,6 @@ export default function Goals() {
     usePlanDraft();
 
   const [query, setQuery] = useState("");
-  const [paywallOpen, setPaywallOpen] = useState(false);
-  const [goalLimitMessage, setGoalLimitMessage] = useState<string | null>(null);
-
-  const maxGoals = capabilities.maxGoalsPerPlan;
-  const proGoalCap = 5;
-  const isFreeTier = maxGoals < proGoalCap;
 
   const planWeeks = useMemo(() => {
     if (!endDate) return 1;
@@ -118,14 +108,6 @@ export default function Goals() {
     [goals],
   );
 
-  const showGoalLimit = useCallback(() => {
-    setGoalLimitMessage(
-      `Your current plan allows ${maxGoals} goal${
-        maxGoals === 1 ? "" : "s"
-      }. Upgrade to MuscleMetric Pro to track up to ${proGoalCap} goals and build more complete progression plans.`,
-    );
-  }, [maxGoals]);
-
   function toggleExercise(ex: ExerciseRow) {
     const exists = findGoal(ex.id);
 
@@ -139,17 +121,10 @@ export default function Goals() {
       }
 
       removeGoal(ex.id);
-      setGoalLimitMessage(null);
-      return;
-    }
-
-    if (goals.length >= maxGoals) {
-      showGoalLimit();
       return;
     }
 
     upsertGoal(createEmptyGoal(ex));
-    setGoalLimitMessage(null);
   }
 
   function toggleMetric(goal: GoalDraft, metric: GoalMetric) {
@@ -179,22 +154,12 @@ export default function Goals() {
   }, [deduped, query]);
 
   const canContinue =
-    goals.length >= 1 &&
-    goals.every(isGoalComplete) &&
-    goalErrors.size === 0;
+    goals.length >= 1 && goals.every(isGoalComplete) && goalErrors.size === 0;
 
   const openHelp = () => {
     Alert.alert(
       "Plan goals",
-      isFreeTier
-        ? `You can currently track up to ${maxGoals} goals in this plan. Upgrade to MuscleMetric Pro to track up to ${proGoalCap}.`
-        : `You can track up to ${maxGoals} goals in this plan with your current tier.`,
-      isFreeTier
-        ? [
-            { text: "Close", style: "cancel" },
-            { text: "See Pro", onPress: () => setPaywallOpen(true) },
-          ]
-        : [{ text: "OK" }],
+      "Select the exercises you want to track. You can add as many goals as your plan needs.",
     );
   };
 
@@ -249,7 +214,7 @@ export default function Goals() {
           <View style={s.emptyCard}>
             <Text style={s.emptyTitle}>No goals selected</Text>
             <Text style={s.emptyText}>
-              Select 1–{maxGoals} exercises below to set targets.
+              Select exercises below to set targets.
             </Text>
           </View>
         ) : (
@@ -353,23 +318,14 @@ export default function Goals() {
             const selected = !!findGoal(exercise.id);
             const contextText =
               workoutTitles.length > 0 ? workoutTitles.join(", ") : "—";
-            const disabled = !selected && goals.length >= maxGoals;
 
             return (
               <Pressable
                 key={exercise.id}
-                onPress={() => {
-                  if (disabled) {
-                    showGoalLimit();
-                    return;
-                  }
-
-                  toggleExercise(exercise);
-                }}
+                onPress={() => toggleExercise(exercise)}
                 style={[
                   s.pickRow,
                   selected && s.pickRowSelected,
-                  disabled && { opacity: 0.55 },
                 ]}
               >
                 <View style={{ flex: 1, paddingRight: 10 }}>
@@ -412,47 +368,6 @@ export default function Goals() {
         </Pressable>
       </View>
 
-      <Modal
-        visible={!!goalLimitMessage}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setGoalLimitMessage(null)}
-      >
-        <View style={s.goalLimitScrim}>
-          <View style={s.goalLimitModal}>
-            <View style={s.goalLimitIcon}>
-              <Icon name="lock-closed" size={22} color={colors.onPrimary} />
-            </View>
-
-            <Text style={s.goalLimitTitle}>Unlock more plan goals</Text>
-
-            <Text style={s.goalLimitText}>{goalLimitMessage}</Text>
-
-            <Pressable
-              style={s.goalLimitPrimary}
-              onPress={() => {
-                setGoalLimitMessage(null);
-                setPaywallOpen(true);
-              }}
-            >
-              <Text style={s.goalLimitPrimaryText}>See MuscleMetric Pro</Text>
-            </Pressable>
-
-            <Pressable
-              style={s.goalLimitSecondary}
-              onPress={() => setGoalLimitMessage(null)}
-            >
-              <Text style={s.goalLimitSecondaryText}>Not now</Text>
-            </Pressable>
-          </View>
-        </View>
-      </Modal>
-
-      <FeaturePaywallModal
-        visible={paywallOpen}
-        reason="goal_limit"
-        onClose={() => setPaywallOpen(false)}
-      />
     </SafeAreaView>
   );
 }
@@ -693,7 +608,8 @@ function valueFor(
   side: "start" | "target",
   metric: GoalMetric,
 ) {
-  const key = side === "start" ? metricStartKey(metric) : metricTargetKey(metric);
+  const key =
+    side === "start" ? metricStartKey(metric) : metricTargetKey(metric);
   const value = goal[key];
 
   return typeof value === "number" && Number.isFinite(value) ? value : 0;

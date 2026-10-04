@@ -11,19 +11,12 @@ import {
 import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import {
-  usePlanDraft,
-  type GoalDraft,
-  type GoalMetric,
-} from "./store";
+import { usePlanDraft, type GoalDraft, type GoalMetric } from "./store";
 import { supabase } from "../../../../lib/supabase";
 import { useAuth } from "../../../../lib/authContext";
 import { useAppTheme } from "../../../../lib/useAppTheme";
 
 import { Icon } from "@/ui";
-import FeaturePaywallModal from "../../paywall/components/FeaturePaywallModal";
-
-type PaywallReason = "goal_limit" | "plan_limit";
 
 const METRIC_LABEL: Record<GoalMetric, string> = {
   weight: "Weight",
@@ -66,40 +59,8 @@ function weekKeySundayLocal(d: Date) {
   return `${y}-${m}-${day}`;
 }
 
-function isGoalLimitError(err: any) {
-  const code = String(err?.code ?? "").toUpperCase();
-  const message = String(err?.message ?? "").toLowerCase();
-  const details = String(err?.details ?? "").toLowerCase();
-
-  return (
-    code === "FREE_LIMIT_REACHED" ||
-    code === "PREMIUM_REQUIRED" ||
-    (message.includes("goal") && message.includes("limit")) ||
-    (details.includes("goal") && details.includes("limit")) ||
-    message.includes("maxgoalsperplan") ||
-    details.includes("maxgoalsperplan")
-  );
-}
-
-function isPlanLimitError(err: any) {
-  const code = String(err?.code ?? "").toUpperCase();
-  const message = String(err?.message ?? "").toLowerCase();
-  const details = String(err?.details ?? "").toLowerCase();
-
-  return (
-    code === "FREE_LIMIT_REACHED" ||
-    code === "PREMIUM_REQUIRED" ||
-    (message.includes("plan") && message.includes("limit")) ||
-    (details.includes("plan") && details.includes("limit")) ||
-    message.includes("maxactiveplans") ||
-    details.includes("maxactiveplans") ||
-    message.includes("active plan") ||
-    details.includes("active plan")
-  );
-}
-
 export default function Review() {
-  const { session, loading, capabilities } = useAuth();
+  const { session, loading } = useAuth();
   const userId = session?.user?.id ?? null;
 
   const { colors, typography, layout } = useAppTheme();
@@ -116,20 +77,13 @@ export default function Review() {
   );
 
   const [saving, setSaving] = useState(false);
-  const [saveErrorMessage, setSaveErrorMessage] = useState<string | null>(null);
-  const [paywallOpen, setPaywallOpen] = useState(false);
-  const [paywallReason, setPaywallReason] =
-    useState<PaywallReason>("goal_limit");
 
   const router = useRouter();
 
   const goalsValid = useMemo(() => {
-    if (goals.length < 1 || goals.length > capabilities.maxGoalsPerPlan) {
-      return false;
-    }
-
+    if (goals.length < 1) return false;
     return goals.every(isGoalComplete);
-  }, [goals, capabilities.maxGoalsPerPlan]);
+  }, [goals]);
 
   const canSave = useMemo(() => {
     if (!title?.trim()) return false;
@@ -165,7 +119,6 @@ export default function Review() {
 
     try {
       setSaving(true);
-      setSaveErrorMessage(null);
 
       const p_workouts = workouts.map((w) => ({
         title: w.title,
@@ -214,24 +167,6 @@ export default function Review() {
 
       if (rpcError) {
         console.error("create_plan_v1 RPC failed:", rpcError);
-
-        if (isGoalLimitError(rpcError)) {
-          setPaywallReason("goal_limit");
-          setSaveErrorMessage(
-            `This plan has too many goals for your current limit. You can save up to ${
-              capabilities.maxGoalsPerPlan
-            } goal${capabilities.maxGoalsPerPlan === 1 ? "" : "s"} per plan on your current tier.`,
-          );
-          return;
-        }
-
-        if (isPlanLimitError(rpcError)) {
-          setPaywallReason("plan_limit");
-          setSaveErrorMessage(
-            "You’ve reached your active plan limit. Upgrade to MuscleMetric Pro to create more active plans.",
-          );
-          return;
-        }
 
         Alert.alert(
           "Could not create plan",
@@ -309,25 +244,6 @@ export default function Review() {
       ]);
     } catch (e: any) {
       console.error("Unexpected error creating plan:", e);
-
-      if (isGoalLimitError(e)) {
-        setPaywallReason("goal_limit");
-        setSaveErrorMessage(
-          `This plan has too many goals for your current limit. You can save up to ${
-            capabilities.maxGoalsPerPlan
-          } goal${capabilities.maxGoalsPerPlan === 1 ? "" : "s"} per plan on your current tier.`,
-        );
-        return;
-      }
-
-      if (isPlanLimitError(e)) {
-        setPaywallReason("plan_limit");
-        setSaveErrorMessage(
-          "You’ve reached your active plan limit. Upgrade to MuscleMetric Pro to create more active plans.",
-        );
-        return;
-      }
-
       Alert.alert("Could not create plan", e?.message ?? String(e));
     } finally {
       setSaving(false);
@@ -374,28 +290,6 @@ export default function Review() {
             Ends {humanDate(endDate)} • {workoutsPerWeek} workouts/week
           </Text>
         </View>
-
-        {saveErrorMessage ? (
-          <View style={s.limitCard}>
-            <View style={s.limitHeader}>
-              <Icon name="lock-closed" size={18} color={colors.primary} />
-              <Text style={s.limitTitle}>Upgrade required</Text>
-            </View>
-
-            <Text style={s.limitBody}>{saveErrorMessage}</Text>
-
-            <Pressable
-              style={s.limitButton}
-              onPress={() => setPaywallOpen(true)}
-            >
-              <Text style={s.limitButtonText}>
-                {paywallReason === "plan_limit"
-                  ? "Unlock more plans"
-                  : "Unlock more goals"}
-              </Text>
-            </Pressable>
-          </View>
-        ) : null}
 
         <View style={s.card}>
           <Text style={s.h3}>Goals</Text>
@@ -532,11 +426,6 @@ export default function Review() {
         </View>
       </ScrollView>
 
-      <FeaturePaywallModal
-        visible={paywallOpen}
-        reason={paywallReason}
-        onClose={() => setPaywallOpen(false)}
-      />
     </SafeAreaView>
   );
 }

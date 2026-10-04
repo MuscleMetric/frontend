@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React from "react";
 import { HeroCard } from "./cards/HeroCard";
 import { WeeklyGoalCard } from "./cards/WeeklyGoalCard";
 import { LatestPRCard } from "./cards/LatestPRCard";
@@ -8,9 +8,7 @@ import { PlanGoalsCard } from "./cards/PlanGoalsCard";
 import { LastWorkoutCard } from "./cards/LastWorkoutCard";
 import { UnlockPreviewCard } from "./cards/UnlockPreviewCard";
 import { StarterTemplatesCard } from "./cards/StarterTemplatesCard";
-import { useAuth } from "@/lib/authContext";
 import { router } from "expo-router";
-import FeaturePaywallModal from "@/app/features/paywall/components/FeaturePaywallModal";
 
 export function HomeCardRenderer({
   card,
@@ -19,19 +17,11 @@ export function HomeCardRenderer({
   card: any;
   summary: any;
 }) {
-  const [paywallOpen, setPaywallOpen] = useState(false);
-  const { capabilities } = useAuth();
-
   const handleOpenDeepAnalytics = (exerciseId: string) => {
-    if (capabilities.canViewDeepAnalytics) {
-      router.push({
-        pathname: "/features/progress/screens/deep-analytics",
-        params: { exerciseId },
-      });
-      return;
-    }
-
-    setPaywallOpen(true);
+    router.push({
+      pathname: "/features/progress/screens/deep-analytics",
+      params: { exerciseId },
+    });
   };
 
   if (!card?.type) return null;
@@ -85,15 +75,5 @@ export function HomeCardRenderer({
       return null;
   }
 
-  return (
-    <>
-      {content}
-
-      <FeaturePaywallModal
-        visible={paywallOpen}
-        reason="deep_analytics"
-        onClose={() => setPaywallOpen(false)}
-      />
-    </>
-  );
+  return content;
 }

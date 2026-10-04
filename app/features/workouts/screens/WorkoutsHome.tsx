@@ -36,10 +36,8 @@ const ROUTES = {
 } as const;
 
 import { log } from "@/lib/logger";
-import FeaturePaywallModal from "../../paywall/components/FeaturePaywallModal";
 
 type ActivePlansEntry = NonNullable<WorkoutsTabPayload["activePlans"]>[number];
-type PaywallReason = "template_limit" | "plan_limit" | null;
 
 export default function WorkoutsHome() {
   const { session } = useAuth();
@@ -97,11 +95,9 @@ function StateRenderer({
   userId: string | null;
   onOpenCreate: () => void;
 }) {
-  const { capabilities } = useAuth();
   const { layout } = useAppTheme();
   const { width: windowWidth } = useWindowDimensions();
 
-  const [paywallReason, setPaywallReason] = useState<PaywallReason>(null);
   const [selectedPlanIndex, setSelectedPlanIndex] = useState(0);
 
   const heroListRef = useRef<FlatList<ActivePlansEntry>>(null);
@@ -183,8 +179,6 @@ function StateRenderer({
   if (!selectedEntry?.activePlan) return null;
 
   const selectedActivePlan = selectedEntry.activePlan;
-  const activePlanCount = activePlans.length;
-  const isAtPlanLimit = activePlanCount >= capabilities.maxActivePlans;
 
   const cardWidth = windowWidth - layout.space.lg * 2;
 
@@ -231,11 +225,6 @@ function StateRenderer({
   };
 
   const handleOpenPlanCreate = () => {
-    if (isAtPlanLimit) {
-      setPaywallReason("plan_limit");
-      return;
-    }
-
     router.push(ROUTES.planCreate);
   };
 
@@ -328,15 +317,8 @@ function StateRenderer({
           onPressWorkout={(workoutId) =>
             router.push({ pathname: ROUTES.workoutUse, params: { workoutId } })
           }
-          onTemplateLimitReached={() => setPaywallReason("template_limit")}
         />
       ) : null}
-
-      <FeaturePaywallModal
-        visible={!!paywallReason}
-        reason={paywallReason ?? "generic"}
-        onClose={() => setPaywallReason(null)}
-      />
     </>
   );
 }

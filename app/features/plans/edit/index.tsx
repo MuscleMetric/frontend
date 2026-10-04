@@ -34,10 +34,6 @@ import {
 
 import { ScreenHeader } from "@/ui";
 import { Icon } from "@/ui/icons/Icon";
-import PaywallModal from "@/app/features/paywall/components/PaywallModal";
-
-import { log } from "@/lib/logger";
-import FeaturePaywallModal from "../../paywall/components/FeaturePaywallModal";
 
 function fmtDateShort(iso?: string | null) {
   if (!iso) return "—";
@@ -84,27 +80,10 @@ function normalizePlanSnapshot(input: {
   return { planInfo, workouts, goals };
 }
 
-function isGoalLimitError(err: any) {
-  const message = String(err?.message ?? "").toLowerCase();
-  const code = String(err?.code ?? "").toUpperCase();
-  const details = String(err?.details ?? "").toLowerCase();
-
-  return (
-    code === "FREE_LIMIT_REACHED" ||
-    code === "PREMIUM_REQUIRED" ||
-    (message.includes("goal") && message.includes("limit")) ||
-    (details.includes("goal") && details.includes("limit")) ||
-    message.includes("maxgoalsperplan") ||
-    details.includes("maxgoalsperplan")
-  );
-}
-
 export default function EditPlan() {
-  const _ = <Stack.Screen options={{ headerShown: false }} />;
-
   const { planId } = useLocalSearchParams<{ planId: string }>();
   const router = useRouter();
-  const { session, capabilities } = useAuth();
+  const { session } = useAuth();
   const userId = session?.user?.id ?? null;
 
   const { colors, typography, layout } = useAppTheme() as any;
@@ -118,8 +97,6 @@ export default function EditPlan() {
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [saveErrorMessage, setSaveErrorMessage] = useState<string | null>(null);
-  const [paywallOpen, setPaywallOpen] = useState(false);
 
   const initialSnapRef = useRef<string | null>(null);
 
@@ -304,7 +281,6 @@ export default function EditPlan() {
 
     try {
       setSaving(true);
-      setSaveErrorMessage(null);
 
       const payload = {
         p_plan_id: planId,
@@ -344,16 +320,6 @@ export default function EditPlan() {
       router.back();
     } catch (e: any) {
       console.error("saveAll error:", e);
-
-      if (isGoalLimitError(e)) {
-        setSaveErrorMessage(
-          `This plan has too many goals for your current limit. You can save up to ${capabilities.maxGoalsPerPlan} goal${
-            capabilities.maxGoalsPerPlan === 1 ? "" : "s"
-          } per plan on your current tier.`,
-        );
-        return;
-      }
-
       Alert.alert("Could not save changes", e?.message ?? String(e));
     } finally {
       setSaving(false);
@@ -366,8 +332,7 @@ export default function EditPlan() {
     workouts,
     goals,
     router,
-    currentSnap,
-    capabilities.maxGoalsPerPlan,
+    currentSnap
   ]);
 
   const onCancel = () => {
@@ -594,24 +559,6 @@ export default function EditPlan() {
           </Pressable>
         </View>
 
-        {saveErrorMessage ? (
-          <View style={s.limitCard}>
-            <View style={s.limitHeader}>
-              <Icon name="lock-closed" size={18} color={colors.primary} />
-              <Text style={s.limitTitle}>Upgrade required</Text>
-            </View>
-
-            <Text style={s.limitBody}>{saveErrorMessage}</Text>
-
-            <Pressable
-              style={s.limitButton}
-              onPress={() => setPaywallOpen(true)}
-            >
-              <Text style={s.limitButtonText}>Unlock more goals</Text>
-            </Pressable>
-          </View>
-        ) : null}
-
         {isDirty ? (
           <Text style={s.dirtyHint}>You have unsaved changes.</Text>
         ) : (
@@ -652,12 +599,6 @@ export default function EditPlan() {
           <Text style={s.archiveText}>Archive plan</Text>
         </Pressable>
       </View>
-
-      <FeaturePaywallModal
-        visible={paywallOpen}
-        reason="goal_limit"
-        onClose={() => setPaywallOpen(false)}
-      />
     </SafeAreaView>
   );
 }
