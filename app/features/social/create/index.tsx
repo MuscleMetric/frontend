@@ -1,8 +1,10 @@
 // app/features/social/create/index.tsx
 
 import React from "react";
-import { View } from "react-native";
+import { View, Alert } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { Button } from "@/ui/buttons/Button";
+import { LoadingScreen, ErrorState } from "@/ui";
 import { supabase } from "@/lib/supabase";
 
 import { useCreatePostMachine } from "./state/createPostMachine";
@@ -20,6 +22,8 @@ const RPC_GET_PR_EXERCISES = "get_pr_exercises_v1";
 
 type RouteParams = {
   type?: "workout" | "pr";
+  workoutHistoryId?: string;
+  source?: string;
 };
 
 function mapBootstrapWorkoutToSelection(item: any, unit: "kg" | "lb") {
@@ -62,8 +66,17 @@ export default function CreatePostFlow() {
   const router = useRouter();
   const params = useLocalSearchParams<RouteParams>();
   const routeType = params.type;
+  const directWorkoutId = typeof params.workoutHistoryId === "string" ? params.workoutHistoryId : null;
+  const fromCompletion = params.source === "workout_complete";
+  const [directLoading, setDirectLoading] = React.useState(!!directWorkoutId);
+  const [directError, setDirectError] = React.useState(false);
+  const [directRetry, setDirectRetry] = React.useState(0);
+  function leaveComposer() { router.replace(fromCompletion ? "/" : "/social"); }
+
 
   const { state, actions } = useCreatePostMachine();
+
+  const publishLock = React.useRef(false);
 
   const [workouts, setWorkouts] = React.useState<any[]>([]);
   const [loadingWorkouts, setLoadingWorkouts] = React.useState(false);
@@ -116,12 +129,36 @@ export default function CreatePostFlow() {
   }, [state.step]);
 
   React.useEffect(() => {
-    if (!routeType) return;
+    if (!routeType || directWorkoutId) return;
     if (state.postType === routeType) return;
 
     actions.choosePostType(routeType);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [routeType]);
+
+  React.useEffect(() => {
+    if (!directWorkoutId) return;
+    let cancelled = false;
+    async function openSavedWorkout() {
+      setDirectLoading(true);
+      setDirectError(false);
+      try {
+        const { data, error } = await supabase.rpc(RPC_GET_WORKOUT_FOR_POST, { p_workout_history_id: directWorkoutId });
+        if (cancelled) return;
+        if (error || !data || data.workout_history_id !== directWorkoutId) throw new Error("Workout unavailable");
+        setWorkoutDetail(data);
+        actions.choosePostType("workout");
+        actions.selectWorkout(mapBootstrapWorkoutToSelection({ ...data, top_exercises: (data.exercises ?? []).map((ex: any) => ({ exercise_id: ex.exercise_id, name: ex.exercise_name })) }, "kg"));
+        actions.goto("edit_workout");
+      } catch {
+        if (!cancelled) setDirectError(true);
+      } finally {
+        if (!cancelled) setDirectLoading(false);
+      }
+    }
+    void openSavedWorkout();
+    return () => { cancelled = true; };
+  }, [directWorkoutId, directRetry, actions]);
 
   async function loadBootstrap(query: string | null) {
     setLoadingWorkouts(true);
@@ -174,7 +211,7 @@ export default function CreatePostFlow() {
   React.useEffect(() => {
     if (state.step !== "select_workout") return;
     loadBootstrap(state.workoutSearchQuery ?? null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
   }, [state.workoutSearchQuery, state.step]);
 
   React.useEffect(() => {
@@ -188,6 +225,9 @@ export default function CreatePostFlow() {
       setPrSearchQuery("");
     }
   }, [state.step]);
+
+  if (directLoading) return <LoadingScreen />;
+  if (directError) return <View style={{ flex: 1 }}><ErrorState title="Your workout is saved" message="We couldn’t load the post preview. Please retry, or go back and share it later." onRetry={() => setDirectRetry(n => n + 1)} /><Button title="Back to home" onPress={leaveComposer} /></View>;
 
   const showFallbackSheet = state.step === "sheet" && !routeType;
 
@@ -223,17 +263,15 @@ export default function CreatePostFlow() {
           workout={state.workout}
           workoutDetail={workoutDetail}
           draft={state.workoutDraft}
-          onBack={actions.back}
+          onBack={directWorkoutId ? leaveComposer : actions.back}
           onChangeAudience={actions.setAudience}
           onChangeCaption={actions.setWorkoutCaption}
           onPost={async () => {
-            if (!state.workout?.workoutHistoryId) return;
-
+            if (!state.workout?.workoutHistoryId || publishLock.current) return;
+            publishLock.current = true;
             actions.publishStart();
-
-            const { data: postId, error } = await supabase.rpc(
-              RPC_CREATE_POST_V2,
-              {
+            try {
+              const { data: postId, error } = await supabase.rpc(RPC_CREATE_POST_V2, {
                 p_caption: state.workoutDraft.caption ?? null,
                 p_exercise_id: null,
                 p_post_type: "workout",
@@ -241,16 +279,15 @@ export default function CreatePostFlow() {
                 p_pr_weight: null,
                 p_visibility: state.workoutDraft.audience,
                 p_workout_history_id: state.workout.workoutHistoryId,
-              },
-            );
-
-            if (error) {
-              console.error("create_post_v2 error:", error);
-              actions.publishError(error.message);
-              return;
+              });
+              if (error || !postId) throw error ?? new Error("Post was not created");
+              actions.publishSuccess(postId);
+            } catch {
+              actions.publishError("Couldn’t publish. Please try again.");
+              Alert.alert("Couldn’t publish", "Your workout is saved. Please try posting again.");
+            } finally {
+              publishLock.current = false;
             }
-
-            actions.publishSuccess(postId);
           }}
           posting={state.publishStatus === "publishing"}
         />
