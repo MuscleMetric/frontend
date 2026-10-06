@@ -16,10 +16,10 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  quality:
-    name: Quality checks
+  lint:
+    name: ESLint
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 15
 
     steps:
       - name: Checkout repository
@@ -32,102 +32,144 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        id: install
-        continue-on-error: true
         run: npm ci
 
-      - name: Prepare CI artifacts
-        if: always()
+      - name: Prepare artifacts
         run: mkdir -p ci-artifacts
 
-      - name: Lint
-        id: lint
-        if: steps.install.outcome == 'success'
-        continue-on-error: true
+      - name: Run ESLint
         shell: bash
         run: |
           set -o pipefail
           FORCE_COLOR=0 npm run lint 2>&1 | tee ci-artifacts/lint.log
 
-      - name: TypeScript
-        id: typecheck
-        if: steps.install.outcome == 'success'
-        continue-on-error: true
+      - name: Publish ESLint summary
+        if: always()
+        shell: bash
+        run: |
+          echo "## ESLint" >> "$GITHUB_STEP_SUMMARY"
+          echo >> "$GITHUB_STEP_SUMMARY"
+
+          if [ -f ci-artifacts/lint.log ]; then
+            LINT_TOTAL=$(grep -E "✖ [0-9]+ problems" ci-artifacts/lint.log | tail -1 || true)
+            if [ -n "$LINT_TOTAL" ]; then
+              printf '%s\n' "$LINT_TOTAL" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "No blocking ESLint errors reported." >> "$GITHUB_STEP_SUMMARY"
+            fi
+          else
+            echo "No lint log was produced." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload ESLint log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: eslint-${{ github.run_number }}
+          path: ci-artifacts/lint.log
+          if-no-files-found: ignore
+          retention-days: 14
+
+  typecheck:
+    name: TypeScript
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prepare artifacts
+        run: mkdir -p ci-artifacts
+
+      - name: Run TypeScript
         shell: bash
         run: |
           set -o pipefail
           FORCE_COLOR=0 npm run typecheck 2>&1 | tee ci-artifacts/typecheck.log
 
-      - name: Tests
-        id: tests
-        if: steps.install.outcome == 'success'
-        continue-on-error: true
+      - name: Publish TypeScript summary
+        if: always()
+        shell: bash
+        run: |
+          echo "## TypeScript" >> "$GITHUB_STEP_SUMMARY"
+          echo >> "$GITHUB_STEP_SUMMARY"
+          if [ -s ci-artifacts/typecheck.log ]; then
+            echo "TypeScript output is available in the workflow log and attached artifact." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "TypeScript completed with no compiler errors." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload TypeScript log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: typecheck-${{ github.run_number }}
+          path: ci-artifacts/typecheck.log
+          if-no-files-found: ignore
+          retention-days: 14
+
+  tests:
+    name: Jest tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prepare artifacts
+        run: mkdir -p ci-artifacts
+
+      - name: Run Jest
         shell: bash
         run: |
           set -o pipefail
           FORCE_COLOR=0 npm run test:ci -- --json --outputFile=ci-artifacts/jest-results.json 2>&1 | tee ci-artifacts/tests.log
 
-      - name: Publish CI summary
+      - name: Publish Jest summary
         if: always()
         shell: bash
-        env:
-          INSTALL_OUTCOME: ${{ steps.install.outcome }}
-          LINT_OUTCOME: ${{ steps.lint.outcome }}
-          TYPECHECK_OUTCOME: ${{ steps.typecheck.outcome }}
-          TEST_OUTCOME: ${{ steps.tests.outcome }}
         run: |
-          icon() {
-            case "$1" in
-              success) echo "✅ Passed" ;;
-              failure) echo "❌ Failed" ;;
-              skipped) echo "⏭️ Skipped" ;;
-              cancelled) echo "⚪ Cancelled" ;;
-              *) echo "⚪ $1" ;;
-            esac
-          }
-
-          {
-            echo "# MuscleMetric CI Report"
-            echo
-            echo "| Check | Result |"
-            echo "| --- | --- |"
-            echo "| Dependency install | $(icon "$INSTALL_OUTCOME") |"
-            echo "| ESLint | $(icon "$LINT_OUTCOME") |"
-            echo "| TypeScript | $(icon "$TYPECHECK_OUTCOME") |"
-            echo "| Jest | $(icon "$TEST_OUTCOME") |"
-            echo
-          } >> "$GITHUB_STEP_SUMMARY"
-
-          if [ -f ci-artifacts/lint.log ]; then
-            LINT_TOTAL=$(grep -E "✖ [0-9]+ problems" ci-artifacts/lint.log | tail -1 || true)
-            if [ -n "$LINT_TOTAL" ]; then
-              {
-                echo "## ESLint"
-                echo
-                printf '`%s`\n' "$LINT_TOTAL"
-                echo
-                echo "GitHub annotations above identify the exact files and lines. The full lint output is also attached as a CI artifact."
-                echo
-              } >> "$GITHUB_STEP_SUMMARY"
-            fi
+          if [ ! -f ci-artifacts/jest-results.json ]; then
+            {
+              echo "## Jest"
+              echo
+              echo "Jest did not produce a results file. Check the **Run Jest** step for the underlying error."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
           fi
 
-          if [ -f ci-artifacts/jest-results.json ]; then
-            python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
           import json
           from pathlib import Path
 
           path = Path("ci-artifacts/jest-results.json")
-          try:
-              data = json.loads(path.read_text())
-          except Exception:
-              raise SystemExit(0)
+          data = json.loads(path.read_text())
 
+          suites = data.get("numTotalTestSuites", 0)
           total = data.get("numTotalTests", 0)
           passed = data.get("numPassedTests", 0)
           failed = data.get("numFailedTests", 0)
           pending = data.get("numPendingTests", 0)
-          suites = data.get("numTotalTestSuites", 0)
 
           print("## Jest")
           print()
@@ -143,7 +185,10 @@ jobs:
               suite_name = Path(suite.get("name", "")).name
               for assertion in suite.get("assertionResults", []):
                   if assertion.get("status") == "failed":
-                      title = " › ".join(assertion.get("ancestorTitles", []) + [assertion.get("title", "Unnamed test")])
+                      title = " › ".join(
+                          assertion.get("ancestorTitles", [])
+                          + [assertion.get("title", "Unnamed test")]
+                      )
                       failures.append((suite_name, title))
 
           if failures:
@@ -155,40 +200,67 @@ jobs:
                   print(f"- …and {len(failures) - 10} more")
               print()
           PY
-          fi
 
-          {
-            echo "## Artifacts"
-            echo
-            echo "The workflow retains the full lint, TypeScript and Jest logs plus Jest's machine-readable JSON result for failed runs."
-            echo
-            echo "_Allure can be layered onto the Jest results later for richer test history and visual reporting once the baseline CI is green._"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Upload CI artifacts
+      - name: Upload Jest results
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: ci-results-${{ github.run_number }}
-          path: ci-artifacts/
+          name: jest-${{ github.run_number }}
+          path: |
+            ci-artifacts/tests.log
+            ci-artifacts/jest-results.json
           if-no-files-found: ignore
           retention-days: 14
 
-      - name: Enforce CI gate
-        if: always()
+  gate:
+    name: CI gate
+    if: always()
+    needs:
+      - lint
+      - typecheck
+      - tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Publish overall summary
         shell: bash
         env:
-          INSTALL_OUTCOME: ${{ steps.install.outcome }}
-          LINT_OUTCOME: ${{ steps.lint.outcome }}
-          TYPECHECK_OUTCOME: ${{ steps.typecheck.outcome }}
-          TEST_OUTCOME: ${{ steps.tests.outcome }}
+          LINT_RESULT: ${{ needs.lint.result }}
+          TYPECHECK_RESULT: ${{ needs.typecheck.result }}
+          TEST_RESULT: ${{ needs.tests.result }}
         run: |
-          if [ "$INSTALL_OUTCOME" != "success" ] || \
-             [ "$LINT_OUTCOME" != "success" ] || \
-             [ "$TYPECHECK_OUTCOME" != "success" ] || \
-             [ "$TEST_OUTCOME" != "success" ]; then
-            echo "One or more required CI checks failed."
+          icon() {
+            case "$1" in
+              success) echo "✅ Passed" ;;
+              failure) echo "❌ Failed" ;;
+              cancelled) echo "⚪ Cancelled" ;;
+              skipped) echo "⏭️ Skipped" ;;
+              *) echo "⚪ $1" ;;
+            esac
+          }
+
+          {
+            echo "# MuscleMetric CI Report"
+            echo
+            echo "| Check | Result |"
+            echo "| --- | --- |"
+            echo "| ESLint | $(icon "$LINT_RESULT") |"
+            echo "| TypeScript | $(icon "$TYPECHECK_RESULT") |"
+            echo "| Jest | $(icon "$TEST_RESULT") |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Enforce CI gate
+        shell: bash
+        env:
+          LINT_RESULT: ${{ needs.lint.result }}
+          TYPECHECK_RESULT: ${{ needs.typecheck.result }}
+          TEST_RESULT: ${{ needs.tests.result }}
+        run: |
+          if [ "$LINT_RESULT" != "success" ] || \
+             [ "$TYPECHECK_RESULT" != "success" ] || \
+             [ "$TEST_RESULT" != "success" ]; then
+            echo "One or more required CI jobs failed."
             exit 1
           fi
 
-          echo "All required CI checks passed."
+          echo "All required CI jobs passed."
