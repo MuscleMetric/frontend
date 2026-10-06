@@ -9,25 +9,17 @@ import type { ProfileOverview } from "../data/profileTypes";
 export default function ActivePlanCard({ data }: { data: ProfileOverview }) {
   const { colors, typography, layout } = useAppTheme();
   const plan = data.active_plan;
-  if (!plan) return null;
 
   const weeksCompletedPct = useMemo(() => {
-    const wi = plan.week_index ?? null; // 1-based current week
-    const wt = plan.weeks_total ?? null;
+    const wi = plan?.week_index ?? null; // 1-based current week
+    const wt = plan?.weeks_total ?? null;
 
     if (!wi || !wt || wt <= 0) return 0;
 
     // weeks completed (excluding current week)
     const raw = ((wi - 1) / wt) * 100;
     return Math.max(0, Math.min(100, Math.round(raw)));
-  }, [plan.week_index, plan.weeks_total]);
-
-  const weeklyPct = Math.max(0, Math.min(100, plan.weekly_progress_pct ?? 0));
-  const completed = Math.max(0, plan.completed_this_week ?? 0);
-  const target = Math.max(0, plan.weekly_target_sessions ?? 0);
-
-  const weeksTotal = plan.weeks_total ?? null;
-  const weekIndex = plan.week_index ?? null;
+  }, [plan?.week_index, plan?.weeks_total]);
 
   const styles = useMemo(
     () =>
@@ -134,6 +126,15 @@ export default function ActivePlanCard({ data }: { data: ProfileOverview }) {
       }),
     [colors, typography, layout]
   );
+
+  if (!plan) return null;
+
+  const weeklyPct = Math.max(0, Math.min(100, plan.weekly_progress_pct ?? 0));
+  const completed = Math.max(0, plan.completed_this_week ?? 0);
+  const target = Math.max(0, plan.weekly_target_sessions ?? 0);
+
+  const weeksTotal = plan.weeks_total ?? null;
+  const weekIndex = plan.week_index ?? null;
 
   return (
     <Card variant="primary" padded>

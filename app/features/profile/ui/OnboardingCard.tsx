@@ -46,15 +46,14 @@ export default function OnboardingCard({ data }: { data: ProfileOverview }) {
   const { colors, typography, layout } = useAppTheme();
 
   const req = data.onboarding?.required;
-  if (!req) return null;
 
   const steps: Array<{
     key: StepKey;
     done: boolean;
   }> = [
-    { key: "save_details", done: !!req.has_saved_details },
-    { key: "complete_workout", done: !!req.has_completed_workout },
-    { key: "follow_official", done: !!req.has_followed_official },
+    { key: "save_details", done: !!req?.has_saved_details },
+    { key: "complete_workout", done: !!req?.has_completed_workout },
+    { key: "follow_official", done: !!req?.has_followed_official },
   ];
 
   const doneCount = steps.filter((s) => s.done).length;
@@ -134,6 +133,8 @@ export default function OnboardingCard({ data }: { data: ProfileOverview }) {
       }),
     [colors, typography, layout],
   );
+
+  if (!req) return null;
 
   return (
     <Card>

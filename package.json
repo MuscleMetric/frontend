@@ -10,7 +10,9 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "lint": "expo lint",
-    "test": "jest"
+    "typecheck": "tsc --noEmit",
+    "test": "jest",
+    "test:ci": "jest --runInBand"
   },
   "dependencies": {
     "@expo-google-fonts/montserrat": "^0.4.2",
