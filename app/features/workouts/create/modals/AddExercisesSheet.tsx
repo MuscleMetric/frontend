@@ -94,7 +94,7 @@ export default function AddExercisesSheet({
   const locked = useMemo(() => new Set(selectedIds), [selectedIds]);
 
   // picked = newly selected in this modal session (NOT including locked)
-  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [picked, setPicked] = useState<Map<string, { exerciseId: string; name: string }>>(new Map());
 
   useEffect(() => {
     if (!visible) return;
@@ -105,7 +105,7 @@ export default function AddExercisesSheet({
     setMuscle(null);
     setEquipment(null);
     setPickerMode(null);
-    setPicked(new Set());
+    setPicked(new Map());
   }, [visible]);
 
   useEffect(() => {
@@ -144,14 +144,15 @@ export default function AddExercisesSheet({
   }, [visible, userId, query, favouritesOnly, muscle, equipment]);
 
   const togglePicked = useCallback(
-    (id: string) => {
+    (item: ExerciseListItem) => {
+      const id = item.id;
       // locked ones cannot be toggled
       if (locked.has(id)) return;
 
       setPicked((prev) => {
-        const next = new Set(prev);
+        const next = new Map(prev);
         if (next.has(id)) next.delete(id);
-        else next.add(id);
+        else next.set(id, { exerciseId: id, name: item.name });
         return next;
       });
     },
@@ -161,13 +162,11 @@ export default function AddExercisesSheet({
   const countNew = picked.size;
 
   const onPressAdd = useCallback(() => {
-    const pickedItems = items
-      .filter((x) => picked.has(x.id) && !locked.has(x.id))
-      .map((x) => ({ exerciseId: x.id, name: x.name }));
+    const pickedItems = [...picked.values()].filter((x) => !locked.has(x.exerciseId));
 
     onDone(pickedItems);
     onClose();
-  }, [items, picked, locked, onDone, onClose]);
+  }, [picked, locked, onDone, onClose]);
 
   const toggleFavourite = useCallback(
     async (exerciseId: string) => {
@@ -433,7 +432,7 @@ export default function AddExercisesSheet({
                   return (
                     <Pressable
                       key={item.id}
-                      onPress={() => togglePicked(item.id)}
+                      onPress={() => togglePicked(item)}
                       style={[
                         styles.itemRow,
                         isLocked ? styles.itemRowLocked : null,
