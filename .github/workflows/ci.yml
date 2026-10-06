@@ -104,7 +104,7 @@ jobs:
               {
                 echo "## ESLint"
                 echo
-                echo "`$LINT_TOTAL`"
+                printf '`%s`\n' "$LINT_TOTAL"
                 echo
                 echo "GitHub annotations above identify the exact files and lines. The full lint output is also attached as a CI artifact."
                 echo
@@ -137,6 +137,23 @@ jobs:
           print(f"- **Failed:** {failed}")
           print(f"- **Skipped:** {pending}")
           print()
+
+          failures = []
+          for suite in data.get("testResults", []):
+              suite_name = Path(suite.get("name", "")).name
+              for assertion in suite.get("assertionResults", []):
+                  if assertion.get("status") == "failed":
+                      title = " › ".join(assertion.get("ancestorTitles", []) + [assertion.get("title", "Unnamed test")])
+                      failures.append((suite_name, title))
+
+          if failures:
+              print("### Failed tests")
+              print()
+              for suite_name, title in failures[:10]:
+                  print(f"- `{suite_name}` — {title}")
+              if len(failures) > 10:
+                  print(f"- …and {len(failures) - 10} more")
+              print()
           PY
           fi
 
