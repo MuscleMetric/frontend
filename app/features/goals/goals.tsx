@@ -42,68 +42,12 @@ export default function GoalsScreen() {
   const { colors, typography } = useAppTheme();
   const styles = useMemo(() => makeStyles(colors, typography), [colors, typography]);
 
-  // steps goal state
-  const [stepsLoading, setStepsLoading] = useState(true);
-  const [stepsGoal, setStepsGoal] = useState<number>(10000);
-  const [editingSteps, setEditingSteps] = useState(false);
-  const [stepsDraft, setStepsDraft] = useState<string>("10000");
-  const [savingSteps, setSavingSteps] = useState(false);
-
   // weekly workout goal state
   const [weeklyLoading, setWeeklyLoading] = useState(true);
   const [weeklyGoal, setWeeklyGoal] = useState<number>(3);
   const [editingWeekly, setEditingWeekly] = useState(false);
   const [weeklyDraft, setWeeklyDraft] = useState<string>("3");
   const [savingWeekly, setSavingWeekly] = useState(false);
-
-  /* ----- load steps goal ----- */
-  useEffect(() => {
-    if (!userId) return;
-    let alive = true;
-    (async () => {
-      try {
-        setStepsLoading(true);
-        const { data, error } = await supabase
-          .from("profiles")
-          .select("steps_goal")
-          .eq("id", userId)
-          .maybeSingle();
-
-        const goal =
-          !error && data?.steps_goal != null ? Number(data.steps_goal) : 10000;
-
-        if (!alive) return;
-        const safe = clampInt(goal, 0, 50000);
-        setStepsGoal(safe);
-        setStepsDraft(String(safe));
-      } finally {
-        if (alive) setStepsLoading(false);
-      }
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [userId]);
-
-  async function saveStepsGoal() {
-    if (!userId) return;
-    const n = clampInt(Number(stepsDraft) || 0, 0, 50000);
-    try {
-      setSavingSteps(true);
-      const { error } = await supabase
-        .from("profiles")
-        .update({ steps_goal: n })
-        .eq("id", userId);
-      if (error) throw error;
-
-      setStepsGoal(n);
-      setEditingSteps(false);
-    } catch (e: any) {
-      Alert.alert("Could not save steps goal", e?.message ?? "Unknown error");
-    } finally {
-      setSavingSteps(false);
-    }
-  }
 
   /* ----- load weekly goal ----- */
   useEffect(() => {
@@ -275,71 +219,6 @@ export default function GoalsScreen() {
               <Text style={styles.helper}>
                 Pick 1–14. Keep it realistic so you can actually hit streaks.
               </Text>
-            </>
-          )}
-        </View>
-
-        {/* Steps Goal */}
-        <View style={styles.card}>
-          <Text style={styles.sectionLabel}>Daily</Text>
-          <View style={styles.cardTopRow}>
-            <Text style={styles.cardTitle}>Steps Goal</Text>
-            {!stepsLoading && !editingSteps && (
-              <Pressable
-                style={[styles.pillBtn, { borderColor: colors.border }]}
-                onPress={() => setEditingSteps(true)}
-              >
-                <Text style={styles.pillBtnText}>Edit</Text>
-              </Pressable>
-            )}
-          </View>
-
-          {stepsLoading ? (
-            <ActivityIndicator style={{ marginTop: 10 }} />
-          ) : !editingSteps ? (
-            <>
-              <Text style={styles.bigValue}>{stepsGoal.toLocaleString()}</Text>
-              <Text style={styles.bigSuffix}>steps / day</Text>
-              <Text style={styles.helper}>
-                This powers your daily summary, streaks, and steps achievements.
-              </Text>
-            </>
-          ) : (
-            <>
-              <View style={styles.editRow}>
-                <TextInput
-                  style={[styles.input, { flex: 1 }]}
-                  value={stepsDraft}
-                  onChangeText={setStepsDraft}
-                  keyboardType="number-pad"
-                  placeholder="e.g. 10000"
-                  placeholderTextColor={colors.textMuted}
-                />
-                <Pressable
-                  style={[
-                    styles.primaryBtn,
-                    { opacity: savingSteps ? 0.7 : 1 },
-                  ]}
-                  disabled={savingSteps}
-                  onPress={saveStepsGoal}
-                >
-                  <Text style={styles.primaryBtnText}>
-                    {savingSteps ? "Saving…" : "Save"}
-                  </Text>
-                </Pressable>
-              </View>
-
-              <Pressable
-                style={styles.ghostBtn}
-                onPress={() => {
-                  setStepsDraft(String(stepsGoal));
-                  setEditingSteps(false);
-                }}
-              >
-                <Text style={styles.ghostBtnText}>Cancel</Text>
-              </Pressable>
-
-              <Text style={styles.helper}>Pick 0–50,000.</Text>
             </>
           )}
         </View>
