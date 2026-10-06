@@ -91,7 +91,7 @@ export function ConsistencyStep({
           <View style={styles.header}>
             <Text style={styles.h1}>Define your consistency</Text>
             <Text style={styles.sub}>
-              Set your weekly targets. We'll use these for reminders and
+              Set your weekly targets. We’ll use these for reminders and
               progress summaries.
             </Text>
           </View>
