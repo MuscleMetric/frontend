@@ -207,6 +207,26 @@ export default function WorkoutOverviewScreen() {
     );
   }
 
+  return (
+    <WorkoutOverviewContent
+      userId={userId}
+      workoutId={workoutId}
+      planWorkoutId={planWorkoutId}
+    />
+  );
+}
+
+function WorkoutOverviewContent({
+  userId,
+  workoutId,
+  planWorkoutId,
+}: {
+  userId: string | null;
+  workoutId: string;
+  planWorkoutId: string | null;
+}) {
+  const { colors, typography, layout } = useAppTheme();
+
   const {
     loading,
     error,

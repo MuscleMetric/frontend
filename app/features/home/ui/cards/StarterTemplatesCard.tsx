@@ -67,13 +67,13 @@ export function StarterTemplatesCard({ card }: { card: any; summary?: any }) {
   );
 
   const items = useMemo(() => normalizeItems(card), [card]);
-  if (!items.length) return null;
 
   const [open, setOpen] = useState(false);
   const [activeTemplateId, setActiveTemplateId] = useState<string | null>(null);
   const [activeTitle, setActiveTitle] = useState<string>("");
-
   const [activeImageKey, setActiveImageKey] = useState<string | null>(null);
+
+  if (!items.length) return null;
 
   function openTemplate(it: StarterTemplateItem) {
     setActiveTemplateId(it.template_workout_id);

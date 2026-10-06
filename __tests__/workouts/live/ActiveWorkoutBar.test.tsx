@@ -63,7 +63,7 @@ describe("ActiveWorkoutBar", () => {
   beforeEach(() => {
     jest.clearAllMocks();
 
-    mockUsePathname.mockReturnValue("/(tabs)/workout");
+    mockUsePathname.mockReturnValue("/workout");
     mockUseActiveWorkoutSession.mockReturnValue({
       activeDraft: {
         draftId: "draft-1",
@@ -113,7 +113,7 @@ describe("ActiveWorkoutBar", () => {
   });
 
   it("hides on auth routes", () => {
-    mockUsePathname.mockReturnValue("/(auth)/login");
+    mockUsePathname.mockReturnValue("/login");
 
     const { queryByText } = render(<ActiveWorkoutBar />);
     expect(queryByText("Push Day")).toBeNull();

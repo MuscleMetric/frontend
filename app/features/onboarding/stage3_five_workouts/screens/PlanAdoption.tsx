@@ -86,7 +86,7 @@ export default function PlanAdoption({
   return (
     <View style={styles.wrap}>
       <Text style={styles.h1}>
-        You've got <Text style={styles.h1Em}>momentum</Text> Now let’s focus it.
+        You’ve got <Text style={styles.h1Em}>momentum</Text> Now let’s focus it.
       </Text>
 
       <Text style={styles.sub}>
