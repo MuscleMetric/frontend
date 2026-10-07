@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-require-imports -- Native UI stubs for the picker regression. */
 import React from 'react';
-import { render, fireEvent, waitFor } from '@testing-library/react-native';
+import { render, fireEvent } from '@testing-library/react-native';
 import AddExercisesSheet from '@/app/features/workouts/create/modals/AddExercisesSheet';
 import { fetchExercises } from '@/app/features/workouts/create/data/exercises.query';
 
@@ -15,17 +15,43 @@ jest.mock('@/ui', () => {
 const bench = { id: 'bench', name: 'Bench Press' };
 const squat = { id: 'squat', name: 'Squat' };
 beforeEach(() => {
-  (fetchExercises as jest.Mock).mockImplementation(async ({ filters }) => filters.query === 'squat' ? [squat] : [bench, squat]);
+  jest.clearAllMocks();
+  (fetchExercises as jest.Mock).mockResolvedValue([bench, squat]);
 });
 it('keeps every selection across searches and submits in tap order', async () => {
+  (fetchExercises as jest.Mock).mockImplementation(async ({ filters }) =>
+    filters.query === 'squat' ? [squat] : [bench],
+  );
+
   const onDone = jest.fn();
-  const screen = render(<AddExercisesSheet visible userId="test" selectedIds={[]} onClose={jest.fn()} onDone={onDone} />);
+  const screen = render(
+    <AddExercisesSheet
+      visible
+      userId="test"
+      selectedIds={[]}
+      onClose={jest.fn()}
+      onDone={onDone}
+    />,
+  );
+
+  // First result set contains only Bench Press.
   fireEvent.press(await screen.findByText('Bench Press'));
-  fireEvent.changeText(screen.getByPlaceholderText('Search exercises...'), 'squat');
-  await waitFor(() => expect(screen.queryByText('Bench Press')).toBeNull());
-  fireEvent.press(screen.getByText('Squat'));
+
+  // A different search replaces the result set with only Squat.
+  fireEvent.changeText(
+    screen.getByPlaceholderText('Search exercises...'),
+    'squat',
+  );
+  fireEvent.press(await screen.findByText('Squat'));
+  expect(screen.queryByText('Bench Press')).toBeNull();
+
+  // Both selections must survive even though Bench is no longer in the
+  // current search results.
   fireEvent.press(screen.getByText('Add (2)'));
-  expect(onDone).toHaveBeenCalledWith([{ exerciseId: 'bench', name: 'Bench Press' }, { exerciseId: 'squat', name: 'Squat' }]);
+  expect(onDone).toHaveBeenCalledWith([
+    { exerciseId: 'bench', name: 'Bench Press' },
+    { exerciseId: 'squat', name: 'Squat' },
+  ]);
 });
 it('uses selection order rather than catalog order and excludes existing exercises', async () => {
   const onDone = jest.fn();
