@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(7);
+select plan(9);
 
 insert into auth.users (id, email)
 values (
@@ -166,6 +166,31 @@ select is(
   ),
   1::bigint,
   'retry does not duplicate workout history'
+);
+
+select is(
+  (
+    select count(*)
+    from public.workout_exercise_history weh
+    join public.workout_history wh on wh.id = weh.workout_history_id
+    where wh.client_save_id = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee'
+  ),
+  1::bigint,
+  'retry does not duplicate exercise history'
+);
+
+select is(
+  (
+    select count(*)
+    from public.workout_set_history wsh
+    join public.workout_exercise_history weh
+      on weh.id = wsh.workout_exercise_history_id
+    join public.workout_history wh
+      on wh.id = weh.workout_history_id
+    where wh.client_save_id = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee'
+  ),
+  2::bigint,
+  'retry does not duplicate set history'
 );
 
 select * from finish();
