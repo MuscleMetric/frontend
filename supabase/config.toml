@@ -409,7 +409,9 @@ s3_secret_key = "env(S3_SECRET_KEY)"
 
 [functions.revenuecat-webhook]
 enabled = true
-verify_jwt = true
+# RevenueCat cannot present a Supabase user JWT. The function authenticates
+# requests with REVENUECAT_WEBHOOK_SECRET in the Authorization header.
+verify_jwt = false
 import_map = "./functions/revenuecat-webhook/deno.json"
 # Uncomment to specify a custom file path to the entrypoint.
 # Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
@@ -417,3 +419,14 @@ entrypoint = "./functions/revenuecat-webhook/index.ts"
 # Specifies static files to be bundled with the function. Supports glob patterns.
 # For example, if you want to serve static HTML pages in your function:
 # static_files = [ "./functions/revenuecat-webhook/*.html" ]
+
+
+[functions.close-expired-plans]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/close-expired-plans/index.ts"
+
+[functions.process-notification-push-jobs]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/process-notification-push-jobs/index.ts"

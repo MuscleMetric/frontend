@@ -1,0 +1,3 @@
+-- Intentionally minimal.
+-- Production user data is never copied into the repository.
+-- Database tests should create only the fixtures they require and clean them up.
