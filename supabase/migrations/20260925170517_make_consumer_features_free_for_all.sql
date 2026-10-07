@@ -11,6 +11,11 @@
 
 CREATE SCHEMA IF NOT EXISTS admin AUTHORIZATION postgres;
 
+-- Application schema objects depend on trigram operators that production
+-- provides through the extensions schema.
+CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA extensions;
+SET search_path = public, extensions, pg_catalog;
+
 CREATE TYPE public.achievement_category AS ENUM ('strength', 'endurance', 'consistency', 'skill', 'general');
 
 CREATE TYPE public.achievement_difficulty AS ENUM ('easy', 'medium', 'hard', 'elite', 'legendary');
