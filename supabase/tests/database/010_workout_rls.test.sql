@@ -68,30 +68,24 @@ select throws_ok(
   'user 1 cannot create a workout for user 2'
 );
 
-select is(
-  (
-    with changed as (
-      update public.workouts
-      set title = 'Hacked'
-      where id = '44444444-4444-4444-8444-444444444442'
-      returning 1
-    )
-    select count(*) from changed
-  ),
-  0::bigint,
+select results_eq(
+  $
+    update public.workouts
+    set title = 'Hacked'
+    where id = '44444444-4444-4444-8444-444444444442'
+    returning 1
+  $,
+  $ select 1 where false $,
   'user 1 cannot update user 2 workout'
 );
 
-select is(
-  (
-    with deleted as (
-      delete from public.workouts
-      where id = '44444444-4444-4444-8444-444444444442'
-      returning 1
-    )
-    select count(*) from deleted
-  ),
-  0::bigint,
+select results_eq(
+  $
+    delete from public.workouts
+    where id = '44444444-4444-4444-8444-444444444442'
+    returning 1
+  $,
+  $ select 1 where false $,
   'user 1 cannot delete user 2 workout'
 );
 
