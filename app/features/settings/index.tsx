@@ -422,6 +422,11 @@ export default function SettingsScreen() {
               label="Primary Goal"
               value={goalLabel}
               onPress={() => setOpenGoal(true)}
+            />
+            <SettingsRow
+              label="Workout Goals"
+              value="Weekly target and plan progress"
+              onPress={() => router.push("/features/goals/goals")}
               last
             />
           </SettingsCard>
