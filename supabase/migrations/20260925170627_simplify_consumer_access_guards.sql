@@ -153,7 +153,7 @@ exception when others then
       finished_at = now()
   where id = run_id;
   raise;
-end;$function$
+end;$function$;
 
 CREATE OR REPLACE FUNCTION public._is_core_muscle(p_name text)
  RETURNS boolean
@@ -167,7 +167,7 @@ AS $function$
     'obliques',
     'core stabilizers'
   );
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public._mm_assert(p_condition boolean, p_message text)
  RETURNS void
@@ -178,7 +178,7 @@ begin
     raise exception 'ASSERTION FAILED: %', p_message;
   end if;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.accept_follow_request(p_requester uuid)
  RETURNS void
@@ -231,7 +231,7 @@ begin
   on conflict do nothing;
 
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.ack_home_transition(p_event_id uuid)
  RETURNS void
@@ -245,7 +245,7 @@ where ue.id = p_event_id
   and ue.user_id = (select auth.uid())
   and ue.type = 'home_transition'
   and ue.consumed_at is null;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.add_post_comment(p_post_id uuid, p_body text)
  RETURNS TABLE(id uuid, post_id uuid, user_id uuid, user_name text, user_username text, body text, created_at timestamp with time zone)
@@ -323,7 +323,7 @@ begin
   order by pc.created_at desc, pc.id desc
   limit 1;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.admin_alerts_v1(p_days integer)
  RETURNS jsonb
@@ -408,7 +408,7 @@ begin
     )
   );
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.admin_cron_end_due_plans()
  RETURNS void
@@ -430,7 +430,7 @@ begin
     raise;
   end;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.admin_cron_recompute_all_step_stats(p_job_key text)
  RETURNS void
@@ -459,7 +459,7 @@ begin
     raise;
   end;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.admin_cron_weekly_rollover()
  RETURNS void
@@ -481,7 +481,7 @@ begin
     raise;
   end;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.admin_dashboard_v1()
  RETURNS jsonb
@@ -720,7 +720,7 @@ begin
     )
   );
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.admin_funnel_v1(p_days integer DEFAULT 7)
  RETURNS TABLE(signed_up integer, created_plan integer, started_workout integer, completed_workout_with_sets integer, returned_within_7d integer)
@@ -794,7 +794,7 @@ begin
 
   return next;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.admin_job_run_finish(p_run_id uuid, p_status text, p_rows_processed integer DEFAULT NULL::integer, p_rows_updated integer DEFAULT NULL::integer, p_rows_inserted integer DEFAULT NULL::integer, p_error_message text DEFAULT NULL::text, p_error_detail jsonb DEFAULT NULL::jsonb)
  RETURNS void
@@ -824,7 +824,7 @@ begin
     error_detail = p_error_detail
   where id = p_run_id;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.admin_job_run_start(p_job_key text, p_job_source text DEFAULT 'cron'::text, p_meta jsonb DEFAULT '{}'::jsonb)
  RETURNS uuid
@@ -841,7 +841,7 @@ begin
 
   return v_id;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.admin_job_runs_recent(p_job_key text, p_limit integer DEFAULT 12)
  RETURNS TABLE(id uuid, started_at timestamp with time zone, finished_at timestamp with time zone, status text, duration_ms integer, rows_processed integer, rows_updated integer, rows_inserted integer, error_message text)
@@ -863,7 +863,7 @@ AS $function$
   where r.job_key = p_job_key
   order by r.started_at desc
   limit greatest(1, least(p_limit, 50));
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.admin_list_active_users_v1(p_days integer DEFAULT 7, p_limit integer DEFAULT 25, p_offset integer DEFAULT 0)
  RETURNS TABLE(id uuid, name text, email text, role text, workouts_in_period integer, last_workout_at timestamp with time zone)
@@ -896,7 +896,7 @@ AS $function$
   order by a.cnt desc, a.last_at desc
   limit greatest(p_limit, 1)
   offset greatest(p_offset, 0);
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.admin_list_new_users_v1(p_days integer DEFAULT 7, p_limit integer DEFAULT 25, p_offset integer DEFAULT 0)
  RETURNS TABLE(id uuid, created_at timestamp with time zone, name text, email text, role text, workouts_total integer, last_workout_at timestamp with time zone)
@@ -928,7 +928,7 @@ AS $function$
   order by p.created_at desc
   limit greatest(p_limit, 1)
   offset greatest(p_offset, 0);
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.admin_list_users_one_workout_v1(p_limit integer DEFAULT 25, p_offset integer DEFAULT 0)
  RETURNS TABLE(id uuid, created_at timestamp with time zone, name text, email text, role text, workout_id uuid, workout_completed_at timestamp with time zone, workout_title text)
@@ -959,7 +959,7 @@ AS $function$
   order by wh.completed_at desc
   limit greatest(p_limit, 1)
   offset greatest(p_offset, 0);
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.admin_list_users_zero_workouts_v1(p_limit integer DEFAULT 25, p_offset integer DEFAULT 0)
  RETURNS TABLE(id uuid, created_at timestamp with time zone, name text, email text, role text)
@@ -981,7 +981,7 @@ AS $function$
   order by p.created_at desc
   limit greatest(p_limit, 1)
   offset greatest(p_offset, 0);
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.admin_list_workouts_missing_sets_v1(p_days integer DEFAULT 30, p_limit integer DEFAULT 25, p_offset integer DEFAULT 0)
  RETURNS TABLE(workout_history_id uuid, user_id uuid, completed_at timestamp with time zone, workout_title text, has_notes boolean, exercises_count integer)
@@ -1021,7 +1021,7 @@ AS $function$
   order by wh.completed_at desc
   limit greatest(p_limit, 1)
   offset greatest(p_offset, 0);
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.admin_log_error(p_source text, p_event_key text, p_message text, p_user_id uuid DEFAULT NULL::uuid, p_level text DEFAULT 'error'::text, p_meta jsonb DEFAULT '{}'::jsonb)
  RETURNS void
@@ -1031,7 +1031,7 @@ CREATE OR REPLACE FUNCTION public.admin_log_error(p_source text, p_event_key tex
 AS $function$
   insert into public.admin_error_events(source, event_key, message, user_id, level, meta)
   values (p_source, p_event_key, p_message, p_user_id, p_level, coalesce(p_meta, '{}'::jsonb));
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.admin_new_users(p_days integer, p_lim integer)
  RETURNS TABLE(kind text, user_id uuid, email text, name text, created_at timestamp with time zone, meta text)
@@ -1050,7 +1050,7 @@ AS $function$
   where p.created_at >= now() - (p_days || ' days')::interval
   order by p.created_at desc
   limit p_lim;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.admin_ops_snapshot_v1()
  RETURNS jsonb
@@ -1132,7 +1132,7 @@ begin
 
   return v;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.admin_search_users(q text, lim integer DEFAULT 10)
  RETURNS TABLE(id uuid, email text, name text, created_at timestamp with time zone, role text)
@@ -1161,7 +1161,7 @@ begin
   order by p.created_at desc
   limit greatest(1, least(lim, 50));
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.admin_set_user_flag(p_user_id uuid, p_flag_key text, p_value boolean)
  RETURNS jsonb
@@ -1194,7 +1194,7 @@ begin
 
   return jsonb_build_object('ok', true, 'settings', updated);
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.admin_user_summary(p_user_id uuid)
  RETURNS jsonb
@@ -1298,7 +1298,7 @@ begin
     )
   );
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.admin_users_one_workout(p_days integer, p_lim integer)
  RETURNS TABLE(kind text, user_id uuid, email text, name text, created_at timestamp with time zone, meta text)
@@ -1318,7 +1318,7 @@ AS $function$
     and (select count(*) from public.workout_history wh where wh.user_id = p.id) = 1
   order by p.created_at desc
   limit p_lim;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.admin_users_zero_workouts(p_days integer, p_lim integer)
  RETURNS TABLE(kind text, user_id uuid, email text, name text, created_at timestamp with time zone, meta text)
@@ -1338,7 +1338,7 @@ AS $function$
     and not exists (select 1 from public.workout_history wh where wh.user_id = p.id)
   order by p.created_at desc
   limit p_lim;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.admin_workouts_missing_sets(p_days integer, p_lim integer)
  RETURNS TABLE(kind text, workout_history_id uuid, user_id uuid, email text, name text, completed_at timestamp with time zone, workout_title text, meta text)
@@ -1368,7 +1368,7 @@ AS $function$
     )
   order by wh.completed_at desc
   limit p_lim;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.assert_can_activate_existing_plan(p_user_id uuid, p_plan_id uuid)
  RETURNS void
@@ -1405,7 +1405,7 @@ begin
 
   perform public.assert_can_create_or_activate_plan(p_user_id);
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.assert_can_add_goal_to_plan(p_user_id uuid, p_plan_id uuid)
  RETURNS void
@@ -1435,7 +1435,7 @@ begin
       detail = 'Plan does not belong to this user.';
   end if;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.assert_can_create_or_activate_plan(p_user_id uuid)
  RETURNS void
@@ -1458,7 +1458,7 @@ begin
       );
   end if;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.assert_can_create_template(p_user_id uuid)
  RETURNS void
@@ -1481,7 +1481,7 @@ begin
       );
   end if;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.assert_can_view_deep_analytics(p_user_id uuid)
  RETURNS void
@@ -1499,7 +1499,7 @@ begin
 
   return;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.award_achievements(p_user_id uuid)
  RETURNS void
@@ -2311,7 +2311,7 @@ from (
 
     end if;
   end loop;
-end;$function$
+end;$function$;
 
 CREATE OR REPLACE FUNCTION public.birthday_check_and_mark()
  RETURNS jsonb
@@ -2397,7 +2397,7 @@ begin
     'name', p.name
   );
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.block_user(p_target uuid)
  RETURNS void
@@ -2432,7 +2432,7 @@ begin
   where (requester_id = v_me and target_id = p_target and status = 'pending')
      or (requester_id = p_target and target_id = v_me and status = 'pending');
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.bump_exercise_usage_session()
  RETURNS trigger
@@ -2459,7 +2459,7 @@ begin
 
   return new;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.bump_exercise_usage_set()
  RETURNS trigger
@@ -2490,7 +2490,7 @@ begin
 
   return new;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.can_interact_with_post_v1(p_viewer uuid, p_post_id uuid)
  RETURNS boolean
@@ -2541,7 +2541,7 @@ begin
   -- private post: only owner (already handled)
   return false;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.can_view_post(p_viewer uuid, p_post_id uuid)
  RETURNS boolean
@@ -2572,7 +2572,7 @@ AS $function$
       ) then true
       else false
     end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.can_view_user(p_viewer uuid, p_profile_id uuid)
  RETURNS boolean
@@ -2627,7 +2627,7 @@ begin
   -- private: only self (already handled)
   return false;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.cancel_follow_request(p_target uuid)
  RETURNS void
@@ -2657,7 +2657,7 @@ begin
     raise exception 'No pending request found';
   end if;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.check_and_award_achievements(p_user_id uuid)
  RETURNS void
@@ -2825,7 +2825,7 @@ where p.id = p_user_id;
 
     end if;
   end loop;
-end;$function$
+end;$function$;
 
 CREATE OR REPLACE FUNCTION public.check_and_award_achievements_home_v2()
  RETURNS jsonb
@@ -3326,7 +3326,7 @@ begin
 
   return v_payload;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.check_and_award_achievements_home_v3()
  RETURNS jsonb
@@ -3683,7 +3683,7 @@ begin
 
   return v_payload;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.check_username_available_v1(p_username text)
  RETURNS TABLE(normalized text, is_valid boolean, is_available boolean, reason text)
@@ -3724,7 +3724,7 @@ begin
   ) into v_exists;
 
   return query select v_norm, true, (not v_exists), case when v_exists then 'taken' else null end;
-end;$function$
+end;$function$;
 
 CREATE OR REPLACE FUNCTION public.christmas_check_and_mark()
  RETURNS jsonb
@@ -3774,7 +3774,7 @@ begin
     'name', p.name
   );
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.claim_notification_push_jobs_v1(p_limit integer DEFAULT 20)
  RETURNS TABLE(job_id uuid, notification_id uuid, recipient_id uuid)
@@ -3806,7 +3806,7 @@ begin
     c.recipient_id
   from claimed c;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.clear_username_v1()
  RETURNS void
@@ -3829,7 +3829,7 @@ begin
     raise exception 'profile_not_found';
   end if;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.clone_starter_template(p_template_workout_id uuid)
  RETURNS uuid
@@ -3950,7 +3950,7 @@ begin
 
   return v_new_workout_id;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.clone_starter_template_test_v1(p_user_id uuid, p_template_workout_id uuid)
  RETURNS uuid
@@ -4061,7 +4061,7 @@ begin
 
   return v_new_workout_id;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.complete_onboarding_stage2_v1()
  RETURNS void
@@ -4078,7 +4078,7 @@ begin
   set onboarding_stage2_completed_at = coalesce(onboarding_stage2_completed_at, now())
   where id = auth.uid();
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.complete_onboarding_stage3()
  RETURNS void
@@ -4095,7 +4095,7 @@ begin
     updated_at = now()
   where id = auth.uid();
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.complete_onboarding_stage_v1(p_stage text)
  RETURNS void
@@ -4127,7 +4127,7 @@ begin
     where id = v_user;
   end if;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.compute_achievement_facts_v1()
  RETURNS jsonb
@@ -4516,7 +4516,7 @@ begin
 
   return v_payload;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.compute_workout_image_key(p_workout_id uuid)
  RETURNS text
@@ -4648,7 +4648,7 @@ decision as (
 )
 
 select image_key from decision;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.compute_workout_image_key_v1(p_workout_id uuid)
  RETURNS text
@@ -4780,7 +4780,7 @@ decision as (
 )
 
 select image_key from decision;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.count_plan_goals(p_plan_id uuid)
  RETURNS integer
@@ -4792,7 +4792,7 @@ AS $function$
   from public.goals g
   where g.plan_id = p_plan_id
     and g.is_active = true;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.count_user_active_plans(p_user_id uuid)
  RETURNS integer
@@ -4804,7 +4804,7 @@ AS $function$
   from public.plans p
   where p.user_id = p_user_id
     and p.is_completed = false;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.count_user_templates(p_user_id uuid)
  RETURNS integer
@@ -4818,7 +4818,7 @@ AS $function$
     and w.counts_toward_template_limit = true
     and w.archived_at is null
     and w.deleted_at is null;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.create_full_plan(p_user_id uuid, p_title text, p_end_date date, p_workouts jsonb, p_goals jsonb)
  RETURNS uuid
@@ -4979,7 +4979,7 @@ exception
   when others then
     raise;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.create_goal_guarded_test_v1(p_user_id uuid, p_plan_id uuid, p_exercise_id uuid, p_type goal_type, p_target_number numeric, p_unit text DEFAULT NULL::text, p_deadline date DEFAULT NULL::date, p_notes text DEFAULT NULL::text)
  RETURNS goals
@@ -5020,7 +5020,7 @@ begin
 
   return v_row;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.create_notification_v1(p_recipient_id uuid, p_actor_id uuid, p_type text, p_title text, p_body text, p_entity_type text, p_entity_id uuid, p_dedupe_key text DEFAULT NULL::text)
  RETURNS uuid
@@ -5079,7 +5079,7 @@ begin
 
   return v_notification_id;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.create_notification_v1(p_user_id uuid, p_actor_id uuid, p_type text, p_post_id uuid DEFAULT NULL::uuid, p_comment_id uuid DEFAULT NULL::uuid, p_follow_requester_id uuid DEFAULT NULL::uuid, p_follow_target_id uuid DEFAULT NULL::uuid, p_payload jsonb DEFAULT '{}'::jsonb)
  RETURNS void
@@ -5117,7 +5117,7 @@ begin
   )
   on conflict do nothing;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.create_plan_guarded_test_v1(p_user_id uuid, p_title text, p_start_date date DEFAULT NULL::date, p_end_date date DEFAULT NULL::date, p_weekly_target_sessions integer DEFAULT NULL::integer)
  RETURNS plans
@@ -5152,7 +5152,7 @@ begin
 
   return v_row;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.create_plan_guarded_v1(p_title text, p_start_date date DEFAULT NULL::date, p_end_date date DEFAULT NULL::date, p_weekly_target_sessions integer DEFAULT NULL::integer)
  RETURNS plans
@@ -5195,7 +5195,7 @@ begin
 
   return v_row;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.create_plan_test_v1(p_user_id uuid, p_title text, p_end_date date, p_workouts jsonb, p_goals jsonb DEFAULT '[]'::jsonb)
  RETURNS uuid
@@ -5395,7 +5395,7 @@ begin
 
   return v_plan_id;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.create_plan_v1(p_user_id uuid, p_title text, p_end_date date, p_workouts jsonb, p_goals jsonb DEFAULT '[]'::jsonb)
  RETURNS uuid
@@ -5719,7 +5719,7 @@ begin
 
   return v_plan_id;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.create_post_v1(p_post_type text, p_visibility text, p_caption text, p_workout_history_id uuid DEFAULT NULL::uuid, p_exercise_id uuid DEFAULT NULL::uuid, p_pr_snapshot jsonb DEFAULT NULL::jsonb)
  RETURNS uuid
@@ -5757,7 +5757,7 @@ begin
 
   return v_post_id;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.create_post_v2(p_caption text, p_exercise_id uuid, p_post_type text, p_pr_reps integer, p_pr_weight numeric, p_visibility text, p_workout_history_id uuid)
  RETURNS uuid
@@ -6018,7 +6018,7 @@ begin
 
   raise exception 'Invalid post type';
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.create_private_exercise(p_name text, p_equipment text, p_muscle_ids integer[], p_instructions text DEFAULT NULL::text, p_contribution integer DEFAULT 30)
  RETURNS uuid
@@ -6075,7 +6075,7 @@ begin
 
   return v_exercise_id;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.create_starter_workout(p_split text)
  RETURNS jsonb
@@ -6382,7 +6382,7 @@ begin
     )
   );
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.create_template_guarded_test_v1(p_user_id uuid, p_title text, p_notes text DEFAULT NULL::text)
  RETURNS workouts
@@ -6419,7 +6419,7 @@ begin
 
   return v_row;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.create_workout_test_v1(p_user_id uuid, p_workout jsonb)
  RETURNS uuid
@@ -6553,7 +6553,7 @@ begin
 
   return v_workout_id;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.create_workout_v1(p_workout jsonb)
  RETURNS uuid
@@ -6701,7 +6701,7 @@ begin
 
   return v_workout_id;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.deep_analytics_guard_test_v1(p_user_id uuid)
  RETURNS text
@@ -6713,7 +6713,7 @@ begin
   perform public.assert_can_view_deep_analytics(p_user_id);
   return 'OK';
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.delete_workout_test_v1(p_user_id uuid, p_workout_id uuid)
  RETURNS void
@@ -6740,7 +6740,7 @@ begin
     raise exception 'not_found_or_forbidden';
   end if;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.delete_workout_v1(p_workout_id uuid)
  RETURNS void
@@ -6772,7 +6772,7 @@ begin
     raise exception 'not_found_or_forbidden';
   end if;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.dev_delete_plan(p_plan_id uuid)
  RETURNS void
@@ -6794,7 +6794,7 @@ begin
     );
   delete from plans where id = p_plan_id;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.end_due_plans()
  RETURNS integer
@@ -6879,7 +6879,7 @@ begin
 
   return ended_count;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.enqueue_notification_push_v1(p_notification_id uuid, p_recipient_id uuid)
  RETURNS void
@@ -6902,7 +6902,7 @@ begin
   )
   on conflict (notification_id) do nothing;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.exercise_id_by_name(p_name text)
  RETURNS uuid
@@ -6911,7 +6911,7 @@ CREATE OR REPLACE FUNCTION public.exercise_id_by_name(p_name text)
  SET search_path TO 'public', 'pg_temp'
 AS $function$
   SELECT id FROM public.exercises WHERE lower(name) = lower(p_name) LIMIT 1
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.get_create_post_bootstrap_v1(p_workout_limit integer DEFAULT 50, p_pr_limit integer DEFAULT 20, p_query text DEFAULT NULL::text)
  RETURNS jsonb
@@ -7111,7 +7111,7 @@ workout_top_ex as (
       'pr_candidates', coalesce((select arr from pr_candidates), '[]'::jsonb)
     )
   );
-end;$function$
+end;$function$;
 
 CREATE OR REPLACE FUNCTION public.get_deep_analytics_test_v1(p_user_id uuid)
  RETURNS jsonb
@@ -7129,7 +7129,7 @@ begin
     'setContribution', jsonb_build_array()
   );
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.get_entitlements_for_user(p_user_id uuid)
  RETURNS jsonb
@@ -7215,7 +7215,7 @@ begin
     'capabilities', v_capabilities
   );
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.get_exercise_deep_analytics(p_exercise_id uuid)
  RETURNS jsonb
@@ -7436,7 +7436,7 @@ begin
 
   return v_payload;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.get_exercise_deep_analytics_test_v1(p_user_id uuid, p_exercise_id uuid)
  RETURNS jsonb
@@ -7641,7 +7641,7 @@ begin
 
   return v_payload;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.get_exercise_picker_data(p_include_private boolean DEFAULT false)
  RETURNS TABLE(id uuid, name text, type exercise_type, equipment text, level exercise_level, instructions text, muscle_ids smallint[], muscle_names text[], is_favorite boolean, sessions_count integer, sets_count integer, last_used_at timestamp with time zone)
@@ -7711,7 +7711,7 @@ AS $function$
     e.id, e.name, e.type, e.equipment, e.level, e.instructions,
     u.sessions_count, u.sets_count, u.last_used_at
   order by e.name asc;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.get_exercise_pr_events_v1(p_exercise_id uuid, p_limit integer DEFAULT 20)
  RETURNS jsonb
@@ -7858,7 +7858,7 @@ begin
     )
   );
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.get_feed(p_limit integer DEFAULT 20, p_cursor_created_at timestamp with time zone DEFAULT NULL::timestamp with time zone, p_cursor_id uuid DEFAULT NULL::uuid)
  RETURNS TABLE(post_id uuid, user_id uuid, user_name text, user_username text, post_type text, visibility text, caption text, created_at timestamp with time zone, workout_history_id uuid, workout_snapshot jsonb, exercise_id uuid, exercise_name text, pr_snapshot jsonb, like_count integer, comment_count integer, viewer_liked boolean)
@@ -7989,7 +7989,7 @@ left join lateral (
   limit 1
 ) vl on true
 
-order by b.created_at desc, b.id desc;$function$
+order by b.created_at desc, b.id desc;$function$;
 
 CREATE OR REPLACE FUNCTION public.get_follow_requests_inbox_v1(p_limit integer DEFAULT 30, p_cursor_created_at timestamp with time zone DEFAULT NULL::timestamp with time zone, p_cursor_requester uuid DEFAULT NULL::uuid)
  RETURNS TABLE(requester_id uuid, requester_name text, requester_is_private boolean, created_at timestamp with time zone, status text)
@@ -8017,7 +8017,7 @@ AS $function$
     )
   order by r.created_at desc, r.requester_id desc
   limit greatest(1, least(p_limit, 100));
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.get_home_goal_ring(p_user_id uuid)
  RETURNS TABLE(mode text, progress double precision, label text, plan_id uuid)
@@ -8153,7 +8153,7 @@ begin
   plan_id := null;
   return next;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.get_home_summary()
  RETURNS jsonb
@@ -8162,7 +8162,7 @@ CREATE OR REPLACE FUNCTION public.get_home_summary()
  SET search_path TO 'public', 'pg_temp'
 AS $function$
   select public.get_home_summary(0);
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.get_home_summary(p_month_offset integer DEFAULT 0)
  RETURNS jsonb
@@ -9054,7 +9054,7 @@ end if;
     ),
     'cards', v_cards
   );
-end;$function$
+end;$function$;
 
 CREATE OR REPLACE FUNCTION public.get_home_summary_debug(p_user_id uuid)
  RETURNS jsonb
@@ -9070,7 +9070,7 @@ begin
   -- (Tell me if you want me to generate the full debug version too.)
   return jsonb_build_object('error', 'use the debug body version');
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.get_last_exercise_best_set(p_user_id uuid, p_exercise_ids uuid[])
  RETURNS TABLE(exercise_id uuid, workout_history_id uuid, completed_at timestamp with time zone, best_reps smallint, best_weight numeric, best_est_1rm numeric)
@@ -9122,7 +9122,7 @@ left join best_set b
   on b.exercise_id = l.exercise_id
  and b.rn = 1
 order by l.completed_at desc;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.get_last_exercise_session_sets(p_user_id uuid, p_exercise_ids uuid[])
  RETURNS TABLE(exercise_id uuid, workout_history_id uuid, completed_at timestamp with time zone, set_number smallint, drop_index smallint, reps smallint, weight numeric, time_seconds integer, distance numeric)
@@ -9207,7 +9207,7 @@ left join rep r
 order by
   d.exercise_id,
   d.set_number asc;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.get_last_exercise_session_summaries(p_user_id uuid, p_exercise_ids uuid[])
  RETURNS TABLE(exercise_id uuid, workout_history_id uuid, completed_at timestamp with time zone, sets_count integer, best_reps integer, best_weight numeric, best_est_1rm numeric)
@@ -9270,7 +9270,7 @@ select
   best_est_1rm
 from ranked
 where rn = 1;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.get_last_workout_onboarding_payload_v1()
  RETURNS TABLE(unit_weight text, workout_history_id uuid, workout_id uuid, workout_title text, workout_image_key text, completed_at timestamp with time zone, duration_seconds integer, sets_logged integer, total_volume_kg numeric, workouts_completed integer, preview_exercise_id uuid, preview_exercise_name text, preview_sets integer, preview_reps integer, preview_weight numeric, tracked_sets jsonb)
@@ -9429,7 +9429,7 @@ begin
 
   return next;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.get_my_entitlements()
  RETURNS jsonb
@@ -9446,7 +9446,7 @@ begin
 
   return public.get_entitlements_for_user(v_user_id);
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.get_my_notifications(p_limit integer DEFAULT 20, p_before timestamp with time zone DEFAULT NULL::timestamp with time zone)
  RETURNS TABLE(id uuid, recipient_id uuid, actor_id uuid, type text, title text, body text, entity_type text, entity_id uuid, image_url text, is_read boolean, read_at timestamp with time zone, created_at timestamp with time zone)
@@ -9471,7 +9471,7 @@ AS $function$
     and (p_before is null or n.created_at < p_before)
   order by n.created_at desc
   limit greatest(p_limit, 1);
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.get_my_unread_notification_count()
  RETURNS integer
@@ -9482,7 +9482,7 @@ AS $function$
   from public.notifications n
   where n.recipient_id = (select auth.uid())
     and n.is_read = false;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.get_notifications_inbox_v1(p_limit integer DEFAULT 30, p_cursor_created_at timestamp with time zone DEFAULT NULL::timestamp with time zone, p_cursor_id uuid DEFAULT NULL::uuid)
  RETURNS TABLE(notification_id uuid, type text, created_at timestamp with time zone, read_at timestamp with time zone, actor_id uuid, actor_name text, post_id uuid, post_type text, post_caption text, comment_id uuid, comment_body text, follow_requester_id uuid, follow_target_id uuid, payload jsonb)
@@ -9526,7 +9526,7 @@ AS $function$
   left join public.profiles ap on ap.id = b.actor_id
   left join public.posts p on p.id = b.post_id
   left join public.post_comments pc on pc.id = b.comment_id;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.get_onboarding_gate_v1()
  RETURNS TABLE(user_id uuid, required_stage text, workouts_completed integer, stage2_triggered_at timestamp with time zone, stage2_completed_at timestamp with time zone, stage3_triggered_at timestamp with time zone, stage3_completed_at timestamp with time zone)
@@ -9620,7 +9620,7 @@ begin
 
   return next;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.get_onboarding_stage2_payload_v1()
  RETURNS TABLE(workout_history_id uuid, workout_id uuid, workout_title text, workout_image_key text, completed_at timestamp with time zone, duration_seconds integer, sets_logged integer, total_volume_kg numeric, preview_exercise_id uuid, preview_exercise_name text, preview_sets integer, preview_reps integer, preview_weight numeric, workouts_completed integer, unit_weight text)
@@ -9732,7 +9732,7 @@ begin
 
   return next;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.get_onboarding_stage3_five_workouts_payload_v1()
  RETURNS TABLE(user_name text, unit_weight text, timezone text, workouts_completed_total integer, window_start timestamp with time zone, window_end timestamp with time zone, window_days integer, strength_change_pct numeric, total_volume numeric, spotlight_exercise_id uuid, spotlight_exercise_name text, spotlight_current_1rm numeric, spotlight_change_pct numeric, spotlight_series jsonb, weekly_goal_target integer, weekly_completed integer, streak_weeks integer, consistency_change_pct numeric, recommended_days_per_week integer, recommended_split_key text, recommended_split_label text, recommended_schedule jsonb, milestone_exercise_id uuid, milestone_exercise_name text, milestone_current_value numeric, milestone_target_value numeric, milestone_progress_pct numeric, milestone_on_track boolean, milestone_eta_weeks integer)
@@ -10233,7 +10233,7 @@ begin
 
   return next;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.get_onboarding_stage_status_v1()
  RETURNS TABLE(user_id uuid, workouts_completed integer, show_stage text, stage2_completed_at timestamp with time zone, stage2_dismissed_at timestamp with time zone, stage3_completed_at timestamp with time zone, stage3_dismissed_at timestamp with time zone)
@@ -10318,7 +10318,7 @@ begin
 
   return next;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.get_onboarding_status_v1()
  RETURNS TABLE(user_id uuid, is_complete boolean, onboarding_step integer, onboarding_completed_at timestamp with time zone, onboarding_dismissed_at timestamp with time zone, missing_fields text[])
@@ -10409,7 +10409,7 @@ begin
   missing_fields := missing;
 
   return next;
-end;$function$
+end;$function$;
 
 CREATE OR REPLACE FUNCTION public.get_plan_share(p_token text)
  RETURNS jsonb
@@ -10500,7 +10500,7 @@ begin
     'goals', v_goals
   );
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.get_post_comments(p_post_id uuid, p_limit integer DEFAULT 50)
  RETURNS TABLE(id uuid, post_id uuid, user_id uuid, user_name text, user_username text, body text, created_at timestamp with time zone)
@@ -10572,7 +10572,7 @@ begin
   order by c.created_at asc
   limit greatest(coalesce(p_limit, 50), 1);
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.get_post_detail_v1(p_post_id uuid)
  RETURNS TABLE(post_id uuid, user_id uuid, user_name text, user_username text, post_type text, visibility text, caption text, created_at timestamp with time zone, workout_history_id uuid, workout_snapshot jsonb, exercise_id uuid, exercise_name text, pr_snapshot jsonb, like_count integer, comment_count integer, viewer_liked boolean)
@@ -10695,7 +10695,7 @@ left join lateral (
     and pl.user_id = auth.uid()
   limit 1
 ) vl on true;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.get_post_workout_details(p_post_id uuid)
  RETURNS TABLE(workout_history_id uuid, workout_title text, completed_at timestamp with time zone, duration_seconds integer, sets_count integer, volume_kg numeric, workout_image_key text, exercises jsonb)
@@ -10781,7 +10781,7 @@ begin
     ), '[]'::jsonb) as exercises
   from parsed p;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.get_pr_exercise_picker_v1(p_limit integer DEFAULT 50)
  RETURNS TABLE(exercise_id uuid, exercise_name text, last_done_at timestamp with time zone, recent_best_weight numeric, prev_best_weight numeric, pr_delta numeric, is_pr boolean)
@@ -10862,7 +10862,7 @@ AS $function$
     r.recent_best_weight desc,
     r.last_done_at desc
   limit greatest(1, least(p_limit, 200));
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.get_pr_exercises_v1(p_query text DEFAULT NULL::text, p_limit integer DEFAULT 50)
  RETURNS jsonb
@@ -11014,7 +11014,7 @@ begin
     )
   );
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.get_profile_card_v1(p_profile_id uuid)
  RETURNS TABLE(profile_id uuid, name text, username text, is_private boolean, can_view boolean, follow_state text, workouts_completed integer, followers_count integer, following_count integer, recent_posts jsonb)
@@ -11154,7 +11154,7 @@ begin
 
   return next;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.get_profile_overview()
  RETURNS jsonb
@@ -11559,7 +11559,7 @@ select jsonb_build_object(
   'recent_history', coalesce((select items from recent_history), '[]'::jsonb),
   'recent_posts', coalesce((select items from recent_posts), '[]'::jsonb)
 );
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.get_profile_overview_v1(p_profile_id uuid)
  RETURNS TABLE(profile_id uuid, name text, username text, visibility text, follow_state text, can_view boolean, workouts_completed integer, followers_count integer, following_count integer, recent_posts jsonb)
@@ -11771,7 +11771,7 @@ begin
   ) rp;
 
   return next;
-end;$function$
+end;$function$;
 
 CREATE OR REPLACE FUNCTION public.get_progress_overview()
  RETURNS jsonb
@@ -12431,7 +12431,7 @@ begin
     'recent_activity', v_recent_activity
   );
 end; 
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.get_settings_overview()
  RETURNS TABLE(user_id uuid, name text, username text, email text, height_cm integer, weight_kg numeric, date_of_birth date, unit_weight text, unit_height text, experience_level text, primary_goal text, visibility text, notif_workout_reminders boolean, notif_goal_progress boolean, notif_social_activity boolean)
@@ -12463,7 +12463,7 @@ AS $function$
   from public.profiles p
   where p.id = auth.uid()
   limit 1;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.get_settings_v1()
  RETURNS TABLE(user_id uuid, name text, username text, username_lower text, is_private boolean)
@@ -12479,7 +12479,7 @@ AS $function$
     p.is_private
   from public.profiles p
   where p.id = auth.uid();
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.get_starter_template_preview(p_template_workout_id uuid)
  RETURNS TABLE(order_index integer, exercise_name text, target_sets integer, target_reps integer, target_time_seconds integer, notes text, superset_group text, superset_index integer)
@@ -12504,7 +12504,7 @@ AS $function$
     -- ✅ only allow preview if it's a starter template (owned by template owner + tag)
     and w.notes like '[MM_TEMPLATE:starter:%]'
   order by we.order_index asc;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.get_steps_last_synced()
  RETURNS date
@@ -12529,7 +12529,7 @@ begin
   where user_id = uid;
 
   return d;
-end; $function$
+end; $function$;
 
 CREATE OR REPLACE FUNCTION public.get_streak_month(p_month_offset integer)
  RETURNS jsonb
@@ -12581,7 +12581,7 @@ begin
     'trained_days_month', v_trained_month
   );
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.get_unread_notifications_count_v1()
  RETURNS TABLE(unread_count integer)
@@ -12594,7 +12594,7 @@ AS $function$
   where n.recipient_id = auth.uid()
     and coalesce(n.is_read, false) = false
     and n.read_at is null;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.get_user_enforcement_limits(p_user_id uuid)
  RETURNS jsonb
@@ -12609,7 +12609,7 @@ AS $function$
     'maxTemplates', 15,
     'maxGoalsPerPlan', 2147483647
   );
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.get_user_posts_v1(p_user_id uuid, p_limit integer DEFAULT 30, p_cursor_created_at timestamp with time zone DEFAULT NULL::timestamp with time zone, p_cursor_id uuid DEFAULT NULL::uuid)
  RETURNS TABLE(post_id uuid, user_id uuid, user_name text, post_type text, visibility text, caption text, created_at timestamp with time zone, workout_history_id uuid, exercise_id uuid, pr_snapshot jsonb, like_count integer, comment_count integer, viewer_liked boolean)
@@ -12674,7 +12674,7 @@ AS $function$
       and pl.user_id = auth.uid()
     limit 1
   ) vl on true;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.get_user_pr_series(p_user_id uuid, p_exercise_id uuid, p_lookback_days integer DEFAULT 365)
  RETURNS TABLE(day date, e1rm numeric, max_weight numeric, reps_for_max integer, e1rm_src_weight numeric, e1rm_src_reps integer)
@@ -12733,7 +12733,7 @@ from days d
 left join best_e1rm be on be.day = d.day
 left join best_max  bm on bm.day = d.day
 order by d.day asc;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.get_user_pr_summaries(p_user_id uuid, p_lookback_days integer DEFAULT 365)
  RETURNS TABLE(exercise_id uuid, exercise_name text, latest_e1rm numeric, latest_day date, prev_e1rm numeric, pct_change numeric)
@@ -12816,7 +12816,7 @@ from latest_val lv
 left join prev_val pv
   on pv.exercise_id = lv.exercise_id
 order by lv.exercise_name asc;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.get_workout_for_post_v1(p_workout_history_id uuid)
  RETURNS jsonb
@@ -12917,7 +12917,7 @@ w.workout_image_key,
       'exercises', coalesce((select arr from exercises_json), '[]'::jsonb)
     )
   );
-end;$function$
+end;$function$;
 
 CREATE OR REPLACE FUNCTION public.get_workout_history_detail(p_workout_history_id uuid)
  RETURNS jsonb
@@ -13231,7 +13231,7 @@ begin
     )
   );
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.get_workout_history_feed(p_limit integer DEFAULT 20, p_cursor_completed_at timestamp with time zone DEFAULT NULL::timestamp with time zone, p_cursor_id uuid DEFAULT NULL::uuid, p_query text DEFAULT NULL::text)
  RETURNS jsonb
@@ -13510,7 +13510,7 @@ begin
     )
   );
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.get_workout_session_bootstrap(p_workout_id uuid, p_plan_workout_id uuid DEFAULT NULL::uuid)
  RETURNS jsonb
@@ -14050,7 +14050,7 @@ select jsonb_build_object(
     )
 )
 from w;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.get_workouts_on_day(p_day date)
  RETURNS jsonb
@@ -14095,7 +14095,7 @@ begin
     where wh.user_id = v_user_id
       and wh.completed_at::date = p_day
   );
-end;$function$
+end;$function$;
 
 CREATE OR REPLACE FUNCTION public.get_workouts_tab_payload()
  RETURNS jsonb
@@ -14553,7 +14553,7 @@ select jsonb_build_object(
         else 'create_menu'
       end
   )
-);$function$
+);$function$;
 
 CREATE OR REPLACE FUNCTION public.handle_follow_notification_v1()
  RETURNS trigger
@@ -14590,7 +14590,7 @@ begin
 
   return new;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.handle_follow_request_accepted_notification_v1()
  RETURNS trigger
@@ -14630,7 +14630,7 @@ begin
 
   return new;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.handle_follow_request_created_notification_v1()
  RETURNS trigger
@@ -14670,7 +14670,7 @@ begin
 
   return new;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.handle_new_notification_preferences()
  RETURNS trigger
@@ -14685,7 +14685,7 @@ begin
 
   return new;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.handle_post_commented_notification_v1()
  RETURNS trigger
@@ -14738,7 +14738,7 @@ begin
 
   return new;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.handle_post_liked_notification_v1()
  RETURNS trigger
@@ -14786,7 +14786,7 @@ begin
 
   return new;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.increment_weekly_completed(p_user_id uuid, p_week_key text)
  RETURNS void
@@ -14814,7 +14814,7 @@ begin
                  >= excluded.goal,
     updated_at = now();
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.is_admin()
  RETURNS boolean
@@ -14828,7 +14828,7 @@ AS $function$
     where p.id = auth.uid()
       and p.role = 'admin'
   );
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.is_allowed_username(p_username text)
  RETURNS boolean
@@ -14857,7 +14857,7 @@ begin
 
   return true;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.is_blocked_either(a uuid, b uuid)
  RETURNS boolean
@@ -14871,7 +14871,7 @@ AS $function$
     where (ub.blocker_id = a and ub.blocked_id = b)
        or (ub.blocker_id = b and ub.blocked_id = a)
   );
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.is_valid_username(p_username text)
  RETURNS boolean
@@ -14884,7 +14884,7 @@ AS $function$
     and length(btrim(p_username)) between 3 and 10
     and btrim(p_username) ~ '^[A-Za-z0-9](?:[A-Za-z0-9._]*[A-Za-z0-9])$'
     and btrim(p_username) !~ '[._]{2,}'  -- no ".." "__" "._" "_."
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.local_date_for(p_ts timestamp with time zone, p_tz text)
  RETURNS date
@@ -14893,7 +14893,7 @@ CREATE OR REPLACE FUNCTION public.local_date_for(p_ts timestamp with time zone, 
  SET search_path TO 'public', 'pg_temp'
 AS $function$
   select (p_ts at time zone p_tz)::date
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.mark_all_notifications_read()
  RETURNS integer
@@ -14913,7 +14913,7 @@ begin
   get diagnostics v_updated = row_count;
   return v_updated;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.mark_all_notifications_read_v1()
  RETURNS void
@@ -14924,7 +14924,7 @@ AS $function$
   set read_at = coalesce(read_at, now())
   where user_id = auth.uid()
     and read_at is null;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.mark_expired_plans_completed()
  RETURNS integer
@@ -14965,7 +14965,7 @@ begin
 
   return v_affected;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.mark_notification_read(p_notification_id uuid)
  RETURNS boolean
@@ -14986,7 +14986,7 @@ begin
   get diagnostics v_updated = row_count;
   return v_updated > 0;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.mark_notifications_read_v1(p_ids uuid[])
  RETURNS void
@@ -14997,7 +14997,7 @@ AS $function$
   set read_at = coalesce(read_at, now())
   where user_id = auth.uid()
     and id = any(p_ids);
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.mark_onboarding_stage_v1(p_stage text, p_action text)
  RETURNS void
@@ -15037,7 +15037,7 @@ begin
     where id = v_user;
   end if;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.maybe_trigger_onboarding_stages_v1()
  RETURNS TABLE(workouts_completed integer, stage2_triggered boolean, stage3_triggered boolean)
@@ -15097,7 +15097,7 @@ begin
   stage3_triggered := did3;
   return next;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.muscle_id_by_name(p_name text)
  RETURNS smallint
@@ -15106,7 +15106,7 @@ CREATE OR REPLACE FUNCTION public.muscle_id_by_name(p_name text)
  SET search_path TO 'public', 'pg_temp'
 AS $function$
   SELECT id FROM public.muscles WHERE name = p_name LIMIT 1
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.muscle_sets_last7d(p_user_id uuid, p_muscle_name text)
  RETURNS TABLE(completed_at timestamp with time zone, exercise_name text, reps integer, weight numeric, volume numeric)
@@ -15146,7 +15146,7 @@ AS $function$
   join exercises e on e.id = r.exercise_id
   where pm.muscle_name = p_muscle_name
   order by r.completed_at desc, e.name asc;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.prev_week_bounds_sunday(tz text, ref_ts timestamp with time zone DEFAULT now())
  RETURNS TABLE(start_utc timestamp with time zone, end_utc timestamp with time zone)
@@ -15166,7 +15166,7 @@ AS $function$
     (sun - interval '7 days') AT TIME ZONE tz AS start_utc,   -- convert back to UTC
     sun AT TIME ZONE tz AS end_utc
   FROM last_sunday;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.process_cardio_prs_for_workout(p_workout_history_id uuid)
  RETURNS jsonb
@@ -15361,7 +15361,7 @@ begin
 
   return v_result;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.recompute_all_step_stats()
  RETURNS void
@@ -15376,7 +15376,7 @@ begin
     perform public.recompute_step_stats(u.id);
   end loop;
 end
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.recompute_step_stats(p_user_id uuid)
  RETURNS void
@@ -15451,7 +15451,7 @@ begin
     streak_best = greatest(public.user_steps_stats.streak_best, excluded.streak_best),
     updated_at = now();
 end
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.recompute_user_entitlement(p_user_id uuid, p_reason text DEFAULT NULL::text, p_event_source text DEFAULT 'manual_refresh'::text)
  RETURNS TABLE(tier text, status text, source text, product_code text, effective_from timestamp with time zone, effective_until timestamp with time zone, next_renewal_at timestamp with time zone, trial_ends_at timestamp with time zone, cancelled_at timestamp with time zone, last_verified_at timestamp with time zone, provider_environment text, manual_grant boolean, capabilities_version text)
@@ -15614,7 +15614,7 @@ begin
     v_new.manual_grant,
     v_new.capabilities_version;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.record_daily_steps_on(p_day date, p_steps integer)
  RETURNS void
@@ -15636,7 +15636,7 @@ begin
     steps = greatest(public.daily_steps.steps, excluded.steps),
     last_reported_at = now();
 end
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.reject_follow_request(p_requester uuid)
  RETURNS void
@@ -15666,7 +15666,7 @@ begin
     raise exception 'No pending request found';
   end if;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.request_account_deletion_v1()
  RETURNS void
@@ -15682,7 +15682,7 @@ begin
   insert into public.account_deletion_requests(user_id)
   values (auth.uid());
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.request_follow(p_target uuid)
  RETURNS text
@@ -15792,7 +15792,7 @@ begin
 
   return 'requested';
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.resolve_user_entitlement(p_user_id uuid)
  RETURNS TABLE(tier text, status text, source text, product_code text, effective_from timestamp with time zone, effective_until timestamp with time zone, next_renewal_at timestamp with time zone, trial_ends_at timestamp with time zone, cancelled_at timestamp with time zone, last_verified_at timestamp with time zone, provider_environment text, manual_grant boolean, capabilities_version text)
@@ -15928,7 +15928,7 @@ begin
     false,
     'v1'::text;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.rpc_progress_overview(p_user uuid, p_search text DEFAULT NULL::text)
  RETURNS jsonb
@@ -16002,7 +16002,7 @@ begin
   into result;
 
   return result;
-end $function$
+end $function$;
 
 CREATE OR REPLACE FUNCTION public.save_completed_workout_v1(p_workout jsonb)
  RETURNS uuid
@@ -16174,7 +16174,7 @@ exception
     end if;
 
     raise;
-end;$function$
+end;$function$;
 
 CREATE OR REPLACE FUNCTION public.save_full_plan(p jsonb)
  RETURNS jsonb
@@ -16272,7 +16272,7 @@ exception
     -- Any failure aborts the tx automatically; bubble error back
     raise;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.search_users_social_v1(q text, p_limit integer DEFAULT 20, p_offset integer DEFAULT 0)
  RETURNS TABLE(user_id uuid, name text, is_private boolean, created_at timestamp with time zone, viewer_follows boolean, request_status text, viewer_blocked boolean, blocked_by_target boolean)
@@ -16333,7 +16333,7 @@ AS $function$
       where ub.blocker_id = b.id and ub.blocked_id = me.uid
     ) as blocked_by_target
   from base b;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.search_users_v1(q text, p_limit integer DEFAULT 25)
  RETURNS TABLE(user_id uuid, name text, username text, username_lower text, visibility text, workouts_completed integer, followers_count integer, following_count integer, follow_state text, recent_posts jsonb)
@@ -16466,7 +16466,7 @@ from base_profiles bp
 join counts c on c.user_id = bp.user_id
 join rels r on r.user_id = bp.user_id
 join post_preview pp on pp.user_id = bp.user_id;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.set_notification_pref_v1(p_key text, p_value boolean)
  RETURNS TABLE(key text, value boolean)
@@ -16496,7 +16496,7 @@ begin
   return query
   select p_key, p_value;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.set_personal_info_v1(p_name text, p_height_cm integer, p_weight_kg numeric, p_date_of_birth text)
  RETURNS void
@@ -16521,7 +16521,7 @@ begin
     updated_at = now()
   where p.id = auth.uid();
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.set_privacy_v1(p_is_private boolean)
  RETURNS TABLE(is_private boolean)
@@ -16533,7 +16533,7 @@ AS $function$
       updated_at = now()
   where id = auth.uid()
   returning is_private;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.set_profile_visibility_v1(p_visibility text)
  RETURNS TABLE(visibility text)
@@ -16562,7 +16562,7 @@ begin
   return query
   select (v_vis::text);
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.set_steps_last_synced(p_day date)
  RETURNS void
@@ -16573,7 +16573,7 @@ AS $function$
   update user_steps_stats
   set last_synced_day = p_day
   where user_id = auth.uid();
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.set_updated_at()
  RETURNS trigger
@@ -16583,7 +16583,7 @@ begin
   new.updated_at := now();
   return new;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.set_username_v1(p_username text)
  RETURNS TABLE(username text, username_lower text)
@@ -16623,7 +16623,7 @@ begin
   select p.username, p.username_lower
   from public.profiles p
   where p.id = auth.uid();
-end;$function$
+end;$function$;
 
 CREATE OR REPLACE FUNCTION public.sync_username_lower()
  RETURNS trigger
@@ -16638,14 +16638,14 @@ begin
   end if;
   return new;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.tg_set_updated_at()
  RETURNS trigger
  LANGUAGE plpgsql
  SET search_path TO 'public', 'pg_temp'
 AS $function$
-BEGIN NEW.updated_at = now(); RETURN NEW; END $function$
+BEGIN NEW.updated_at = now(); RETURN NEW; END $function$;
 
 CREATE OR REPLACE FUNCTION public.toggle_post_like(p_post_id uuid)
  RETURNS TABLE(liked boolean, like_count integer)
@@ -16731,7 +16731,7 @@ begin
 
   return next;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.unfollow(p_target uuid)
  RETURNS void
@@ -16753,7 +16753,7 @@ begin
   delete from public.user_follows
   where follower_id = v_me and followee_id = p_target;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.update_full_plan(p_plan_id uuid, p_user_id uuid, p_title text, p_end_date date, p_workouts jsonb, p_goals jsonb)
  RETURNS void
@@ -17095,7 +17095,7 @@ BEGIN
      AND g.is_active = false;
 
 END;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.update_full_plan_test_v1(p_plan_id uuid, p_user_id uuid, p_title text, p_end_date date, p_workouts jsonb, p_goals jsonb)
  RETURNS void
@@ -17420,7 +17420,7 @@ BEGIN
      AND g.plan_id = p_plan_id
      AND g.is_active = false;
 END;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.update_weekly_goal_stats(p_user_id uuid DEFAULT NULL::uuid)
  RETURNS void
@@ -17465,7 +17465,7 @@ BEGIN
       created_at = now();
   END LOOP;
 END;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.update_weekly_streak_and_reset_plans(p_user_id uuid DEFAULT NULL::uuid)
  RETURNS void
@@ -17528,7 +17528,7 @@ begin
       -- if you want to reset even completed plans, drop the last line
   end loop;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.update_workout_v1(p_workout jsonb)
  RETURNS uuid
@@ -17687,7 +17687,7 @@ begin
 
   return v_workout_id;
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.user_trained_days(p_user_id uuid, p_days_back integer DEFAULT 120)
  RETURNS TABLE(day_key text)
@@ -17700,7 +17700,7 @@ AS $function$
   where wh.user_id = p_user_id
     and wh.completed_at >= now() - make_interval(days => p_days_back)
   order by day_key;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.workout_session_checkpoint_latest_active()
  RETURNS jsonb
@@ -17714,7 +17714,7 @@ where c.user_id = auth.uid()
   and c.status = 'active'
 order by c.updated_at desc
 limit 1;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.workout_session_checkpoint_upsert(p_session_id uuid, p_workout_id uuid, p_plan_workout_id uuid DEFAULT NULL::uuid, p_status text DEFAULT 'active'::text, p_payload jsonb DEFAULT '{}'::jsonb)
  RETURNS jsonb
@@ -17760,4 +17760,4 @@ begin
     'updatedAt', v_row.updated_at
   );
 end;
-$function$
+$function$;
