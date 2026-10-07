@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(12);
+select plan(13);
 
 insert into auth.users(id,email) values
  ('40000000-0000-4000-8000-000000000001','workout-a@test.local'),
@@ -131,6 +131,10 @@ select lives_ok(
  'cardio workout save succeeds'
 );
 
+-- cardio_prs is internal/RLS-closed to app users. Switch to the test owner
+-- role to verify the backend side effect itself.
+set local role postgres;
+
 select is(
  (select count(*) from public.cardio_prs cp join public.workout_history wh on wh.id=cp.workout_history_id
   where wh.client_save_id='46000000-0000-4000-8000-000000000003' and cp.metric='longest_distance'),
@@ -142,7 +146,7 @@ select is(
  1500::numeric,'cardio save creates 5k benchmark PR from average pace'
 );
 select is(
- (select user_id from public.cardio_prs cp join public.workout_history wh on wh.id=cp.workout_history_id
+ (select cp.user_id from public.cardio_prs cp join public.workout_history wh on wh.id=cp.workout_history_id
   where wh.client_save_id='46000000-0000-4000-8000-000000000003' limit 1),
  '40000000-0000-4000-8000-000000000001'::uuid,'cardio PR belongs to authenticated user'
 );
