@@ -55,3 +55,19 @@ Expected contract:
 
 The production baseline files are historical starting points and must not be
 edited to hide these findings.
+
+## PR #44 hardening
+
+The first security hardening pass enforces the contracts above by:
+
+- making `delete_workout_test_v1` service-role only;
+- making notification claim/enqueue/internal-create RPCs service-role only;
+- adding a bounded notification claim size;
+- adding a `claimed_at` lease to push jobs;
+- automatically recovering `processing` jobs whose claim is older than ten
+  minutes;
+- testing app-role denial, service-role access, and stale-job recovery in pgTAP.
+
+This is intentionally targeted. Other `SECURITY DEFINER` functions remain for a
+separate classification pass so user-facing RPCs are not broken by a blanket
+revoke.
