@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(10);
+select plan(12);
 
 insert into auth.users(id,email) values
  ('30000000-0000-4000-8000-000000000001','notify-a@test.local'),
@@ -11,6 +11,15 @@ insert into public.profiles(id,name,email) values
 insert into public.notifications(id,recipient_id,type,title,body,entity_type,entity_id,push_status) values
  ('31000000-0000-4000-8000-000000000001','30000000-0000-4000-8000-000000000001','followed_you','A','A','profile','30000000-0000-4000-8000-000000000002','pending'),
  ('31000000-0000-4000-8000-000000000002','30000000-0000-4000-8000-000000000002','followed_you','B','B','profile','30000000-0000-4000-8000-000000000001','pending');
+
+select ok(
+  has_table_privilege('authenticated','public.app_feedback','INSERT'),
+  'authenticated role can reach feedback insert through the Data API'
+);
+select ok(
+  not has_table_privilege('anon','public.app_feedback','INSERT'),
+  'anonymous role cannot insert feedback'
+);
 
 set local role authenticated;
 set local request.jwt.claim.sub='30000000-0000-4000-8000-000000000001';
