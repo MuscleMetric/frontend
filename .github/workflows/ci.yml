@@ -228,7 +228,7 @@ jobs:
           version: 2.119.0
 
       - name: Start fresh database
-        run: supabase db start
+        run: supabase start
 
       - name: Rebuild from migrations
         run: supabase db reset
