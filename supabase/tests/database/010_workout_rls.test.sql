@@ -69,23 +69,23 @@ select throws_ok(
 );
 
 select results_eq(
-  $
+  $actual$
     update public.workouts
     set title = 'Hacked'
     where id = '44444444-4444-4444-8444-444444444442'
     returning 1
-  $,
-  $ select 1 where false $,
+  $actual$,
+  $expected$ select 1 where false $expected$,
   'user 1 cannot update user 2 workout'
 );
 
 select results_eq(
-  $
+  $actual$
     delete from public.workouts
     where id = '44444444-4444-4444-8444-444444444442'
     returning 1
-  $,
-  $ select 1 where false $,
+  $actual$,
+  $expected$ select 1 where false $expected$,
   'user 1 cannot delete user 2 workout'
 );
 
