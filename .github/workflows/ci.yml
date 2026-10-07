@@ -212,6 +212,27 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
+
+  database:
+    name: Database baseline
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Supabase CLI
+        uses: supabase/setup-cli@v3
+        with:
+          version: 2.119.0
+
+      - name: Start fresh database
+        run: supabase db start
+
+      - name: Rebuild from migrations
+        run: supabase db reset
+
   gate:
     name: CI gate
     if: always()
@@ -219,6 +240,7 @@ jobs:
       - lint
       - typecheck
       - tests
+      - database
     runs-on: ubuntu-latest
 
     steps:
@@ -228,6 +250,7 @@ jobs:
           LINT_RESULT: ${{ needs.lint.result }}
           TYPECHECK_RESULT: ${{ needs.typecheck.result }}
           TEST_RESULT: ${{ needs.tests.result }}
+          DATABASE_RESULT: ${{ needs.database.result }}
         run: |
           icon() {
             case "$1" in
@@ -247,6 +270,7 @@ jobs:
             echo "| ESLint | $(icon "$LINT_RESULT") |"
             echo "| TypeScript | $(icon "$TYPECHECK_RESULT") |"
             echo "| Jest | $(icon "$TEST_RESULT") |"
+            echo "| Database baseline | $(icon "$DATABASE_RESULT") |"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Enforce CI gate
@@ -255,10 +279,12 @@ jobs:
           LINT_RESULT: ${{ needs.lint.result }}
           TYPECHECK_RESULT: ${{ needs.typecheck.result }}
           TEST_RESULT: ${{ needs.tests.result }}
+          DATABASE_RESULT: ${{ needs.database.result }}
         run: |
           if [ "$LINT_RESULT" != "success" ] || \
              [ "$TYPECHECK_RESULT" != "success" ] || \
-             [ "$TEST_RESULT" != "success" ]; then
+             [ "$TEST_RESULT" != "success" ] || \
+             [ "$DATABASE_RESULT" != "success" ]; then
             echo "One or more required CI jobs failed."
             exit 1
           fi
