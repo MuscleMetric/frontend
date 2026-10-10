@@ -244,7 +244,7 @@ export function PrPostCard({
       {onOpenPost ? (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Open post details"
+          accessibilityHint="Opens post details"
           onPress={() => onOpenPost(item)}
         >
           {postContent}
