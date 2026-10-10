@@ -68,7 +68,10 @@ it.each(["workout", "pr"] as const)(
       />,
     );
 
-    fireEvent.press(screen.getByLabelText("Open post details"));
+    const postButton = screen.getByRole("button", { name: /Training update/ });
+
+    expect(postButton).toHaveProp("accessibilityHint", "Opens post details");
+    fireEvent.press(postButton);
 
     expect(onOpenPost).toHaveBeenCalledTimes(1);
     expect(onOpenPost).toHaveBeenCalledWith(post);
